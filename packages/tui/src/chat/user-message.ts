@@ -179,6 +179,11 @@ export class UserMessageComponent extends Container implements ReactionTarget, T
 		this.addChild(markdown);
 	}
 
+	/** The prompt as displayed (chips and mention labels collapsed); undefined for synthetic injected input. */
+	get promptText(): string | undefined {
+		return this.#synthetic ? undefined : this.#text;
+	}
+
 	override releaseRenderCaches(): void {
 		this.#zoneSource = undefined;
 		this.#zoneLines = undefined;

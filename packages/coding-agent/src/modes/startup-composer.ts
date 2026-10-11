@@ -124,6 +124,7 @@ export function applyStartupComposerPreferences(update: PrepaintComposerPreferen
 		spellingAutocomplete: update.spellingAutocomplete,
 		spellingAutocorrect: update.spellingAutocorrect,
 		pinnedInput: update.pinnedInput,
+		stickyPrompt: update.stickyPrompt,
 	};
 	pending.composer.setPreferences(preferences);
 	// Settings resolved means the module graph is loaded and the event loop is

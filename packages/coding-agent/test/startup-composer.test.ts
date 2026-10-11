@@ -290,6 +290,7 @@ describe("Composer prepaint", () => {
 			spellingAutocomplete: cfgSpellingAutocomplete.get(settings),
 			spellingAutocorrect: cfgSpellingAutocorrect.get(settings),
 			pinnedInput: false,
+			stickyPrompt: false,
 		};
 	});
 
@@ -742,6 +743,7 @@ describe("Composer prepaint", () => {
 			spellingAutocomplete: cfgSpellingAutocomplete.get(settings),
 			spellingAutocorrect: cfgSpellingAutocorrect.get(settings),
 			pinnedInput: false,
+			stickyPrompt: false,
 			theme: {},
 		});
 		await terminal.waitForRender();

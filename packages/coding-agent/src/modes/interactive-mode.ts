@@ -381,6 +381,7 @@ import {
 	cfgTuiAutoGraph,
 	cfgTuiMouse,
 	cfgTuiPinnedInput,
+	cfgTuiStickyPrompt,
 	cfgTuiRenderMermaid,
 	cfgTuiRenderSvg,
 	cfgTuiResizeScrollback,
@@ -421,6 +422,7 @@ const cfgLiveUiSettings = combine({
 	"tui.maxInlineImages": cfgTuiMaxInlineImages,
 	"tui.resizeScrollback": cfgTuiResizeScrollback,
 	"tui.pinnedInput": cfgTuiPinnedInput,
+	"tui.stickyPrompt": cfgTuiStickyPrompt,
 	"tui.imeSafeCursor": cfgTuiImeSafeCursor,
 	autocompleteMaxVisible: cfgAutocompleteMaxVisible,
 	"spelling.typoDetection": cfgSpellingTypoDetection,
@@ -3478,6 +3480,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			spellingAutocomplete: cfgSpellingAutocomplete.get(this.settings),
 			spellingAutocorrect: cfgSpellingAutocorrect.get(this.settings),
 			pinnedInput: cfgTuiPinnedInput.get(this.settings),
+			stickyPrompt: cfgTuiStickyPrompt.get(this.settings),
 		};
 	}
 
@@ -3520,6 +3523,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				"spelling.autocomplete",
 				"spelling.autocorrect",
 				"tui.pinnedInput",
+				"tui.stickyPrompt",
 			)
 		) {
 			this.composer.setPreferences(this.#liveComposerPreferences());

@@ -100,6 +100,7 @@ function parseUiState(
 		spellingAutocomplete,
 		spellingAutocorrect,
 		pinnedInput,
+		stickyPrompt,
 	} = value.preferences;
 	if (
 		typeof quiet !== "boolean" ||
@@ -115,7 +116,8 @@ function parseUiState(
 		typeof spellingTypoDetection !== "boolean" ||
 		!isWordCompletionMethod(spellingAutocomplete) ||
 		typeof spellingAutocorrect !== "boolean" ||
-		(pinnedInput !== undefined && typeof pinnedInput !== "boolean")
+		(pinnedInput !== undefined && typeof pinnedInput !== "boolean") ||
+		(stickyPrompt !== undefined && typeof stickyPrompt !== "boolean")
 	) {
 		return undefined;
 	}
@@ -144,6 +146,7 @@ function parseUiState(
 			spellingAutocomplete,
 			spellingAutocorrect,
 			pinnedInput: pinnedInput ?? false,
+			stickyPrompt: stickyPrompt ?? false,
 		},
 		theme: { symbolPreset, colorBlindMode, darkTheme, lightTheme },
 	};

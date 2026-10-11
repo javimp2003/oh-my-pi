@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { COMPOSER_DEFAULTS, Composer } from "@oh-my-pi/pi-tui/prompt/composer";
 import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
+import { UserMessageComponent } from "@oh-my-pi/pi-tui/chat/user-message";
 import { initTheme } from "@oh-my-pi/pi-tui/theme";
 import { Text } from "@oh-my-pi/pi-tui";
 import { VirtualRenderScheduler } from "./virtual-render-scheduler";
@@ -192,6 +193,45 @@ describe("composer pinned input", () => {
 		expect(visibleRows(h.terminal)[1]).toBe(target - 2);
 		const moved = h.terminal.getViewport().findIndex(line => line.startsWith(`${PREFIX}${target}`));
 		expect(h.terminal.getCellReverse(moved, 0)).toBe(true);
+		expect(h.composer.takeSelection()).toBe(`${PREFIX}${target}`);
+		h.composer.stop();
+	});
+});
+
+describe("composer sticky prompt", () => {
+	async function stickyHarness(): Promise<Harness> {
+		const h = await makeHarness(0);
+		h.transcript.addChild(new UserMessageComponent("first question"));
+		addRows(h.transcript, 0, 40);
+		h.transcript.addChild(new UserMessageComponent("latest question\nwith a second line"));
+		addRows(h.transcript, 40, 40);
+		h.composer.setPreferences({ stickyPrompt: true });
+		await h.scheduler.settle(h.terminal);
+		return h;
+	}
+
+	it("pins the latest prompt to the top row while the transcript scrolls", async () => {
+		const h = await stickyHarness();
+		const top = (): string => Bun.stripANSI(h.terminal.getViewport()[0]!).trimEnd();
+		expect(top()).toBe(" ❯ latest question …");
+		expect(editorRow(h.terminal)).toBe(ROWS - 1);
+		h.composer.scrollTranscript(-1000);
+		await h.scheduler.settle(h.terminal);
+		expect(top()).toBe(" ❯ latest question …");
+		// The window below the sticky row reaches the transcript's first rows.
+		expect(h.terminal.getViewport().some(row => Bun.stripANSI(row).includes("first question"))).toBe(true);
+		h.composer.stop();
+	});
+
+	it("selects transcript rows under the sticky prompt by their screen position", async () => {
+		const h = await stickyHarness();
+		expect(h.composer.beginSelection(0, 0)).toBe(false);
+		const row = h.terminal.getViewport().findIndex(line => Bun.stripANSI(line).startsWith(PREFIX)) + 2;
+		const target = Number(Bun.stripANSI(h.terminal.getViewport()[row]!).trimEnd().slice(PREFIX.length));
+		expect(h.composer.beginSelection(row, 0)).toBe(true);
+		h.composer.extendSelection(row, 30);
+		await h.scheduler.settle(h.terminal);
+		expect(h.composer.finishSelection()).toBe(true);
 		expect(h.composer.takeSelection()).toBe(`${PREFIX}${target}`);
 		h.composer.stop();
 	});

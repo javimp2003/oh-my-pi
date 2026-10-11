@@ -586,6 +586,19 @@ export const cfgTuiPinnedInput = register({
 	},
 });
 
+export const cfgTuiStickyPrompt = register({
+	id: "tui.stickyPrompt",
+	type: "boolean",
+	default: true,
+	ui: {
+		tab: "appearance",
+		group: "Display",
+		label: "Sticky Prompt",
+		description:
+			"With Pinned Input on, keep the latest prompt you sent on the top row while the conversation scrolls below it",
+	},
+});
+
 export const cfgTuiMouseSelection = register({
 	id: "tui.mouseSelection",
 	type: "boolean",

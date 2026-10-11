@@ -166,6 +166,7 @@ import {
 	cfgTuiMaxInlineImages,
 	cfgTuiPinnedInput,
 	cfgTuiResizeScrollback,
+	cfgTuiStickyPrompt,
 	cfgUpdateChannel,
 } from "./modes/settings";
 import {
@@ -1968,6 +1969,7 @@ export async function runRootCommand(
 			spellingAutocomplete: cfgSpellingAutocomplete.get(settingsInstance),
 			spellingAutocorrect: cfgSpellingAutocorrect.get(settingsInstance),
 			pinnedInput: cfgTuiPinnedInput.get(settingsInstance),
+			stickyPrompt: cfgTuiStickyPrompt.get(settingsInstance),
 			theme: {
 				symbolPreset: cfgSymbolPreset.get(settingsInstance),
 				colorBlindMode: cfgColorBlindMode.get(settingsInstance),

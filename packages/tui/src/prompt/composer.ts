@@ -15,7 +15,8 @@ import {
 	type TUIOptions,
 	type ViewportSize,
 } from "../tui";
-import { Ellipsis, truncateToWidth, wrapLiteralLine } from "../utils";
+import { Ellipsis, truncateToWidth, visibleWidth, wrapLiteralLine } from "../utils";
+import { UserMessageComponent } from "../chat/user-message";
 import type { NativeChild, NativeSurface, NativeSurfaceProvider } from "../native/node";
 import { sameItems } from "../native/memo";
 import { postmortem } from "@oh-my-pi/pi-utils";
@@ -50,6 +51,8 @@ export interface ComposerPreferences {
 	 * retires to native scrollback while on (see {@link Composer.scrollTranscript}).
 	 */
 	readonly pinnedInput: boolean;
+	/** With {@link pinnedInput}, keep the latest prompt on the top row while the transcript scrolls. */
+	readonly stickyPrompt: boolean;
 }
 
 /** Settings-schema-compatible defaults used when constructing a dependency-free composer. */
@@ -65,6 +68,7 @@ export const COMPOSER_DEFAULTS: ComposerPreferences = {
 	spellingAutocomplete: "auto",
 	spellingAutocorrect: false,
 	pinnedInput: false,
+	stickyPrompt: false,
 };
 
 /** Welcome data that can be supplied initially or patched as startup resolves it. */
@@ -326,6 +330,8 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	/** Repeats a one-row scroll while a selection drag rests against the window's top or bottom edge. */
 	#selectionScrollTimer: NodeJS.Timeout | undefined;
 	#selectionScrollDirection: -1 | 0 | 1 = 0;
+	/** Rows the sticky prompt took at the top of the last pinned frame (0 or 1). */
+	#stickyRows = 0;
 
 	constructor(options: ComposerOptions = {}) {
 		ensureThemeSync();
@@ -552,7 +558,9 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		const history =
 			this.#offeredHistory === undefined ? undefined : this.#offerHistory(transcript, width, rows, after.length);
 		const lead = [...this.#header.render(width), ...this.#renderRoots(roots.slice(0, transcriptIndex), width)];
-		const capacity = Math.max(0, rows - after.length);
+		const sticky = this.#preferences.stickyPrompt ? this.#stickyPromptRows(transcript, width) : [];
+		this.#stickyRows = sticky.length;
+		const capacity = Math.max(0, rows - after.length - sticky.length);
 		const now = performance.now();
 		const selection = this.#selection;
 		const window = transcript.renderScrollWindow(
@@ -586,7 +594,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 				content[index] = paintSelection(content[index]!, top + index, range.start, range.end);
 			}
 		} else if (selection?.region === "chrome" && after.length > 0) {
-			const clampRow = (row: number): number => Math.min(after.length - 1, Math.max(0, row - capacity));
+			const clampRow = (row: number): number => Math.min(after.length - 1, Math.max(0, row));
 			selection.anchor ??= { row: clampRow(selection.press.row), col: selection.press.col };
 			let range = selection.range;
 			if (!selection.held || range === undefined) {
@@ -606,7 +614,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			content[content.length - 1] = theme.fg("dim", truncateToWidth(label, width, Ellipsis.Omit));
 		}
 		const gap = capacity - content.length;
-		const mutable = [...content, ...Array<string>(gap).fill(""), ...after];
+		const mutable = [...sticky, ...content, ...Array<string>(gap).fill(""), ...after];
 		const drop = Math.max(0, mutable.length - rows);
 		const viewport = drop > 0 ? mutable.slice(drop) : mutable;
 		const spans: ViewportClickSpan[] = [];
@@ -620,11 +628,29 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		};
 		for (const span of transcript.getLastViewportSpans()) {
 			const ids = (span.component as Partial<{ getClickFocusAgentIds(): string[] }>).getClickFocusAgentIds?.();
-			if (ids && ids.length > 0) place({ start: span.start, end: span.end, candidates: () => ids }, 0);
+			if (ids && ids.length > 0) place({ start: span.start, end: span.end, candidates: () => ids }, sticky.length);
 		}
-		for (const span of afterSpans) place(span, capacity);
+		for (const span of afterSpans) place(span, sticky.length + capacity);
 		this.#lastClickSpans = spans;
 		return { history, viewport: this.#paintHoverBand(viewport, spans) };
+	}
+
+	/**
+	 * The pinned layout's top row: the latest prompt the user sent, so the
+	 * question stays in sight however far its answer scrolls. Multi-line
+	 * prompts show their first line; nothing shows before the first prompt.
+	 */
+	#stickyPromptRows(transcript: TranscriptContainer, width: number): string[] {
+		let prompt: string | undefined;
+		for (let index = transcript.children.length - 1; index >= 0 && prompt === undefined; index--) {
+			const child = transcript.children[index];
+			if (child instanceof UserMessageComponent) prompt = child.promptText?.trim() || undefined;
+		}
+		if (prompt === undefined) return [];
+		const [firstLine = "", ...rest] = prompt.split("\n");
+		const text = truncateToWidth(` ❯ ${firstLine.trim()}${rest.length > 0 ? " …" : ""}`, width, Ellipsis.Unicode);
+		const row = `${text}${" ".repeat(Math.max(0, width - visibleWidth(text)))}`;
+		return [theme.fgOnBg("userMessageText", "userMessageBg", row)];
 	}
 
 	/**
@@ -663,12 +689,14 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	beginSelection(screenRow: number, col: number): boolean {
 		if (!this.#preferences.pinnedInput || this.#stopped) return false;
 		const viewport = this.ui.getMutableViewport();
-		const row = screenRow - viewport.top;
-		if (viewport.length === 0 || row < 0 || row >= viewport.length) return false;
+		const screen = screenRow - viewport.top;
+		// The sticky prompt row is a label, not selectable text.
+		if (viewport.length === 0 || screen < this.#stickyRows || screen >= viewport.length) return false;
 		this.clearSelection();
-		const point = { row, col: Math.max(0, col) };
+		const region = screen - this.#stickyRows < this.#scrollCapacity ? "transcript" : "chrome";
+		const point = { row: this.#selectionRegionRow(region, screen), col: Math.max(0, col) };
 		this.#selection = {
-			region: row < this.#scrollCapacity ? "transcript" : "chrome",
+			region,
 			press: point,
 			anchor: undefined,
 			head: point,
@@ -680,6 +708,12 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		return true;
 	}
 
+	/** A viewport row as a row of the selection's region: the transcript window's or the chrome's below it. */
+	#selectionRegionRow(region: "transcript" | "chrome", screen: number): number {
+		const windowRow = screen - this.#stickyRows;
+		return region === "transcript" ? windowRow : windowRow - this.#scrollCapacity;
+	}
+
 	/**
 	 * Move the selection head to the pointer. A transcript drag held on the
 	 * window's top row, or past its bottom into the chrome, keeps scrolling the
@@ -688,7 +722,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	extendSelection(screenRow: number, col: number): void {
 		const selection = this.#selection;
 		if (selection === undefined || selection.held) return;
-		const row = screenRow - this.ui.getMutableViewport().top;
+		const row = this.#selectionRegionRow(selection.region, screenRow - this.ui.getMutableViewport().top);
 		selection.head = { row, col: Math.max(0, col) };
 		selection.moved ||= row !== selection.press.row || col !== selection.press.col;
 		if (selection.region === "transcript") {
