@@ -94,6 +94,22 @@ describe("compact tool output", () => {
 		expect(rows[2]).toStartWith(" 📄 Read");
 		expect(new Set(nameColumns).size).toBe(1);
 	});
+
+	it("titles a bash row with the call's intent and indents the command beneath it", () => {
+		setChatTranscriptDisplayPreferences({ compactToolOutput: true });
+		const bash = new ToolExecutionComponent(
+			"bash",
+			{ command: "which omp; omp --version", i: "Checking installed omp" },
+			{ useBuiltInRenderer: true },
+			undefined,
+			ui,
+		);
+		bash.updateResult({ content: [{ type: "text", text: "omp/18.8.7" }] }, false);
+		expect(visible(bash)).toEqual(["💻 bash: Checking installed omp", "└─ $ which omp; omp --version"]);
+		const rows = bash.render(90).map(row => Bun.stripANSI(row));
+		const command = rows.find(row => row.includes("$ which"))!;
+		expect(command.indexOf("└")).toBe(4);
+	});
 });
 
 describe("answer divider", () => {

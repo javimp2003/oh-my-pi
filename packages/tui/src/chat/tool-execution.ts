@@ -213,16 +213,21 @@ class SafeToolRendererComponent implements Component {
  * drops its body itself; any other renderer leads with its status line, so its
  * first visible row is the header. The renderer's own leading icon is replaced
  * by the tool's emoji, so every compact row starts its name in the same column.
+ * With an `intent` (the model's one-line purpose for the call), the row reads
+ * `Tool: intent` and the header's own subject (bash's `$ command`) moves to an
+ * indented row beneath it.
  */
 class ToolResultHeaderRow implements Component {
 	readonly #component: Component;
 	readonly #toolName: string;
 	readonly #label: string;
+	readonly #intent: string | undefined;
 
-	constructor(component: Component, toolName: string, label: string) {
+	constructor(component: Component, toolName: string, label: string, intent?: string) {
 		this.#component = component;
 		this.#toolName = toolName;
 		this.#label = label;
+		this.#intent = intent;
 		if (component instanceof ToolCard) component.setHeaderOnly(true);
 	}
 
@@ -237,11 +242,18 @@ class ToolResultHeaderRow implements Component {
 		const iconWidth = /[\p{L}\p{N}$]/u.test(lead) ? 0 : visibleWidth(lead) + 1;
 		const start = plain.length - trimmed.length + iconWidth;
 		let rest = sliceByColumn(header, start, Math.max(0, visibleWidth(header) - start));
-		// Headers that open with their subject (bash's `$ command`) get the tool name first.
-		if (!Bun.stripANSI(rest).toLowerCase().startsWith(this.#label.toLowerCase())) {
-			rest = `${theme.fg("toolTitle", theme.bold(this.#label))}: ${rest}`;
+		const title = theme.fg("toolTitle", theme.bold(this.#label));
+		const emoji = compactToolEmoji(this.#toolName);
+		if (this.#intent) {
+			// Indent the subject under the tool name: one space, the two-cell emoji, one space.
+			return [
+				truncateToWidth(` ${emoji} ${title}: ${this.#intent}`, width),
+				truncateToWidth(`    ${theme.fg("dim", theme.tree.last)} ${rest}`, width),
+			];
 		}
-		return [truncateToWidth(` ${compactToolEmoji(this.#toolName)} ${rest}`, width)];
+		// Headers that open with their subject (bash's `$ command`) get the tool name first.
+		if (!Bun.stripANSI(rest).toLowerCase().startsWith(this.#label.toLowerCase())) rest = `${title}: ${rest}`;
+		return [truncateToWidth(` ${emoji} ${rest}`, width)];
 	}
 
 	invalidate(): void {
@@ -1441,6 +1453,17 @@ export class ToolExecutionComponent extends Container {
 		);
 	}
 
+	/**
+	 * The model's one-line purpose for a shell call (the `i` arg), titling its
+	 * compact row above the command. Other tools' headers already name their
+	 * subject, so only bash takes it.
+	 */
+	#compactIntent(): string | undefined {
+		if (this.#toolName !== "bash" || !isRecord(this.#args)) return undefined;
+		const intent = this.#args[INTENT_FIELD];
+		return typeof intent === "string" ? sanitizeText(intent).replace(/\s+/g, " ").trim() || undefined : undefined;
+	}
+
 	#rebuildDisplay(): void {
 		// Sync shared mutable render state for component closures
 		this.#renderState.expanded = this.#expanded;
@@ -1544,7 +1567,12 @@ export class ToolExecutionComponent extends Container {
 								this.#toolName,
 								"result",
 								compact
-									? new ToolResultHeaderRow(resultComponent, this.#toolName, this.#toolLabel)
+									? new ToolResultHeaderRow(
+											resultComponent,
+											this.#toolName,
+											this.#toolLabel,
+											this.#compactIntent(),
+										)
 									: resultComponent,
 								() => {
 									const output = this.#getTextOutput();
@@ -1706,7 +1734,12 @@ export class ToolExecutionComponent extends Container {
 									this.#toolName,
 									"result",
 									compact
-										? new ToolResultHeaderRow(resultComponent, this.#toolName, this.#toolLabel)
+										? new ToolResultHeaderRow(
+												resultComponent,
+												this.#toolName,
+												this.#toolLabel,
+												this.#compactIntent(),
+											)
 										: resultComponent,
 									() => {
 										const output = this.#getTextOutput();
