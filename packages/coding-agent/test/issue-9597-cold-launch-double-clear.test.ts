@@ -67,6 +67,7 @@ describe("issue #9597 — cold-launch welcome duplication", () => {
 			spellingTypoDetection: cfgSpellingTypoDetection.get(settings),
 			spellingAutocomplete: cfgSpellingAutocomplete.get(settings),
 			spellingAutocorrect: cfgSpellingAutocorrect.get(settings),
+			pinnedInput: false,
 		};
 	});
 

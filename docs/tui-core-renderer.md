@@ -56,6 +56,15 @@ current width; open Markdown and the current partial suffix remain mutable. Unde
 only the current logical head can emit enough stable rows to relieve overflow without finalizing. Final
 retirement writes only its un-emitted suffix.
 
+With the `pinnedInput` composer preference (`tui.pinnedInput`), the composer
+offers no new history: every frame is a full-height viewport whose bottom
+rows are the chrome below the transcript and whose remaining rows are a window
+over the header plus every transcript block
+(`TranscriptContainer.renderScrollWindow()`). Following the newest rows walks
+blocks bottom-up only until the window fills; a scrolled window is anchored to
+its top row, so streamed rows never move it. The shutdown flush switches back to
+ordinary retirement, so the transcript still lands in native scrollback on exit.
+
 ## 2. Rendering a frame
 
 For every frame the TUI:

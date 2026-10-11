@@ -571,6 +571,21 @@ export const cfgTuiMouse = register({
 	},
 });
 
+export const cfgTuiPinnedInput = register({
+	id: "tui.pinnedInput",
+	type: "boolean",
+	default: false,
+	ui: {
+		tab: "appearance",
+		group: "Display",
+		label: "Pinned Input",
+		get description() {
+			const shift = formatKeyHint("shift");
+			return `Keep the input box fixed at the bottom of the terminal and scroll the conversation in its own region (mouse wheel, ${shift}+PgUp/PgDn). The conversation stays out of terminal scrollback until exit; native text selection becomes ${shift}+drag while on`;
+		},
+	},
+});
+
 export const cfgTuiTight = register({
 	id: "tui.tight",
 	type: "boolean",

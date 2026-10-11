@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the `pinnedInput` composer preference: the chrome below the transcript owns the bottom rows and the header plus transcript render through `TranscriptContainer.renderScrollWindow()` into a scrollable window above it, driven by `Composer.scrollTranscript()`, `scrollTranscriptPage()`, and `followTranscript()`; nothing retires to native scrollback until the shutdown flush ([#1155](https://github.com/can1357/oh-my-pi/issues/1155))
+
 ### Fixed
 
 - Improved responsiveness when placing assistant text after tool calls in long transcripts ([#12178](https://github.com/can1357/oh-my-pi/issues/12178), [#14344](https://github.com/can1357/oh-my-pi/pull/14344) by [@F0Rextasy](https://github.com/F0Rextasy), [#15353](https://github.com/can1357/oh-my-pi/pull/15353) by [@iliaal](https://github.com/iliaal)).

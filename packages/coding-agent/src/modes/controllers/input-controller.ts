@@ -81,11 +81,14 @@ import {
 	cfgImagesAutoResize,
 	cfgPasteLargeMenuThreshold,
 	cfgTuiMouse,
+	cfgTuiPinnedInput,
 } from "../settings";
 import { cfgHideThinkingBlock } from "../../session/settings";
 
 /** Bare words that quit (as `/<word>`) when typed alone into a session with no messages. */
 const BARE_EXIT_WORDS: Record<string, true> = { exit: true, quit: true, q: true };
+/** Transcript rows one wheel notch scrolls in the pinned-input layout. */
+const WHEEL_SCROLL_ROWS = 3;
 
 /**
  * Slash commands that may carry secrets in their arguments should never be
@@ -371,6 +374,16 @@ export class InputController {
 			// These actions target the main transcript/editor rather than the
 			// focused prompt. Keep focused components' own bindings authoritative.
 			this.ctx.ui.addInputListener(data => {
+				// Scroll gestures fall through while the pinned layout is off, so the
+				// focused component keeps its own Shift+PgUp/PgDn handling.
+				if (this.ctx.keybindings.matches(data, "app.transcript.scrollUp")) {
+					if (this.ctx.ui.hasOverlay() || !this.ctx.scrollTranscriptPage(-1)) return undefined;
+					return { consume: true };
+				}
+				if (this.ctx.keybindings.matches(data, "app.transcript.scrollDown")) {
+					if (this.ctx.ui.hasOverlay() || !this.ctx.scrollTranscriptPage(1)) return undefined;
+					return { consume: true };
+				}
 				if (this.ctx.keybindings.matches(data, "app.thinking.toggle")) {
 					if (this.ctx.ui.hasOverlay()) return undefined;
 					this.ctx.toggleThinkingBlockVisibility();
@@ -448,8 +461,8 @@ export class InputController {
 		}
 		if (!this.#inlineMouseListenerInstalled) {
 			this.#inlineMouseListenerInstalled = true;
-			// Inline click-to-focus (`tui.mouse`): SGR reports only arrive while
-			// the setting has tracking enabled, so this stays inert otherwise.
+			// Inline mouse (`tui.mouse`, `tui.pinnedInput`): SGR reports only arrive
+			// while one of them has tracking enabled, so this stays inert otherwise.
 			// Defers to fullscreen overlays, which own mouse handling on the
 			// alternate screen.
 			this.ctx.ui.addInputListener(data => this.#handleInlineMouse(data));
@@ -757,19 +770,23 @@ export class InputController {
 	}
 
 	/**
-	 * Inline click-to-focus (`tui.mouse`): left-clicks on live subagent cards
-	 * and HUD rows focus that agent in one action, and pointer motion lights up
-	 * the hover band on the target under the cursor. Every SGR report is consumed
-	 * while inline tracking owns the terminal so button/wheel bytes never reach
-	 * the editor as typed input; clicks on chrome simply swallow.
+	 * Inline mouse reporting (`tui.mouse`, `tui.pinnedInput`): the wheel scrolls
+	 * the pinned transcript window; with click capture on, left-clicks on live
+	 * subagent cards and HUD rows focus that agent in one action, and pointer
+	 * motion lights up the hover band on the target under the cursor. Every SGR
+	 * report is consumed while inline tracking owns the terminal so button/wheel
+	 * bytes never reach the editor as typed input; clicks on chrome simply swallow.
 	 */
 	#handleInlineMouse(data: string): { consume?: boolean; data?: string } | undefined {
 		if (!data.startsWith("\x1b[<")) return undefined;
-		if (!cfgTuiMouse.get(this.ctx.settings)) return undefined;
+		const clickCapture = cfgTuiMouse.get(this.ctx.settings);
+		if (!clickCapture && !cfgTuiPinnedInput.get(this.ctx.settings)) return undefined;
 		if (this.ctx.ui.hasOverlay()) return undefined;
 		const event = parseSgrMouse(data);
 		if (!event) return undefined;
-		if (event.motion) this.#updateHoverHighlight(event.row);
+		if (event.wheel !== null) this.ctx.scrollTranscript(event.wheel * WHEEL_SCROLL_ROWS);
+		else if (!clickCapture) return { consume: true };
+		else if (event.motion) this.#updateHoverHighlight(event.row);
 		else if (event.leftClick) this.#focusClickedAgent(event.row);
 		return { consume: true };
 	}

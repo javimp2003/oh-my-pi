@@ -377,6 +377,7 @@ import {
 	cfgTuiMaxInlineImages,
 	cfgTuiAutoGraph,
 	cfgTuiMouse,
+	cfgTuiPinnedInput,
 	cfgTuiRenderMermaid,
 	cfgTuiRenderSvg,
 	cfgTuiResizeScrollback,
@@ -416,6 +417,7 @@ const cfgLiveUiSettings = combine({
 	showHardwareCursor: cfgShowHardwareCursor,
 	"tui.maxInlineImages": cfgTuiMaxInlineImages,
 	"tui.resizeScrollback": cfgTuiResizeScrollback,
+	"tui.pinnedInput": cfgTuiPinnedInput,
 	"tui.imeSafeCursor": cfgTuiImeSafeCursor,
 	autocompleteMaxVisible: cfgAutocompleteMaxVisible,
 	"spelling.typoDetection": cfgSpellingTypoDetection,
@@ -1648,6 +1650,14 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.composer.setHoveredClickId(id);
 	}
 
+	scrollTranscript(rows: number): boolean {
+		return this.composer.scrollTranscript(rows);
+	}
+
+	scrollTranscriptPage(direction: -1 | 1): boolean {
+		return this.composer.scrollTranscriptPage(direction);
+	}
+
 	clearTransientSessionUi(): void {
 		this.#hideSessionInfo();
 		if (this.loadingAnimation) {
@@ -1690,6 +1700,8 @@ export class InteractiveMode implements InteractiveModeContext {
 	#eventBusUnsubscribers: Array<() => void> = [];
 	/** Mirror of `tui.mouse`, read by the TUI's per-frame inline mouse tracking probe. */
 	#mouseCapture = false;
+	/** Mirror of `tui.pinnedInput`: its transcript window scrolls by wheel, so it needs mouse reporting too. */
+	#pinnedInput = false;
 	#observerUiSyncTimer?: NodeJS.Timeout;
 	/** Repaints the subagent HUD so live-preview elapsed markers advance between progress events. */
 	#subagentPreviewTickTimer?: NodeJS.Timeout;
@@ -1814,7 +1826,14 @@ export class InteractiveMode implements InteractiveModeContext {
 				this.ui.requestRender();
 			}),
 		);
-		this.ui.setInlineMouseTrackingProvider(() => this.#mouseCapture);
+		this.#pinnedInput = cfgTuiPinnedInput.get(this.settings);
+		this.#eventBusUnsubscribers.push(
+			cfgTuiPinnedInput.listen(this.settings, on => {
+				this.#pinnedInput = on;
+				this.ui.requestRender();
+			}),
+		);
+		this.ui.setInlineMouseTrackingProvider(() => this.#mouseCapture || this.#pinnedInput);
 		this.chatContainer = new TranscriptContainer();
 		this.pendingMessagesContainer = new AnchoredLiveContainer();
 		this.progressHudContainer = new AnchoredLiveContainer();
@@ -3261,6 +3280,8 @@ export class InteractiveMode implements InteractiveModeContext {
 		},
 		options?: { preserveDraft?: boolean; clearEditor?: boolean },
 	): SubmittedUserInput {
+		// A submitted prompt answers the newest output: bring the pinned window back to it.
+		this.composer.followTranscript();
 		const submission: SubmittedUserInput = {
 			text: input.text,
 			images: input.images,
@@ -3427,6 +3448,7 @@ export class InteractiveMode implements InteractiveModeContext {
 			spellingTypoDetection: cfgSpellingTypoDetection.get(this.settings),
 			spellingAutocomplete: cfgSpellingAutocomplete.get(this.settings),
 			spellingAutocorrect: cfgSpellingAutocorrect.get(this.settings),
+			pinnedInput: cfgTuiPinnedInput.get(this.settings),
 		};
 	}
 
@@ -3468,6 +3490,7 @@ export class InteractiveMode implements InteractiveModeContext {
 				"spelling.typoDetection",
 				"spelling.autocomplete",
 				"spelling.autocorrect",
+				"tui.pinnedInput",
 			)
 		) {
 			this.composer.setPreferences(this.#liveComposerPreferences());

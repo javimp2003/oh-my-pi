@@ -817,6 +817,77 @@ export class TranscriptContainer extends Container {
 	}
 
 	/**
+	 * Pinned-input layout: every block (committed included) at full height
+	 * below `lead`, cut to a `capacity`-row window. `anchor` is the window's top
+	 * row while the user reads older rows, `undefined` while it follows the
+	 * newest ones; `delta` scrolls it (negative = up). Following walks
+	 * bottom-up and stops once the window is full, so a streaming turn costs a
+	 * tail render. An anchored or scrolling window lays out the whole ledger,
+	 * since clamping and anchoring need the total height. The resolved anchor
+	 * returns to `undefined` once the window reaches the bottom; `below` counts
+	 * the rows under the window. Spans land in {@link getLastViewportSpans}.
+	 */
+	renderScrollWindow(
+		width: number,
+		capacity: number,
+		anchor: number | undefined,
+		delta: number,
+		frame: AnimationFrame,
+		lead: readonly string[] = EMPTY_ROWS,
+	): { rows: readonly string[]; anchor: number | undefined; below: number } {
+		this.#closeFrame();
+		this.#lastFrame = frame;
+		this.#syncEntries();
+		this.#settleFinalized();
+		const cap = Math.max(0, Math.trunc(capacity));
+		const follow = anchor === undefined && delta >= 0;
+		const blocks: { component: Component; rows: readonly string[] }[] = [];
+		let height = 0;
+		let reachedTop = true;
+		for (let index = this.#entries.length - 1; index >= 0; index--) {
+			if (follow && height >= cap) {
+				reachedTop = false;
+				break;
+			}
+			const entry = this.#entries[index]!;
+			this.#setAllocation(entry.component, Number.MAX_SAFE_INTEGER, frame);
+			const block = this.#renderEntry(entry, width);
+			if (block.length === 0) continue;
+			height += block.length + (blocks.length > 0 ? 1 : 0);
+			blocks.push({ component: entry.component, rows: block });
+		}
+		blocks.reverse();
+		const rows: string[] = [];
+		const owners: (Component | undefined)[] = [];
+		if (reachedTop) {
+			for (const line of lead) {
+				rows.push(line);
+				owners.push(undefined);
+			}
+		}
+		for (let index = 0; index < blocks.length; index++) {
+			if (index > 0) {
+				rows.push("");
+				owners.push(undefined);
+			}
+			const { component, rows: block } = blocks[index]!;
+			for (const line of block) {
+				rows.push(line);
+				owners.push(component);
+			}
+		}
+		const maxTop = Math.max(0, rows.length - cap);
+		const top = follow ? maxTop : Math.min(maxTop, Math.max(0, (anchor ?? maxTop) + delta));
+		const end = Math.min(rows.length, top + cap);
+		this.#commitViewportSpans(owners.slice(top, end));
+		return {
+			rows: top === 0 && end === rows.length ? rows : rows.slice(top, end),
+			anchor: top >= maxTop ? undefined : top,
+			below: rows.length - end,
+		};
+	}
+
+	/**
 	 * The transcript's blocks for a native (TSP) surface, one component per
 	 * `main` child in transcript order; ids follow component identity, so
 	 * inserts, removals (rewind, displacement) and reorders become targeted ops.

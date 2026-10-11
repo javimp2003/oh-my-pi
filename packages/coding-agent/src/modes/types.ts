@@ -163,6 +163,10 @@ export interface InteractiveModeContext {
 	togglePinnedHudExpanded(): void;
 	/** Point the inline hover band at a click-candidate id (or clear it). */
 	setClickHoverId(id: string | undefined): void;
+	/** Scroll the `tui.pinnedInput` transcript window by rows (negative = older); false when the layout is off. */
+	scrollTranscript(rows: number): boolean;
+	/** Scroll the `tui.pinnedInput` transcript window one page; false when the layout is off. */
+	scrollTranscriptPage(direction: -1 | 1): boolean;
 	/** Clear loader, transient HUD/pending containers, streaming state, and pending tools. */
 	clearTransientSessionUi(): void;
 	settings: Settings;

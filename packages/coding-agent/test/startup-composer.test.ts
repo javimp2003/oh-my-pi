@@ -289,6 +289,7 @@ describe("Composer prepaint", () => {
 			spellingTypoDetection: cfgSpellingTypoDetection.get(settings),
 			spellingAutocomplete: cfgSpellingAutocomplete.get(settings),
 			spellingAutocorrect: cfgSpellingAutocorrect.get(settings),
+			pinnedInput: false,
 		};
 	});
 
@@ -740,6 +741,7 @@ describe("Composer prepaint", () => {
 			spellingTypoDetection: cfgSpellingTypoDetection.get(settings),
 			spellingAutocomplete: cfgSpellingAutocomplete.get(settings),
 			spellingAutocorrect: cfgSpellingAutocorrect.get(settings),
+			pinnedInput: false,
 			theme: {},
 		});
 		await terminal.waitForRender();

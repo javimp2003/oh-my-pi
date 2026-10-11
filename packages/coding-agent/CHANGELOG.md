@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the opt-in `tui.pinnedInput` setting (Settings → Appearance → Pinned Input): the input box, status line, and HUDs stay fixed on the bottom rows while the conversation scrolls in its own region above with the mouse wheel or `Shift+PgUp`/`Shift+PgDn` (`app.transcript.scrollUp`/`app.transcript.scrollDown`). A scrolled-up view holds still while output streams in; scrolling back to the bottom or submitting a prompt resumes following ([#1155](https://github.com/can1357/oh-my-pi/issues/1155))
+
 ### Changed
 
 - Reduced interactive startup memory usage for new sessions by initializing syntax highlighting only when needed; resumed sessions still prepare highlighting in the background so the restored transcript paints without delay ([#15299](https://github.com/can1357/oh-my-pi/pull/15299) by [@iliaal](https://github.com/iliaal))

@@ -99,6 +99,7 @@ function parseUiState(
 		spellingTypoDetection,
 		spellingAutocomplete,
 		spellingAutocorrect,
+		pinnedInput,
 	} = value.preferences;
 	if (
 		typeof quiet !== "boolean" ||
@@ -113,7 +114,8 @@ function parseUiState(
 		typeof autocompleteMaxVisible !== "number" ||
 		typeof spellingTypoDetection !== "boolean" ||
 		!isWordCompletionMethod(spellingAutocomplete) ||
-		typeof spellingAutocorrect !== "boolean"
+		typeof spellingAutocorrect !== "boolean" ||
+		(pinnedInput !== undefined && typeof pinnedInput !== "boolean")
 	) {
 		return undefined;
 	}
@@ -141,6 +143,7 @@ function parseUiState(
 			spellingTypoDetection,
 			spellingAutocomplete,
 			spellingAutocorrect,
+			pinnedInput: pinnedInput ?? false,
 		},
 		theme: { symbolPreset, colorBlindMode, darkTheme, lightTheme },
 	};

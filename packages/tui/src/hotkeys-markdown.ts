@@ -151,6 +151,10 @@ function hotkeyGroups(bindings: HotkeysMarkdownBindings): HotkeyGroup[] {
 				},
 				{ keys: [act("app.live.toggle")], action: "Start/stop live voice mode (/live)" },
 				{
+					keys: [act("app.transcript.scrollUp"), { text: " / " }, act("app.transcript.scrollDown")],
+					action: "Scroll the conversation a page (Pinned Input layout)",
+				},
+				{
 					keys: [
 						act("app.agents.hub"),
 						{ text: " / " },

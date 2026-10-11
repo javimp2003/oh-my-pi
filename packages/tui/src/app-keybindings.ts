@@ -63,6 +63,8 @@ interface AppKeybindings {
 	"app.stt.pushToTalk": true;
 	"app.stt.toggle": true;
 	"app.live.toggle": true;
+	"app.transcript.scrollUp": true;
+	"app.transcript.scrollDown": true;
 }
 
 /** Application action identifier registered alongside the base TUI keybindings. */
@@ -249,6 +251,14 @@ export const KEYBINDINGS = {
 	"app.live.toggle": {
 		defaultKeys: "ctrl+l",
 		description: "Start or stop live voice mode (/live)",
+	},
+	"app.transcript.scrollUp": {
+		defaultKeys: "shift+pageUp",
+		description: "Scroll the conversation up a page (tui.pinnedInput)",
+	},
+	"app.transcript.scrollDown": {
+		defaultKeys: "shift+pageDown",
+		description: "Scroll the conversation down a page (tui.pinnedInput)",
 	},
 } as const satisfies KeybindingDefinitions;
 

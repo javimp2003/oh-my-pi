@@ -15,7 +15,7 @@ import {
 	type TUIOptions,
 	type ViewportSize,
 } from "../tui";
-import { wrapLiteralLine } from "../utils";
+import { Ellipsis, truncateToWidth, wrapLiteralLine } from "../utils";
 import type { NativeChild, NativeSurface, NativeSurfaceProvider } from "../native/node";
 import { sameItems } from "../native/memo";
 import { postmortem } from "@oh-my-pi/pi-utils";
@@ -26,6 +26,8 @@ import { WelcomeComponent } from "./welcome";
 import { ensureThemeSync, getEditorTheme, theme } from "../theme/theme";
 
 const DOUBLE_INTERRUPT_MS = 500;
+/** Rows a page scroll keeps from the previous window, so reading stays continuous. */
+const PAGE_SCROLL_OVERLAP = 2;
 
 /** Live settings that affect the composer before and after session adoption. */
 export interface ComposerPreferences {
@@ -39,6 +41,12 @@ export interface ComposerPreferences {
 	readonly spellingTypoDetection: boolean;
 	readonly spellingAutocomplete: WordCompletionMethod;
 	readonly spellingAutocorrect: boolean;
+	/**
+	 * Keep the editor and status chrome fixed on the bottom rows: the
+	 * transcript renders into its own scrollable window above them and never
+	 * retires to native scrollback while on (see {@link Composer.scrollTranscript}).
+	 */
+	readonly pinnedInput: boolean;
 }
 
 /** Settings-schema-compatible defaults used when constructing a dependency-free composer. */
@@ -53,6 +61,7 @@ export const COMPOSER_DEFAULTS: ComposerPreferences = {
 	spellingTypoDetection: true,
 	spellingAutocomplete: "auto",
 	spellingAutocorrect: false,
+	pinnedInput: false,
 };
 
 /** Welcome data that can be supplied initially or patched as startup resolves it. */
@@ -278,6 +287,16 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	#started = false;
 	#stopped = false;
 	#transferred = false;
+	/**
+	 * Pinned-input window top row while the user reads older transcript rows;
+	 * `undefined` follows the newest rows. Anchored to the top of the content,
+	 * so rows streaming in below never move what the user is reading.
+	 */
+	#scrollAnchor: number | undefined;
+	/** Rows requested by scroll gestures since the last frame (negative = up). */
+	#scrollDelta = 0;
+	/** Transcript window height of the last pinned frame: the page size. */
+	#scrollCapacity = 0;
 
 	constructor(options: ComposerOptions = {}) {
 		ensureThemeSync();
@@ -380,6 +399,11 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			return { viewport: this.#renderRoots(roots, width).slice(-rows) };
 		}
 		const transcript = roots[transcriptIndex] as TranscriptContainer;
+		// A shutdown flush leaves the pinned layout: the transcript retires to
+		// native scrollback so it outlives the session like inline output does.
+		if (this.#preferences.pinnedInput && !this.#historyFlush) {
+			return this.#renderPinnedFrame(roots, transcriptIndex, width, rows);
+		}
 		const preRoots = this.#renderRoots(roots.slice(0, transcriptIndex), width);
 		const afterRoots = roots.slice(transcriptIndex + 1);
 		const after: string[] = [];
@@ -470,6 +494,99 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			this.#retiredHeaderStart = Math.max(0, history.rows.length - visibleHeaderRows);
 		}
 		return { history, viewport: this.#paintHoverBand(mutable, spans) };
+	}
+
+	/**
+	 * Pinned-input frame: the chrome below the transcript (editor, status,
+	 * HUDs) owns the bottom rows and the header plus transcript scroll in the
+	 * window above, so the viewport always spans the whole screen and nothing
+	 * retires to native history. Content shorter than the window is top-aligned
+	 * and the gap above the chrome stays blank.
+	 */
+	#renderPinnedFrame(
+		roots: readonly Component[],
+		transcriptIndex: number,
+		width: number,
+		rows: number,
+	): TerminalFramePlan {
+		const transcript = roots[transcriptIndex] as TranscriptContainer;
+		const after: string[] = [];
+		const afterSpans: ViewportClickSpan[] = [];
+		const ends: { root: Component; end: number }[] = [];
+		for (const root of roots.slice(transcriptIndex + 1)) {
+			this.#renderBelowRoot(root, width, after, afterSpans);
+			ends.push({ root, end: after.length });
+		}
+		this.#rowsBelow = new Map(ends.map(({ root, end }) => [root, after.length - end]));
+		// A batch offered before the switch still completes its handshake; no new
+		// batch is offered while pinned.
+		const history =
+			this.#offeredHistory === undefined ? undefined : this.#offerHistory(transcript, width, rows, after.length);
+		const lead = [...this.#header.render(width), ...this.#renderRoots(roots.slice(0, transcriptIndex), width)];
+		const capacity = Math.max(0, rows - after.length);
+		const now = performance.now();
+		const window = transcript.renderScrollWindow(
+			width,
+			capacity,
+			this.#scrollAnchor,
+			this.#scrollDelta,
+			{ now, tick: Math.floor(now / 80) },
+			lead,
+		);
+		this.#scrollAnchor = window.anchor;
+		this.#scrollDelta = 0;
+		this.#scrollCapacity = capacity;
+		const content = window.rows.slice();
+		if (window.anchor !== undefined && content.length > 0) {
+			const label = ` ↓ ${window.below} more ${window.below === 1 ? "row" : "rows"} below — scroll down to follow `;
+			content[content.length - 1] = theme.fg("dim", truncateToWidth(label, width, Ellipsis.Omit));
+		}
+		const gap = capacity - content.length;
+		const mutable = [...content, ...Array<string>(gap).fill(""), ...after];
+		const drop = Math.max(0, mutable.length - rows);
+		const viewport = drop > 0 ? mutable.slice(drop) : mutable;
+		const spans: ViewportClickSpan[] = [];
+		const place = (span: ViewportClickSpan, base: number): void => {
+			const start = span.start + base - drop;
+			const end = Math.min(span.end + base - drop, viewport.length);
+			const clamped = Math.max(0, start);
+			if (end <= clamped) return;
+			const skew = clamped - start;
+			spans.push({ start: clamped, end, candidates: (local: number) => span.candidates(local + skew) });
+		};
+		for (const span of transcript.getLastViewportSpans()) {
+			const ids = (span.component as Partial<{ getClickFocusAgentIds(): string[] }>).getClickFocusAgentIds?.();
+			if (ids && ids.length > 0) place({ start: span.start, end: span.end, candidates: () => ids }, 0);
+		}
+		for (const span of afterSpans) place(span, capacity);
+		this.#lastClickSpans = spans;
+		return { history, viewport: this.#paintHoverBand(viewport, spans) };
+	}
+
+	/**
+	 * Scroll the pinned-input transcript window by `rows` (negative = toward
+	 * older rows). Scrolling back to the bottom resumes following new output.
+	 * Returns false when the pinned layout is off, so callers can fall through.
+	 */
+	scrollTranscript(rows: number): boolean {
+		if (!this.#preferences.pinnedInput || this.#stopped) return false;
+		if (rows === 0) return true;
+		this.#scrollDelta += Math.trunc(rows);
+		this.ui.requestRender();
+		return true;
+	}
+
+	/** Scroll the pinned-input transcript window by one page in `direction`. */
+	scrollTranscriptPage(direction: -1 | 1): boolean {
+		return this.scrollTranscript(direction * Math.max(1, this.#scrollCapacity - PAGE_SCROLL_OVERLAP));
+	}
+
+	/** Jump the pinned-input transcript window back to the newest rows and follow them. */
+	followTranscript(): void {
+		if (this.#scrollAnchor === undefined && this.#scrollDelta === 0) return;
+		this.#scrollAnchor = undefined;
+		this.#scrollDelta = 0;
+		this.ui.requestRender();
 	}
 
 	/**
@@ -845,7 +962,12 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	setPreferences(update: Partial<ComposerPreferences>): void {
 		if (this.#stopped) return;
 		const wasQuiet = this.#preferences.quiet;
+		const wasPinned = this.#preferences.pinnedInput;
 		this.#preferences = { ...this.#preferences, ...update };
+		if (wasPinned !== this.#preferences.pinnedInput) {
+			this.#scrollAnchor = undefined;
+			this.#scrollDelta = 0;
+		}
 		this.editor.setTheme(getEditorTheme());
 		try {
 			this.editor.setBorderStyle(this.#preferences.composerShape);
