@@ -595,7 +595,7 @@ export const cfgTuiStickyPrompt = register({
 		group: "Display",
 		label: "Sticky Prompt",
 		description:
-			"With Pinned Input on, keep the latest prompt you sent on the top row while the conversation scrolls below it",
+			"With Pinned Input on, the prompt the visible conversation answers stays on the top row, in its own bubble style, until that prompt itself scrolls into view",
 	},
 });
 

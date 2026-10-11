@@ -210,16 +210,36 @@ describe("composer sticky prompt", () => {
 		return h;
 	}
 
-	it("pins the latest prompt to the top row while the transcript scrolls", async () => {
+	const text = (h: Harness, row: number): string => Bun.stripANSI(h.terminal.getViewport()[row] ?? "").trim();
+	const rowsWith = (h: Harness, needle: string): number[] =>
+		h.terminal.getViewport().flatMap((row, index) => (Bun.stripANSI(row).includes(needle) ? [index] : []));
+
+	it("tops the window with the prompt the visible rows answer", async () => {
 		const h = await stickyHarness();
-		const top = (): string => Bun.stripANSI(h.terminal.getViewport()[0]!).trimEnd();
-		expect(top()).toBe(" ❯ latest question …");
+		// Following the newest rows: the latest prompt scrolled off, so it labels the window.
+		expect(text(h, 0)).toBe("latest question");
 		expect(editorRow(h.terminal)).toBe(ROWS - 1);
+		// Scroll up until the latest prompt's own bubble is in view: it no longer
+		// repeats on top; the rows above it answer the first prompt.
+		while (rowsWith(h, "latest question").every(row => row === 0)) {
+			h.composer.scrollTranscript(-1);
+			await h.scheduler.settle(h.terminal);
+		}
+		const bubble = rowsWith(h, "latest question");
+		expect(bubble).toHaveLength(1);
+		expect(bubble[0]).toBeGreaterThan(0);
+		expect(text(h, 0)).toBe("first question");
+		// The sticky row is the prompt bubble's own row, theme background included.
+		expect(h.terminal.getViewportRowBackgroundValues(0)).toEqual(
+			h.terminal.getViewportRowBackgroundValues(bubble[0]!),
+		);
+		expect(h.terminal.getViewportRowBackgroundColumns(0)).toHaveLength(COLUMNS);
+		// At the very top the first prompt is in view and nothing is pinned over it.
 		h.composer.scrollTranscript(-1000);
 		await h.scheduler.settle(h.terminal);
-		expect(top()).toBe(" ❯ latest question …");
-		// The window below the sticky row reaches the transcript's first rows.
-		expect(h.terminal.getViewport().some(row => Bun.stripANSI(row).includes("first question"))).toBe(true);
+		const first = rowsWith(h, "first question");
+		expect(first).toHaveLength(1);
+		expect(first[0]).toBeGreaterThan(0);
 		h.composer.stop();
 	});
 

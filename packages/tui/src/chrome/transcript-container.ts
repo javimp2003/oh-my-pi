@@ -834,7 +834,11 @@ export class TranscriptContainer extends Container {
 	 * holds it (a mouse selection needs content coordinates that streamed rows
 	 * never shift); `below` counts the rows under the window. A full layout also
 	 * reports the window's first content row (`top`) and every content row
-	 * (`content`). Spans land in {@link getLastViewportSpans}.
+	 * (`content`). `stickyRow` marks sticky-header blocks with the offset of
+	 * their label row (`undefined` for other blocks); `sticky` is the newest
+	 * such block whose label row sits on or above the window's top row, i.e.
+	 * the block the visible rows belong to. Spans land in
+	 * {@link getLastViewportSpans}.
 	 */
 	renderScrollWindow(
 		width: number,
@@ -844,12 +848,14 @@ export class TranscriptContainer extends Container {
 		frame: AnimationFrame,
 		lead: readonly string[] = EMPTY_ROWS,
 		pin = false,
+		stickyRow?: (component: Component) => number | undefined,
 	): {
 		rows: readonly string[];
 		anchor: number | undefined;
 		below: number;
 		top?: number;
 		content?: readonly string[];
+		sticky?: { component: Component; row: number };
 	} {
 		this.#closeFrame();
 		this.#lastFrame = frame;
@@ -857,7 +863,7 @@ export class TranscriptContainer extends Container {
 		this.#settleFinalized();
 		const cap = Math.max(0, Math.trunc(capacity));
 		const follow = anchor === undefined && delta >= 0 && !pin;
-		const blocks: { component: Component; rows: readonly string[] }[] = [];
+		const blocks: { component: Component; rows: readonly string[]; index: number }[] = [];
 		let height = 0;
 		let reachedTop = true;
 		for (let index = this.#entries.length - 1; index >= 0; index--) {
@@ -870,11 +876,12 @@ export class TranscriptContainer extends Container {
 			const block = this.#renderEntry(entry, width);
 			if (block.length === 0) continue;
 			height += block.length + (blocks.length > 0 ? 1 : 0);
-			blocks.push({ component: entry.component, rows: block });
+			blocks.push({ component: entry.component, rows: block, index });
 		}
 		blocks.reverse();
 		const rows: string[] = [];
 		const owners: (Component | undefined)[] = [];
+		const starts: number[] = [];
 		if (reachedTop) {
 			for (const line of lead) {
 				rows.push(line);
@@ -887,6 +894,7 @@ export class TranscriptContainer extends Container {
 				owners.push(undefined);
 			}
 			const { component, rows: block } = blocks[index]!;
+			starts.push(rows.length);
 			for (const line of block) {
 				rows.push(line);
 				owners.push(component);
@@ -896,11 +904,27 @@ export class TranscriptContainer extends Container {
 		const top = follow ? maxTop : Math.min(maxTop, Math.max(0, (anchor ?? maxTop) + delta));
 		const end = Math.min(rows.length, top + cap);
 		this.#commitViewportSpans(owners.slice(top, end));
+		let sticky: { component: Component; row: number } | undefined;
+		if (stickyRow !== undefined) {
+			for (let index = blocks.length - 1; index >= 0 && sticky === undefined; index--) {
+				const { component } = blocks[index]!;
+				const row = stickyRow(component);
+				if (row !== undefined && starts[index]! + row <= top) sticky = { component, row };
+			}
+			// Blocks a following window never rendered all sit above its top.
+			const oldest = blocks.length > 0 ? blocks[0]!.index : this.#entries.length;
+			for (let index = oldest - 1; index >= 0 && sticky === undefined; index--) {
+				const component = this.#entries[index]!.component;
+				const row = stickyRow(component);
+				if (row !== undefined) sticky = { component, row };
+			}
+		}
 		return {
 			rows: top === 0 && end === rows.length ? rows : rows.slice(top, end),
 			anchor: top >= maxTop && !pin ? undefined : top,
 			below: rows.length - end,
 			...(follow ? {} : { top, content: rows }),
+			...(sticky ? { sticky } : {}),
 		};
 	}
 
