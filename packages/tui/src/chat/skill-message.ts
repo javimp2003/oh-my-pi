@@ -48,6 +48,8 @@ export class SkillMessageComponent extends Container {
 	readonly #imageLinks?: readonly (string | undefined)[];
 	#expanded = false;
 	readonly #native = new Memo();
+	/** One-row card for a leading `/skill` token: the chip followed by the draft's first line. */
+	#stickyCard: SkillCallout | undefined;
 
 	constructor(message: CustomMessage<SkillPromptDetails>, imageLinks?: readonly (string | undefined)[]) {
 		super();
@@ -141,6 +143,17 @@ export class SkillMessageComponent extends Container {
 		this.#rebuild();
 	}
 
+	/**
+	 * The card as one row for the pinned layout's sticky prompt: a leading
+	 * `/skill` token heads its card with the chip and prompt size, so the
+	 * row joins the chip with the draft's first line instead (the user's
+	 * words plus the skill they invoked). Undefined for a mid-prompt token,
+	 * whose bubble already shows both on its first row.
+	 */
+	renderStickyLabel(width: number): string | undefined {
+		return this.#stickyCard?.render(width).find(row => /[\p{L}\p{N}]/u.test(Bun.stripANSI(row)));
+	}
+
 	override dispose(): void {
 		this.#disclosure?.dispose();
 		super.dispose();
@@ -150,6 +163,7 @@ export class SkillMessageComponent extends Container {
 		const expanded = this.#disclosure?.expanded ?? false;
 		this.#disclosure?.dispose();
 		this.clear();
+		this.#stickyCard = undefined;
 		const details = this.#message.details;
 		const name = details?.name?.trim() || "unknown";
 		const token = skillToken(name);
@@ -184,6 +198,9 @@ export class SkillMessageComponent extends Container {
 		const body = display.slice(label.length).trim();
 		const children: Component[] = [new Text(this.#header(label, details), 0, 0)];
 		if (body) children.push(new Spacer(1), this.#markdown(body, bubble));
+		const firstLine = body.split("\n")[0]?.trim();
+		const chip = this.#header(label, undefined);
+		this.#stickyCard = new SkillCallout([new Text(firstLine ? `${chip} ${firstLine}` : chip, 0, 0)]);
 		// The prompt disclosure nests inside the one callout so the
 		// skill-colored rail stays continuous across summary and detail.
 		const promptDisclosure = new Disclosure({

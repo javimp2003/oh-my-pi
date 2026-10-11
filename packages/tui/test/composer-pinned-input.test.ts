@@ -215,8 +215,12 @@ describe("composer sticky prompt", () => {
 	const rowsWith = (h: Harness, needle: string): number[] =>
 		h.terminal.getViewport().flatMap((row, index) => (Bun.stripANSI(row).includes(needle) ? [index] : []));
 
-	it("tops the window with a /skill prompt too", async () => {
-		for (const prompt of ["/skill:review check the parser", "please /skill:review the parser"]) {
+	it("tops the window with a /skill prompt's chip and words", async () => {
+		const cases = [
+			["/skill:review check the parser\nand the lexer", "✦ review check the parser"],
+			["please /skill:review the parser", "please ✦ review the parser"],
+		] as const;
+		for (const [prompt, label] of cases) {
 			const h = await makeHarness(0);
 			h.transcript.addChild(new UserMessageComponent("first question"));
 			addRows(h.transcript, 0, 40);
@@ -233,8 +237,8 @@ describe("composer sticky prompt", () => {
 			addRows(h.transcript, 40, 40);
 			h.composer.setPreferences({ stickyPrompt: true });
 			await h.scheduler.settle(h.terminal);
-			expect(text(h, 0)).toContain("review");
-			expect(text(h, 0)).not.toContain("first question");
+			expect(text(h, 0).replace(/\s+/g, " ")).toEndWith(label);
+			expect(text(h, 0)).not.toContain("line");
 			h.composer.stop();
 		}
 	});

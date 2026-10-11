@@ -615,8 +615,15 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			const label = ` ↓ ${window.below} more ${window.below === 1 ? "row" : "rows"} below — scroll down to follow `;
 			content[content.length - 1] = theme.fg("dim", truncateToWidth(label, width, Ellipsis.Omit));
 		}
-		// The prompt the visible rows answer covers the window's top row, drawn as its own bubble row.
-		const sticky = window.sticky?.component.render(width)[window.sticky.row];
+		// The prompt the visible rows answer covers the window's top row, drawn as its own bubble row
+		// (a leading-skill card supplies a row joining its chip and the draft).
+		const block = window.sticky;
+		const sticky =
+			block === undefined
+				? undefined
+				: ((block.component instanceof SkillMessageComponent
+						? block.component.renderStickyLabel(width)
+						: undefined) ?? block.component.render(width)[block.row]);
 		this.#stickyRows = sticky === undefined ? 0 : 1;
 		if (sticky !== undefined && content.length > 0) content[0] = sticky;
 		const gap = capacity - content.length;
