@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import { COMPOSER_DEFAULTS, Composer } from "@oh-my-pi/pi-tui/prompt/composer";
 import { TranscriptContainer } from "@oh-my-pi/pi-tui/chrome/transcript-container";
 import { UserMessageComponent } from "@oh-my-pi/pi-tui/chat/user-message";
+import { SkillMessageComponent } from "@oh-my-pi/pi-tui/chat/skill-message";
 import { initTheme } from "@oh-my-pi/pi-tui/theme";
 import { Text } from "@oh-my-pi/pi-tui";
 import { VirtualRenderScheduler } from "./virtual-render-scheduler";
@@ -213,6 +214,30 @@ describe("composer sticky prompt", () => {
 	const text = (h: Harness, row: number): string => Bun.stripANSI(h.terminal.getViewport()[row] ?? "").trim();
 	const rowsWith = (h: Harness, needle: string): number[] =>
 		h.terminal.getViewport().flatMap((row, index) => (Bun.stripANSI(row).includes(needle) ? [index] : []));
+
+	it("tops the window with a /skill prompt too", async () => {
+		for (const prompt of ["/skill:review check the parser", "please /skill:review the parser"]) {
+			const h = await makeHarness(0);
+			h.transcript.addChild(new UserMessageComponent("first question"));
+			addRows(h.transcript, 0, 40);
+			h.transcript.addChild(
+				new SkillMessageComponent({
+					role: "custom",
+					customType: "skill-prompt",
+					content: "Review carefully.",
+					display: true,
+					details: { name: "review", path: "/tmp/review/SKILL.md", lineCount: 1, prompt },
+					timestamp: 0,
+				}),
+			);
+			addRows(h.transcript, 40, 40);
+			h.composer.setPreferences({ stickyPrompt: true });
+			await h.scheduler.settle(h.terminal);
+			expect(text(h, 0)).toContain("review");
+			expect(text(h, 0)).not.toContain("first question");
+			h.composer.stop();
+		}
+	});
 
 	it("tops the window with the prompt the visible rows answer", async () => {
 		const h = await stickyHarness();

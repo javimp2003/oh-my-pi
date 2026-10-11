@@ -17,6 +17,7 @@ import {
 } from "../tui";
 import { Ellipsis, truncateToWidth, wrapLiteralLine } from "../utils";
 import { UserMessageComponent } from "../chat/user-message";
+import { SkillMessageComponent } from "../chat/skill-message";
 import type { NativeChild, NativeSurface, NativeSurfaceProvider } from "../native/node";
 import { sameItems } from "../native/memo";
 import { postmortem } from "@oh-my-pi/pi-utils";
@@ -643,13 +644,18 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 
 	/**
 	 * Sticky-header row of a transcript block for the pinned layout: a
-	 * prompt the user sent marks its turn with the first text row of its own
-	 * bubble, so the question the visible rows answer stays on the window's
-	 * top row. Synthetic injected input marks nothing.
+	 * prompt the user sent (a plain bubble, or the card of a `/skill`
+	 * invocation) marks its turn with the first text row of its own bubble,
+	 * so the question the visible rows answer stays on the window's top row.
+	 * Synthetic injected input marks nothing.
 	 */
 	#promptLabelRow(component: Component, width: number): number | undefined {
-		if (!(component instanceof UserMessageComponent) || !component.promptText?.trim()) return undefined;
-		const index = component.render(width).findIndex(row => Bun.stripANSI(row).trim() !== "");
+		const prompt =
+			component instanceof SkillMessageComponent ||
+			(component instanceof UserMessageComponent && component.promptText?.trim());
+		if (!prompt) return undefined;
+		// Bubble padding rows may carry a rail glyph (a skill card's `▎`) but no text.
+		const index = component.render(width).findIndex(row => /[\p{L}\p{N}]/u.test(Bun.stripANSI(row)));
 		return index < 0 ? undefined : index;
 	}
 
