@@ -167,6 +167,12 @@ export interface InteractiveModeContext {
 	scrollTranscript(rows: number): boolean;
 	/** Scroll the `tui.pinnedInput` transcript window one page; false when the layout is off. */
 	scrollTranscriptPage(direction: -1 | 1): boolean;
+	/** Start a `tui.mouseSelection` drag at a 0-based screen cell; false when the pinned layout is off or the cell is outside it. */
+	beginTextSelection(row: number, col: number): boolean;
+	/** Move the selection head to a 0-based screen cell. */
+	extendTextSelection(row: number, col: number): void;
+	/** End the drag; the selected text, or undefined for a press that never dragged. */
+	finishTextSelection(): string | undefined;
 	/** Clear loader, transient HUD/pending containers, streaming state, and pending tools. */
 	clearTransientSessionUi(): void;
 	settings: Settings;

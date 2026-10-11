@@ -351,6 +351,12 @@ export class VirtualTerminal implements Terminal {
 		return !!words && ((words[col * CELL_U32 + CELL_FLAGS] ?? 0) & CellFlags.ITALIC) !== 0;
 	}
 
+	/** Whether the cell at a viewport position carries the reverse-video attribute. */
+	getCellReverse(row: number, col: number): boolean {
+		const words = this.#presentedRowCells(row);
+		return !!words && ((words[col * CELL_U32 + CELL_FLAGS] ?? 0) & CellFlags.REVERSE) !== 0;
+	}
+
 	/**
 	 * Get the hardware cursor position within the visible viewport.
 	 * Both coordinates are 0-indexed; row is relative to the top of the active grid.

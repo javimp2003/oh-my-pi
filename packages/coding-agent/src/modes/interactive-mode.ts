@@ -1663,6 +1663,18 @@ export class InteractiveMode implements InteractiveModeContext {
 		return this.composer.scrollTranscriptPage(direction);
 	}
 
+	beginTextSelection(row: number, col: number): boolean {
+		return this.composer.beginSelection(row, col);
+	}
+
+	extendTextSelection(row: number, col: number): void {
+		this.composer.extendSelection(row, col);
+	}
+
+	finishTextSelection(): string | undefined {
+		return this.composer.finishSelection();
+	}
+
 	clearTransientSessionUi(): void {
 		this.#hideSessionInfo();
 		if (this.loadingAnimation) {

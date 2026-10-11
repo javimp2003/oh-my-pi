@@ -81,6 +81,7 @@ import {
 	cfgImagesAutoResize,
 	cfgPasteLargeMenuThreshold,
 	cfgTuiMouse,
+	cfgTuiMouseSelection,
 	cfgTuiPinnedInput,
 } from "../settings";
 import { cfgHideThinkingBlock } from "../../session/settings";
@@ -286,6 +287,8 @@ export class InputController {
 	#globalEditorActionsListenerInstalled = false;
 	#expandToolsListenerInstalled = false;
 	#inlineMouseListenerInstalled = false;
+	/** A `tui.mouseSelection` press is down: motion extends the selection and the release copies it. */
+	#selectionDrag = false;
 
 	/** Click-candidate id the hover band currently tracks; repaint only on change. */
 	#lastHoverClickId: string | undefined;
@@ -775,7 +778,8 @@ export class InputController {
 
 	/**
 	 * Inline mouse reporting (`tui.mouse`, `tui.pinnedInput`): the wheel scrolls
-	 * the pinned transcript window; with click capture on, left-clicks on live
+	 * the pinned transcript window; with `tui.mouseSelection`, a left drag selects
+	 * text and copies it on release; with click capture on, left-clicks on live
 	 * subagent cards and HUD rows focus that agent in one action, and pointer
 	 * motion lights up the hover band on the target under the cursor. Every SGR
 	 * report is consumed while inline tracking owns the terminal so button/wheel
@@ -784,15 +788,48 @@ export class InputController {
 	#handleInlineMouse(data: string): { consume?: boolean; data?: string } | undefined {
 		if (!data.startsWith("\x1b[<")) return undefined;
 		const clickCapture = cfgTuiMouse.get(this.ctx.settings);
-		if (!clickCapture && !cfgTuiPinnedInput.get(this.ctx.settings)) return undefined;
+		const pinned = cfgTuiPinnedInput.get(this.ctx.settings);
+		if (!clickCapture && !pinned) return undefined;
 		if (this.ctx.ui.hasOverlay()) return undefined;
 		const event = parseSgrMouse(data);
 		if (!event) return undefined;
-		if (event.wheel !== null) this.ctx.scrollTranscript(event.wheel * WHEEL_SCROLL_ROWS);
-		else if (!clickCapture) return { consume: true };
-		else if (event.motion) this.#updateHoverHighlight(event.row);
+		if (event.wheel !== null) {
+			this.ctx.scrollTranscript(event.wheel * WHEEL_SCROLL_ROWS);
+			return { consume: true };
+		}
+		if (pinned && cfgTuiMouseSelection.get(this.ctx.settings)) {
+			// A press starts a selection; the click action (agent focus) waits for a
+			// release that never dragged, so selecting over a card never opens it.
+			if (event.leftClick && this.ctx.beginTextSelection(event.row, event.col)) {
+				this.#selectionDrag = true;
+				return { consume: true };
+			}
+			// Left-button motion (low button bits 0) is the drag; button-less motion stays hover.
+			if (this.#selectionDrag && event.motion && (event.button & 3) === 0) {
+				this.ctx.extendTextSelection(event.row, event.col);
+				return { consume: true };
+			}
+			if (this.#selectionDrag && event.release) {
+				this.#selectionDrag = false;
+				const text = this.ctx.finishTextSelection();
+				if (text !== undefined) void this.#copySelection(text);
+				else if (clickCapture) this.#focusClickedAgent(event.row);
+				return { consume: true };
+			}
+		}
+		if (!clickCapture) return { consume: true };
+		if (event.motion) this.#updateHoverHighlight(event.row);
 		else if (event.leftClick) this.#focusClickedAgent(event.row);
 		return { consume: true };
+	}
+
+	async #copySelection(text: string): Promise<void> {
+		try {
+			await copyToClipboard(text);
+			this.ctx.showStatus(`Copied ${text.length} ${text.length === 1 ? "character" : "characters"}`);
+		} catch (error) {
+			this.ctx.showStatus(`Copy failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	/**

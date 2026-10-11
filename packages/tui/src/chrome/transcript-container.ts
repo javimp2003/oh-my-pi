@@ -830,8 +830,11 @@ export class TranscriptContainer extends Container {
 	 * bottom-up and stops once the window is full, so a streaming turn costs a
 	 * tail render. An anchored or scrolling window lays out the whole ledger,
 	 * since clamping and anchoring need the total height. The resolved anchor
-	 * returns to `undefined` once the window reaches the bottom; `below` counts
-	 * the rows under the window. Spans land in {@link getLastViewportSpans}.
+	 * returns to `undefined` once the window reaches the bottom unless `pin`
+	 * holds it (a mouse selection needs content coordinates that streamed rows
+	 * never shift); `below` counts the rows under the window. A full layout also
+	 * reports the window's first content row (`top`) and every content row
+	 * (`content`). Spans land in {@link getLastViewportSpans}.
 	 */
 	renderScrollWindow(
 		width: number,
@@ -840,13 +843,20 @@ export class TranscriptContainer extends Container {
 		delta: number,
 		frame: AnimationFrame,
 		lead: readonly string[] = EMPTY_ROWS,
-	): { rows: readonly string[]; anchor: number | undefined; below: number } {
+		pin = false,
+	): {
+		rows: readonly string[];
+		anchor: number | undefined;
+		below: number;
+		top?: number;
+		content?: readonly string[];
+	} {
 		this.#closeFrame();
 		this.#lastFrame = frame;
 		this.#syncEntries();
 		this.#settleFinalized();
 		const cap = Math.max(0, Math.trunc(capacity));
-		const follow = anchor === undefined && delta >= 0;
+		const follow = anchor === undefined && delta >= 0 && !pin;
 		const blocks: { component: Component; rows: readonly string[] }[] = [];
 		let height = 0;
 		let reachedTop = true;
@@ -888,8 +898,9 @@ export class TranscriptContainer extends Container {
 		this.#commitViewportSpans(owners.slice(top, end));
 		return {
 			rows: top === 0 && end === rows.length ? rows : rows.slice(top, end),
-			anchor: top >= maxTop ? undefined : top,
+			anchor: top >= maxTop && !pin ? undefined : top,
 			below: rows.length - end,
+			...(follow ? {} : { top, content: rows }),
 		};
 	}
 

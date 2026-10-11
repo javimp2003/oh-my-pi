@@ -581,8 +581,21 @@ export const cfgTuiPinnedInput = register({
 		label: "Pinned Input",
 		get description() {
 			const shift = formatKeyHint("shift");
-			return `Keep the input box fixed at the bottom of the terminal and scroll the conversation in its own region (mouse wheel, ${shift}+PgUp/PgDn). The conversation stays out of terminal scrollback until exit; native text selection becomes ${shift}+drag while on`;
+			return `Keep the input box fixed at the bottom of the terminal and scroll the conversation in its own region (mouse wheel, ${shift}+PgUp/PgDn). The conversation stays out of terminal scrollback until exit. Text selection is omp's own while on (see Mouse Text Selection); the terminal's native selection needs a modifier (${shift}, or Fn in macOS Terminal)`;
 		},
+	},
+});
+
+export const cfgTuiMouseSelection = register({
+	id: "tui.mouseSelection",
+	type: "boolean",
+	default: true,
+	ui: {
+		tab: "appearance",
+		group: "Display",
+		label: "Mouse Text Selection",
+		description:
+			"With Pinned Input on, drag with the mouse to select conversation or input text without a modifier key; the selection is copied to the clipboard when you release",
 	},
 });
 

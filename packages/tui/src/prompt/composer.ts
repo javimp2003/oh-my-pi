@@ -24,10 +24,13 @@ import type { WordCompletionMethod } from "./word-completion";
 import { type AnimationFrame, TranscriptContainer } from "../chrome/transcript-container";
 import { WelcomeComponent } from "./welcome";
 import { ensureThemeSync, getEditorTheme, theme } from "../theme/theme";
+import { orderSelection, paintSelection, type SelectionPoint, selectedText } from "./text-selection";
 
 const DOUBLE_INTERRUPT_MS = 500;
 /** Rows a page scroll keeps from the previous window, so reading stays continuous. */
 const PAGE_SCROLL_OVERLAP = 2;
+/** Pace of the one-row scroll while a selection drag rests on the window's edge. */
+const SELECTION_SCROLL_INTERVAL_MS = 60;
 
 /** Live settings that affect the composer before and after session adoption. */
 export interface ComposerPreferences {
@@ -297,6 +300,30 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	#scrollDelta = 0;
 	/** Transcript window height of the last pinned frame: the page size. */
 	#scrollCapacity = 0;
+	/**
+	 * Mouse text selection in the pinned layout (`tui.mouseSelection`).
+	 * `region` is where the press landed: the scrolling transcript window
+	 * (points in content rows, so the window can scroll under a drag) or the
+	 * chrome below it (points in chrome rows). `anchor` resolves on the first
+	 * frame after the press, which reports the window's content offset; `head`
+	 * keeps the pointer's viewport row and resolves every frame.
+	 */
+	#selection:
+		| {
+				region: "transcript" | "chrome";
+				press: SelectionPoint;
+				anchor: SelectionPoint | undefined;
+				head: SelectionPoint;
+				moved: boolean;
+				/** The window followed the newest rows when the press landed; release resumes that. */
+				following: boolean;
+				/** Last painted ordered range and the rows it indexes, for the copy on release. */
+				range?: { start: SelectionPoint; end: SelectionPoint; lines: readonly string[] };
+		  }
+		| undefined;
+	/** Repeats a one-row scroll while a selection drag rests against the window's top or bottom edge. */
+	#selectionScrollTimer: NodeJS.Timeout | undefined;
+	#selectionScrollDirection: -1 | 0 | 1 = 0;
 
 	constructor(options: ComposerOptions = {}) {
 		ensureThemeSync();
@@ -525,6 +552,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		const lead = [...this.#header.render(width), ...this.#renderRoots(roots.slice(0, transcriptIndex), width)];
 		const capacity = Math.max(0, rows - after.length);
 		const now = performance.now();
+		const selection = this.#selection;
 		const window = transcript.renderScrollWindow(
 			width,
 			capacity,
@@ -532,12 +560,37 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			this.#scrollDelta,
 			{ now, tick: Math.floor(now / 80) },
 			lead,
+			selection?.region === "transcript",
 		);
 		this.#scrollAnchor = window.anchor;
 		this.#scrollDelta = 0;
 		this.#scrollCapacity = capacity;
 		const content = window.rows.slice();
-		if (window.anchor !== undefined && content.length > 0) {
+		if (selection?.region === "transcript" && window.top !== undefined && window.content && capacity > 0) {
+			const top = window.top;
+			const clampRow = (row: number): number => top + Math.min(capacity - 1, Math.max(0, row));
+			selection.anchor ??= { row: clampRow(selection.press.row), col: selection.press.col };
+			// Past the window's bottom the drag covers whole rows; above the top it starts at column 0.
+			const head = selection.head;
+			const headCol = head.row >= capacity ? Number.POSITIVE_INFINITY : head.row < 0 ? 0 : head.col;
+			const [start, end] = orderSelection(selection.anchor, { row: clampRow(head.row), col: headCol });
+			selection.range = { start, end, lines: window.content };
+			for (let index = 0; index < content.length; index++) {
+				content[index] = paintSelection(content[index]!, top + index, start, end);
+			}
+		} else if (selection?.region === "chrome" && after.length > 0) {
+			const clampRow = (row: number): number => Math.min(after.length - 1, Math.max(0, row - capacity));
+			selection.anchor ??= { row: clampRow(selection.press.row), col: selection.press.col };
+			const [start, end] = orderSelection(selection.anchor, {
+				row: clampRow(selection.head.row),
+				col: selection.head.col,
+			});
+			selection.range = { start, end, lines: after.slice() };
+			for (let index = 0; index < after.length; index++)
+				after[index] = paintSelection(after[index]!, index, start, end);
+		}
+		// The follow hint would cover the row under a drag.
+		if (window.anchor !== undefined && content.length > 0 && selection === undefined) {
 			const label = ` ↓ ${window.below} more ${window.below === 1 ? "row" : "rows"} below — scroll down to follow `;
 			content[content.length - 1] = theme.fg("dim", truncateToWidth(label, width, Ellipsis.Omit));
 		}
@@ -587,6 +640,83 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		this.#scrollAnchor = undefined;
 		this.#scrollDelta = 0;
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Start a mouse selection at a screen cell (0-based) in the pinned layout.
+	 * Returns false when the pinned layout is off or the cell lies outside the
+	 * painted viewport, so callers can treat the press as an ordinary click.
+	 */
+	beginSelection(screenRow: number, col: number): boolean {
+		if (!this.#preferences.pinnedInput || this.#stopped) return false;
+		const viewport = this.ui.getMutableViewport();
+		const row = screenRow - viewport.top;
+		if (viewport.length === 0 || row < 0 || row >= viewport.length) return false;
+		this.#stopSelectionScroll();
+		const point = { row, col: Math.max(0, col) };
+		this.#selection = {
+			region: row < this.#scrollCapacity ? "transcript" : "chrome",
+			press: point,
+			anchor: undefined,
+			head: point,
+			moved: false,
+			following: this.#scrollAnchor === undefined,
+		};
+		this.ui.requestRender();
+		return true;
+	}
+
+	/**
+	 * Move the selection head to the pointer. A transcript drag held on the
+	 * window's top row, or past its bottom into the chrome, keeps scrolling the
+	 * window one row at a time so the selection can reach rows off screen.
+	 */
+	extendSelection(screenRow: number, col: number): void {
+		const selection = this.#selection;
+		if (selection === undefined) return;
+		const row = screenRow - this.ui.getMutableViewport().top;
+		selection.head = { row, col: Math.max(0, col) };
+		selection.moved ||= row !== selection.press.row || col !== selection.press.col;
+		if (selection.region === "transcript") {
+			this.#setSelectionScroll(row <= 0 ? -1 : row >= this.#scrollCapacity ? 1 : 0);
+		}
+		this.ui.requestInteractiveRender();
+	}
+
+	/**
+	 * End the selection and return its text, or undefined for a press that
+	 * never dragged (an ordinary click). The highlight clears and the window
+	 * resumes following when it rests at the bottom.
+	 */
+	finishSelection(): string | undefined {
+		const selection = this.#selection;
+		if (selection === undefined) return undefined;
+		this.#stopSelectionScroll();
+		this.#selection = undefined;
+		if (selection.following) this.#scrollAnchor = undefined;
+		this.ui.requestRender();
+		const range = selection.range;
+		if (!selection.moved || range === undefined) return undefined;
+		const text = selectedText(range.lines, range.start, range.end);
+		return text.trim() === "" ? undefined : text;
+	}
+
+	#setSelectionScroll(direction: -1 | 0 | 1): void {
+		if (direction === this.#selectionScrollDirection) return;
+		this.#stopSelectionScroll();
+		if (direction === 0) return;
+		// A drag that pulled older rows into view keeps them there on release.
+		if (direction < 0 && this.#selection) this.#selection.following = false;
+		this.#selectionScrollDirection = direction;
+		this.scrollTranscript(direction);
+		this.#selectionScrollTimer = setInterval(() => this.scrollTranscript(direction), SELECTION_SCROLL_INTERVAL_MS);
+		this.#selectionScrollTimer.unref?.();
+	}
+
+	#stopSelectionScroll(): void {
+		clearInterval(this.#selectionScrollTimer);
+		this.#selectionScrollTimer = undefined;
+		this.#selectionScrollDirection = 0;
 	}
 
 	/**
@@ -967,6 +1097,8 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		if (wasPinned !== this.#preferences.pinnedInput) {
 			this.#scrollAnchor = undefined;
 			this.#scrollDelta = 0;
+			this.#selection = undefined;
+			this.#stopSelectionScroll();
 		}
 		this.editor.setTheme(getEditorTheme());
 		try {

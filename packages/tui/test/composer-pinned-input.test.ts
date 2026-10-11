@@ -119,4 +119,51 @@ describe("composer pinned input", () => {
 		expect(editorRow(h.terminal)).toBeLessThan(ROWS - 1);
 		h.composer.stop();
 	});
+
+	it("selects across transcript rows by drag and returns the text on release", async () => {
+		const h = await makeHarness(3);
+		// Rows 0, 2, 4 hold transcript rows 0, 1, 2 (blank separators between blocks).
+		expect(h.composer.beginSelection(0, 1)).toBe(true);
+		h.composer.extendSelection(2, 10);
+		await h.scheduler.settle(h.terminal);
+		expect(h.terminal.getCellReverse(0, 1)).toBe(true);
+		expect(h.terminal.getCellReverse(0, 0)).toBe(false);
+		expect(h.terminal.getCellReverse(2, 11)).toBe(false);
+		// Text rows have no left padding: column 1 drops the first letter; the drag ends inclusive at column 10.
+		expect(h.composer.finishSelection()).toBe(`${PREFIX.slice(1)}0\n\n${PREFIX.slice(0, 11).trimEnd()}`);
+		h.composer.stop();
+	});
+
+	it("treats a press without a drag as a click and clears the highlight", async () => {
+		const h = await makeHarness(3);
+		expect(h.composer.beginSelection(0, 3)).toBe(true);
+		await h.scheduler.settle(h.terminal);
+		expect(h.composer.finishSelection()).toBeUndefined();
+		h.composer.stop();
+	});
+
+	it("selects input rows below the transcript window", async () => {
+		const h = await makeHarness(3);
+		expect(h.composer.beginSelection(ROWS - 1, 0)).toBe(true);
+		h.composer.extendSelection(ROWS - 1, 5);
+		await h.scheduler.settle(h.terminal);
+		expect(h.composer.finishSelection()).toBe("EDITOR");
+		h.composer.stop();
+	});
+
+	it("holds the window still under a drag while rows stream in, then follows again", async () => {
+		const h = await makeHarness(100);
+		const before = visibleRows(h.terminal);
+		expect(h.composer.beginSelection(1, 0)).toBe(true);
+		h.composer.extendSelection(3, 5);
+		await h.scheduler.settle(h.terminal);
+		addRows(h.transcript, 100, 3);
+		h.composer.ui.requestRender();
+		await h.scheduler.settle(h.terminal);
+		expect(visibleRows(h.terminal)).toEqual(before);
+		expect(h.composer.finishSelection()).toContain(`${PREFIX}${before[0]! + 1}`);
+		await h.scheduler.settle(h.terminal);
+		expect(visibleRows(h.terminal).at(-1)).toBe(102);
+		h.composer.stop();
+	});
 });
