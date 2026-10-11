@@ -104,6 +104,8 @@ describe("compact tool output", () => {
 			undefined,
 			ui,
 		);
+		// Execution-start args arrive without the harness-internal intent; the streamed one stays.
+		bash.updateArgs({ command: "which omp; omp --version" });
 		bash.updateResult({ content: [{ type: "text", text: "omp/18.8.7" }] }, false);
 		expect(visible(bash)).toEqual(["💻 bash: Checking installed omp", "└─ $ which omp; omp --version"]);
 		const rows = bash.render(90).map(row => Bun.stripANSI(row));

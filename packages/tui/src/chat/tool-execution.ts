@@ -207,6 +207,13 @@ class SafeToolRendererComponent implements Component {
 	}
 }
 
+/** The model's one-line purpose in a call's args (`i`), as one plain line. */
+function callIntent(args: unknown): string | undefined {
+	if (!isRecord(args)) return undefined;
+	const intent = args[INTENT_FIELD];
+	return typeof intent === "string" ? sanitizeText(intent).replace(/\s+/g, " ").trim() || undefined : undefined;
+}
+
 /**
  * Compact transcript view of a settled tool result (`display.compactToolOutput`):
  * one row naming the call and summarizing its outcome. A {@link ToolCard}
@@ -416,6 +423,12 @@ export class ToolExecutionComponent extends Container {
 	// previews, and Kitty PNG conversions. Folded into the dirty key so those
 	// updates are not swallowed by the memo (see #updateDisplay).
 	#displayInputVersion = 0;
+	/**
+	 * The model's one-line purpose for the call (the `i` arg), kept from the
+	 * streamed args: the execution-start args that replace them arrive with the
+	 * harness-internal intent already stripped.
+	 */
+	#intent: string | undefined;
 	// Set once #rebuildDisplay has populated the display. Replaces a
 	// #contentBox.children.length probe so the memo fast-path also covers the
 	// #contentText fallback path (which leaves #contentBox empty).
@@ -520,6 +533,7 @@ export class ToolExecutionComponent extends Container {
 		this.#tool = tool;
 		this.#ui = ui;
 		this.#args = args;
+		this.#intent = callIntent(args);
 		this.#editMode = resolveEditModeForTool(toolName, tool);
 		if (this.#editMode) this.#previewReady = Promise.withResolvers<void>();
 
@@ -554,6 +568,7 @@ export class ToolExecutionComponent extends Container {
 		// signals "nothing meaningful changed" and the renderer can skip.
 		if (args === this.#args) return;
 		this.#args = args;
+		this.#intent = callIntent(args) ?? this.#intent;
 		this.#displayInputVersion++;
 		this.#updateSpinnerAnimation();
 		this.#updateDisplay();
@@ -1454,14 +1469,11 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	/**
-	 * The model's one-line purpose for a shell call (the `i` arg), titling its
-	 * compact row above the command. Other tools' headers already name their
-	 * subject, so only bash takes it.
+	 * The intent titling a shell call's compact row above the command. Other
+	 * tools' headers already name their subject, so only bash takes it.
 	 */
 	#compactIntent(): string | undefined {
-		if (this.#toolName !== "bash" || !isRecord(this.#args)) return undefined;
-		const intent = this.#args[INTENT_FIELD];
-		return typeof intent === "string" ? sanitizeText(intent).replace(/\s+/g, " ").trim() || undefined : undefined;
+		return this.#toolName === "bash" ? this.#intent : undefined;
 	}
 
 	#rebuildDisplay(): void {
