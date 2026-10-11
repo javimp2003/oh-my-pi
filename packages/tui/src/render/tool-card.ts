@@ -7,7 +7,7 @@ import { span } from "../native/describe";
 import type { DescribeContext, NativeChild, NativeNode } from "../native/node";
 import type { Theme, ThemeColor } from "../theme/theme";
 import type { Component } from "../tui";
-import { getPaddingX } from "../utils";
+import { getPaddingX, truncateToWidth } from "../utils";
 import {
 	CachedOutputBlock,
 	describeOutputBlock,
@@ -143,6 +143,7 @@ export class ToolCard implements Component {
 	#renderedChildren: Component[] = [];
 	#disposed = false;
 	#native: NativeCardMemo | undefined;
+	#headerOnly = false;
 
 	constructor(theme: Theme, options: ToolCardOptions, build: (context: ToolCardBuildContext) => ToolCardSnapshot) {
 		this.#theme = theme;
@@ -151,6 +152,17 @@ export class ToolCard implements Component {
 		this.#plainText = new Text("", options.paddingX ?? 0, options.paddingY ?? 0);
 		this.#plainText.setIgnoreTight(options.ignoreTight ?? true);
 		if (options.variant === "framed") markFramedBlockComponent(this);
+	}
+
+	/**
+	 * Collapse the card to its header row: the status line that names the call
+	 * and summarizes its result, without body, sections or footer. Used by the
+	 * compact transcript (`display.compactToolOutput`); TSP surfaces ignore it.
+	 */
+	setHeaderOnly(headerOnly: boolean): void {
+		if (this.#headerOnly === headerOnly) return;
+		this.#headerOnly = headerOnly;
+		this.invalidate();
 	}
 
 	render(width: number): readonly string[] {
@@ -166,6 +178,16 @@ export class ToolCard implements Component {
 					? outputBlockContentWidth(width, contentPaddingLeft, contentPaddingRight)
 					: defaultContentWidth,
 		});
+		if (this.#headerOnly) {
+			// Headerless cards (bash puts `$ command` in its body) lead with their first body row instead.
+			let header = snapshot.header ?? (snapshot.status ? renderStatusLine(snapshot.status, this.#theme) : undefined);
+			if (header === undefined) {
+				const lead = snapshot.body ?? snapshot.sections?.[0]?.content;
+				header = lead ? resolveContent(lead, defaultContentWidth).lines.find(line => /\S/.test(line)) : undefined;
+			}
+			const row = [header, snapshot.headerMeta].filter(Boolean).join(" ");
+			return row ? [truncateToWidth(` ${row}`, width)] : [];
+		}
 		const contentWidth =
 			this.#options.variant === "framed"
 				? outputBlockContentWidth(width, snapshot.contentPaddingLeft, snapshot.contentPaddingRight)

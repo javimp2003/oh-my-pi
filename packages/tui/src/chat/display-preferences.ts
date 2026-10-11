@@ -6,6 +6,8 @@ export interface ChatTranscriptDisplayPreferences {
 	cacheMissMarker: boolean;
 	showTokenUsage: boolean;
 	showTurnTime: boolean;
+	/** Settled tool results show only their header row until expanded. */
+	compactToolOutput: boolean;
 }
 
 /** Current transcript display preferences. */
@@ -16,6 +18,7 @@ export const chatTranscriptDisplayPreferences: ChatTranscriptDisplayPreferences 
 	cacheMissMarker: false,
 	showTokenUsage: false,
 	showTurnTime: false,
+	compactToolOutput: false,
 };
 
 /** Apply host display preferences without pulling settings into the renderer. */

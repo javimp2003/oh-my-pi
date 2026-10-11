@@ -34,6 +34,12 @@ export interface RenderResultOptions {
 	elapsedMs?: number;
 	/** The call was abandoned without a final result (turn aborted, sealed). Native describe hooks only. */
 	cancelled?: boolean;
+	/**
+	 * Only the result's header row will show (`display.compactToolOutput`). A
+	 * renderer whose header omits the call's subject (query, URL, path) should
+	 * fold it into the header while this is set.
+	 */
+	compact?: boolean;
 }
 
 /** Render options for a result, plus the tool-specific context the transcript threads through. */

@@ -34,6 +34,8 @@ export interface DefaultToolRenderInput {
 		/** Synthetic placeholder for a call skipped mid-batch to service steering/peer
 		 * input — the tool never ran, so it renders neutral (info) rather than as an error. */
 		skipped?: boolean;
+		/** Compact transcript (`display.compactToolOutput`): keep the header and args, omit the output. */
+		omitOutput?: boolean;
 	};
 	/** Current expansion and lifecycle state. */
 	options: RenderResultOptions;
@@ -98,7 +100,7 @@ function buildDefaultToolBody(input: DefaultToolRenderInput, uiTheme: Theme, con
 		body.push("");
 	}
 
-	if (result) {
+	if (result && !result.omitOutput) {
 		const textContent = result.output.trimEnd();
 		if (!textContent) {
 			body.push(uiTheme.fg("dim", "(no output)"));

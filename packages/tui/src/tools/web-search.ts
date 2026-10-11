@@ -120,20 +120,17 @@ export function renderSearchResult(
 			? truncateToWidth(searchQueries[0], 80)
 			: undefined;
 	const success = sourceCount > 0;
+	// Compact cards show only this row, so the query moves into it.
+	const compactQuery = options.compact && queryPreview ? queryPreview : undefined;
 	const header = renderStatusLine(
-		success
-			? {
-					iconOverride: theme.styledSymbol("tool.webSearch", "accent"),
-					title: "Web Search",
-					description: providerLabel,
-					meta: [formatCount("source", sourceCount)],
-				}
-			: {
-					icon: "warning",
-					title: "Web Search",
-					description: providerLabel,
-					meta: [formatCount("source", sourceCount)],
-				},
+		{
+			...(success ? { iconOverride: theme.styledSymbol("tool.webSearch", "accent") } : { icon: "warning" as const }),
+			title: "Web Search",
+			description: compactQuery ?? providerLabel,
+			meta: compactQuery
+				? [providerLabel, formatCount("source", sourceCount)]
+				: [formatCount("source", sourceCount)],
+		},
 		theme,
 	);
 

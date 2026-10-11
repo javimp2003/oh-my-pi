@@ -47,6 +47,8 @@ import {
 } from "../render/render-utils";
 import type { XdevMountedState } from "../tools/xdev";
 import { isFramedBlockComponent, markFramedBlockComponent, renderStatusLine, WidthAwareText } from "../render/index";
+import { ToolCard } from "../render/tool-card";
+import { chatTranscriptDisplayPreferences } from "./display-preferences";
 import { cachedPngConversion, convertImageToPngShared, imagePayloadKey } from "./image-loading";
 import { FenceFigure } from "./fence-figure";
 import { sanitizeWithOptionalSixelPassthrough } from "../render/sixel";
@@ -201,6 +203,39 @@ class SafeToolRendererComponent implements Component {
 		const dispose = this.#component.dispose;
 		if (dispose === undefined) return;
 		dispose.call(this.#component);
+	}
+}
+
+/**
+ * Compact transcript view of a settled tool result (`display.compactToolOutput`):
+ * only the header row naming the call and summarizing its outcome. A
+ * {@link ToolCard} drops its body itself; any other renderer leads with its
+ * status line, so its first visible row is the header.
+ */
+class ToolResultHeaderRow implements Component {
+	readonly #component: Component;
+
+	constructor(component: Component) {
+		this.#component = component;
+		if (component instanceof ToolCard) component.setHeaderOnly(true);
+	}
+
+	render(width: number): readonly string[] {
+		const rows = this.#component.render(width);
+		const header = rows.find(row => Bun.stripANSI(row).trim() !== "");
+		return header === undefined ? [] : [header];
+	}
+
+	invalidate(): void {
+		this.#component.invalidate?.();
+	}
+
+	releaseRenderCaches(): void {
+		this.#component.releaseRenderCaches?.();
+	}
+
+	dispose(): void {
+		this.#component.dispose?.();
 	}
 }
 
@@ -427,6 +462,7 @@ export class ToolExecutionComponent extends Container {
 		isPartial: boolean;
 		argsComplete?: boolean;
 		executionStarted?: boolean;
+		compact?: boolean;
 		renderContext?: Record<string, unknown>;
 	} = {
 		expanded: false,
@@ -1244,7 +1280,7 @@ export class ToolExecutionComponent extends Container {
 		// TUI startup, so a result rendered before it lands must re-shape once it
 		// does (it gates Image children vs text fallback in #rebuildDisplay); keyed
 		// here for the same reason markdown.ts keys its render cache on it.
-		const key = `${this.#resultVersion}|${this.#expanded}|${this.#isPartial}|${this.#argsComplete ? "1" : "0"}|${this.#executionStarted ? "1" : "0"}|${this.#spinnerFrame ?? "-"}|${this.#showImages}|${getThemeEpoch()}|${this.#displayInputVersion}|${TERMINAL.imageProtocol ?? "-"}|${this.#imageSizeKey()}`;
+		const key = `${this.#resultVersion}|${this.#expanded}|${this.#isPartial}|${this.#argsComplete ? "1" : "0"}|${this.#executionStarted ? "1" : "0"}|${this.#spinnerFrame ?? "-"}|${this.#showImages}|${getThemeEpoch()}|${this.#displayInputVersion}|${TERMINAL.imageProtocol ?? "-"}|${this.#imageSizeKey()}|${chatTranscriptDisplayPreferences.compactToolOutput ? "c" : "f"}`;
 		if (key === this.#lastDisplayKey && this.#displayBuilt) return;
 		this.#lastDisplayKey = key;
 
@@ -1370,6 +1406,23 @@ export class ToolExecutionComponent extends Container {
 		return `${o.maxWidthCells}:${o.maxHeightCells ?? "-"}`;
 	}
 
+	/**
+	 * Whether this card shows only its header (`display.compactToolOutput`): a
+	 * settled, successful result that is not expanded. Running calls keep their
+	 * live preview, failures keep the error, and the tools-expand key restores
+	 * full output.
+	 */
+	#isCompactResult(): boolean {
+		return (
+			chatTranscriptDisplayPreferences.compactToolOutput &&
+			!this.#expanded &&
+			this.#result !== undefined &&
+			!this.#isPartial &&
+			this.#result.isError !== true &&
+			!this.#isBenignSkip()
+		);
+	}
+
 	#rebuildDisplay(): void {
 		// Sync shared mutable render state for component closures
 		this.#renderState.expanded = this.#expanded;
@@ -1390,6 +1443,8 @@ export class ToolExecutionComponent extends Container {
 		// (steering/peer interrupt aborted a still-pending call) never ran, so it
 		// gets the neutral pending tint rather than the error tint (#7199).
 		const benignSkip = this.#isBenignSkip();
+		const compact = this.#isCompactResult();
+		this.#renderState.compact = compact;
 		const stateBgKey =
 			this.#isPartial || benignSkip ? "toolPendingBg" : this.#result?.isError ? "toolErrorBg" : "toolSuccessBg";
 		// bgFill, not bg: rows carry nested full resets (e.g. truncateToWidth's
@@ -1446,7 +1501,8 @@ export class ToolExecutionComponent extends Container {
 			}
 
 			// Render result component if we have a result
-			if (this.#result && tool.renderResult) {
+			// Compact cards keep the result only where it carries the header (merged renderers).
+			if (this.#result && tool.renderResult && !(compact && !mergeCallAndResult)) {
 				try {
 					const renderResult = tool.renderResult as (
 						result: { content: Array<{ type: string; text?: string }>; details?: unknown; isError?: boolean },
@@ -1466,11 +1522,16 @@ export class ToolExecutionComponent extends Container {
 					);
 					if (resultComponent) {
 						this.#contentBox.addChild(
-							new SafeToolRendererComponent(this.#toolName, "result", resultComponent, () => {
-								const output = this.#getTextOutput();
-								if (!output) return undefined;
-								return new Text(theme.fg("toolOutput", replaceTabs(output)), 0, 0);
-							}),
+							new SafeToolRendererComponent(
+								this.#toolName,
+								"result",
+								compact ? new ToolResultHeaderRow(resultComponent) : resultComponent,
+								() => {
+									const output = this.#getTextOutput();
+									if (!output) return undefined;
+									return new Text(theme.fg("toolOutput", replaceTabs(output)), 0, 0);
+								},
+							),
 						);
 					}
 				} catch (err) {
@@ -1481,7 +1542,7 @@ export class ToolExecutionComponent extends Container {
 						this.#contentBox.addChild(new Text(theme.fg("toolOutput", replaceTabs(output)), 0, 0));
 					}
 				}
-			} else if (this.#result) {
+			} else if (this.#result && !compact) {
 				// Has result but no custom renderResult
 				const output = this.#getTextOutput();
 				if (output) {
@@ -1532,7 +1593,12 @@ export class ToolExecutionComponent extends Container {
 						);
 						if (resultComponent) {
 							fileBox.addChild(
-								new SafeToolRendererComponent(this.#toolName, "result", resultComponent, () => undefined),
+								new SafeToolRendererComponent(
+									this.#toolName,
+									"result",
+									compact ? new ToolResultHeaderRow(resultComponent) : resultComponent,
+									() => undefined,
+								),
 							);
 						}
 					} catch (err) {
@@ -1600,7 +1666,7 @@ export class ToolExecutionComponent extends Container {
 				}
 
 				// Render result component if we have a result
-				if (this.#result) {
+				if (this.#result && !(compact && !renderer.mergeCallAndResult)) {
 					try {
 						const resultComponent = renderer.renderResult(
 							{
@@ -1614,11 +1680,16 @@ export class ToolExecutionComponent extends Container {
 						);
 						if (resultComponent) {
 							this.#contentBox.addChild(
-								new SafeToolRendererComponent(this.#toolName, "result", resultComponent, () => {
-									const output = this.#getTextOutput();
-									if (!output) return undefined;
-									return new Text(theme.fg("toolOutput", replaceTabs(output)), 0, 0);
-								}),
+								new SafeToolRendererComponent(
+									this.#toolName,
+									"result",
+									compact ? new ToolResultHeaderRow(resultComponent) : resultComponent,
+									() => {
+										const output = this.#getTextOutput();
+										if (!output) return undefined;
+										return new Text(theme.fg("toolOutput", replaceTabs(output)), 0, 0);
+									},
+								),
 							);
 						}
 					} catch (err) {
@@ -1649,7 +1720,7 @@ export class ToolExecutionComponent extends Container {
 		this.#imageSpacers = [];
 		this.#syncFigure();
 
-		if (this.#result) {
+		if (this.#result && !compact) {
 			const imageBlocks = this.#getAllImageBlocks();
 
 			for (let i = 0; i < imageBlocks.length; i++) {
@@ -1700,7 +1771,7 @@ export class ToolExecutionComponent extends Container {
 		const result = this.#result;
 		const renderer = this.#tool?.renderCall || this.#tool?.renderResult ? undefined : this.#renderer;
 		const fence =
-			this.#isBenignSkip() || isNativeRendering()
+			this.#isBenignSkip() || isNativeRendering() || this.#isCompactResult()
 				? undefined
 				: renderer?.figure?.(
 						this.#args,
@@ -1864,7 +1935,12 @@ export class ToolExecutionComponent extends Container {
 				label: this.#toolLabel,
 				args: this.#args,
 				result: this.#result
-					? { output: this.#getTextOutput(), isError: this.#result.isError, skipped: this.#isBenignSkip() }
+					? {
+							output: this.#getTextOutput(),
+							isError: this.#result.isError,
+							skipped: this.#isBenignSkip(),
+							omitOutput: this.#isCompactResult(),
+						}
 					: undefined,
 				options: this.#renderState,
 			},

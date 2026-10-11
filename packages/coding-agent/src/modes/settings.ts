@@ -672,6 +672,19 @@ export const cfgDisplayHideToolActivity = register({
 	},
 });
 
+export const cfgDisplayCompactToolOutput = register({
+	id: "display.compactToolOutput",
+	type: "boolean",
+	default: false,
+	ui: {
+		tab: "appearance",
+		group: "Display",
+		label: "Compact Tool Output",
+		description:
+			"Show finished tool calls as one header row (what was read, searched, fetched or run) without their output; failures keep their error and the expand-tools key (app.tools.expand) shows full output",
+	},
+});
+
 export const cfgDisplayShowTokenUsage = register({
 	id: "display.showTokenUsage",
 	type: "boolean",
@@ -710,6 +723,7 @@ export const cfgDisplayCacheMissMarker = register({
 effect(
 	combine({
 		hideToolActivity: cfgDisplayHideToolActivity,
+		compactToolOutput: cfgDisplayCompactToolOutput,
 		readToolResultPreview: cfgReadToolResultPreview,
 		showImages: cfgTerminalShowImages,
 		cacheMissMarker: cfgDisplayCacheMissMarker,

@@ -227,6 +227,7 @@ import {
 	VibeSessionRegistry,
 } from "../vibe/runtime";
 import { AssistantMessageComponent } from "@oh-my-pi/pi-tui/chat/assistant-message";
+import { setChatTranscriptDisplayPreferences } from "@oh-my-pi/pi-tui/chat/display-preferences";
 import { setSvgFigureRendering } from "@oh-my-pi/pi-tui/chat/svg-figure";
 import { setTableCharts } from "@oh-my-pi/pi-tui/chat/table-chart";
 import { setTranscriptActionHandler } from "@oh-my-pi/pi-tui/chat/transcript-actions";
@@ -342,6 +343,7 @@ import {
 	cfgComposerTokenRate,
 	cfgDisplayCacheMissMarker,
 	cfgDisplayCollapseCompacted,
+	cfgDisplayCompactToolOutput,
 	cfgDisplayHideToolActivity,
 	cfgDisplayPinnedAgents,
 	cfgDisplayShowTokenUsage,
@@ -437,6 +439,7 @@ const cfgLiveUiSettings = combine({
 	"compaction.enabled": cfgCompactionEnabled,
 	"compaction.methodOrder": cfgCompactionMethodOrder,
 	"display.hideToolActivity": cfgDisplayHideToolActivity,
+	"display.compactToolOutput": cfgDisplayCompactToolOutput,
 	"terminal.showImages": cfgTerminalShowImages,
 	"terminal.programStatus": cfgTerminalProgramStatus,
 	hideThinkingBlock: cfgHideThinkingBlock,
@@ -3534,6 +3537,14 @@ export class InteractiveMode implements InteractiveModeContext {
 			this.chatContainer.setToolActivityVisible(!hideToolActivity);
 			if (hideToolActivity) this.ui.clearInlineImages();
 			// Visibility changes must rebuild retired terminal history.
+			resetDisplay = true;
+		}
+		if (any("display.compactToolOutput")) {
+			// The settings effect publishes the preference; cards re-shape on invalidate.
+			setChatTranscriptDisplayPreferences({ compactToolOutput: cfgDisplayCompactToolOutput.get(this.settings) });
+			for (const child of this.chatContainer.children) {
+				if (child instanceof ToolExecutionComponent) child.invalidate();
+			}
 			resetDisplay = true;
 		}
 		if (any("terminal.showImages")) {
