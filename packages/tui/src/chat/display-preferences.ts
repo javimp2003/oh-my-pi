@@ -8,6 +8,8 @@ export interface ChatTranscriptDisplayPreferences {
 	showTurnTime: boolean;
 	/** Settled tool results show only their header row until expanded. */
 	compactToolOutput: boolean;
+	/** Rule between a turn's internal work (tools, thinking) and its final answer. */
+	answerDivider: boolean;
 }
 
 /** Current transcript display preferences. */
@@ -19,6 +21,7 @@ export const chatTranscriptDisplayPreferences: ChatTranscriptDisplayPreferences 
 	showTokenUsage: false,
 	showTurnTime: false,
 	compactToolOutput: false,
+	answerDivider: false,
 };
 
 /** Apply host display preferences without pulling settings into the renderer. */

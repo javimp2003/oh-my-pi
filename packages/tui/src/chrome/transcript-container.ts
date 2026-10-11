@@ -19,6 +19,11 @@ export interface TranscriptPresentationTarget {
 	setTranscriptAllocation?(rows: number, frame: AnimationFrame): void;
 }
 
+/** Lets an appended block adapt to the block it follows (the answer divider keys off it). */
+export interface TranscriptPredecessorAware {
+	setTranscriptPredecessor(previous: Component | undefined): void;
+}
+
 /** Presentation declaration captured permanently when a block is added. */
 export type TranscriptBlockMode = "mutable" | "appendOnly";
 
@@ -216,6 +221,7 @@ export class TranscriptContainer extends Container {
 	#nativeNode: NativeNode | undefined;
 	override addChild(component: Component): void {
 		if (isToolActivityComponent(component)) component.setToolActivityVisible(this.#toolActivityVisible);
+		(component as Component & Partial<TranscriptPredecessorAware>).setTranscriptPredecessor?.(this.children.at(-1));
 		super.addChild(component);
 		this.#entries.push({
 			component,

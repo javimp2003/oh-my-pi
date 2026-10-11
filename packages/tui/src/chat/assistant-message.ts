@@ -36,6 +36,8 @@ import { FigureMarkdown } from "./figure-markdown";
 import { svgFigureRendering } from "./svg-figure";
 import { hasSvgFence } from "./svg-source";
 import { describeTableChart, hasChartTable, lookupTableChart, splitTableCharts } from "./table-chart";
+import { chatTranscriptDisplayPreferences } from "./display-preferences";
+import { UserMessageComponent } from "./user-message";
 
 /**
  * Max wrapped rows of a turn-ending provider error rendered inline in the
@@ -45,7 +47,17 @@ import { describeTableChart, hasChartTable, lookupTableChart, splitTableCharts }
  * Full text is still kept in the persisted session.
  */
 const MAX_TRANSCRIPT_ERROR_ROWS = 8;
+
 const EMPTY_STABLE_RENDER: readonly string[] = [];
+
+/** Full-width rule above a turn's final answer (`display.answerDivider`). */
+class AnswerDivider implements Component {
+	render(width: number): readonly string[] {
+		return [` ${"─".repeat(Math.max(0, width - 2))}`];
+	}
+
+	invalidate(): void {}
+}
 
 /** The native head of a finished thinking block: "Thought for 12s", or "Thought" when it was never seen streaming. */
 function thoughtLabel(clock: { start: number; end?: number } | undefined): string {
@@ -275,6 +287,8 @@ export class AssistantMessageComponent extends Container {
 	#transcriptBlockFinalized: boolean;
 	/** See {@link setMidStreamPublication}; the wire's `stream-revision` axis decides it. */
 	#midStreamPublication = true;
+	/** Set by {@link setTranscriptPredecessor}: the turn did work (tools, earlier segments) before this message. */
+	#afterProcessing = false;
 	/**
 	 * When true, the turn-ending `Error: …` line for `stopReason === "error"` is
 	 * suppressed because the same error is currently shown in the pinned banner
@@ -560,6 +574,37 @@ export class AssistantMessageComponent extends Container {
 	setCacheInvalidation(info: CacheInvalidation | undefined): void {
 		this.#cacheMarker = info ? new CacheInvalidationMarkerComponent(info) : undefined;
 		this.#refreshMarkers();
+	}
+
+	/**
+	 * Transcript hook: the block this message was appended after. Anything but
+	 * the user's prompt (tool cards, an earlier segment) means the turn did
+	 * internal work first, which the answer divider separates from the reply.
+	 */
+	setTranscriptPredecessor(previous: Component | undefined): void {
+		const after = previous !== undefined && !(previous instanceof UserMessageComponent);
+		if (after === this.#afterProcessing) return;
+		this.#afterProcessing = after;
+		if (this.#lastMessage) this.updateContent(this.#lastMessage, { transient: this.#lastUpdateTransient });
+	}
+
+	/**
+	 * Whether a rule separates the reply from the work before it
+	 * (`display.answerDivider`): only on a finished final answer (`stop`, no
+	 * tool calls) whose turn thought or ran tools first. Decided after the
+	 * stream ends because a streaming message may still turn into a tool call.
+	 */
+	#showsAnswerDivider(message: AssistantMessage): boolean {
+		if (!chatTranscriptDisplayPreferences.answerDivider || this.#lastUpdateTransient) return false;
+		if (message.stopReason !== "stop") return false;
+		let hasText = false;
+		let hasThinking = false;
+		for (const content of message.content) {
+			if (content.type === "toolCall") return false;
+			if (content.type === "text" && canonicalizeMessage(content.text)) hasText = true;
+			if (content.type === "thinking" && canonicalizeMessage(content.thinking)) hasThinking = true;
+		}
+		return hasText && (hasThinking || this.#afterProcessing);
 	}
 
 	/** Mark this answer as the end of a turn with the turn's totals (native only: ANSI keeps them in the status line). */
@@ -1189,6 +1234,9 @@ export class AssistantMessageComponent extends Container {
 			const item = items[itemIndex];
 			if (item?.md === child) {
 				const md = item.md;
+				// The answer divider lands above the reply text once the stream ends;
+				// text published before then would no longer prefix the block.
+				if (chatTranscriptDisplayPreferences.answerDivider && item.blockType === "text") break;
 				if (md instanceof FigureMarkdown) {
 					// Plain Markdown reproduces only the prose ahead of the first figure.
 					if (md.leadingProse) parts.push({ kind: item.blockType, text: md.leadingProse });
@@ -1601,7 +1649,7 @@ export class AssistantMessageComponent extends Container {
 
 	#computeShapeKey(message: AssistantMessage): string {
 		const parts: string[] = [
-			`htb:${this.#hideThinkingBlock ? 1 : 0}|pot:${this.#proseOnlyThinking ? 1 : 0}|etb:${this.#expandThinkingBlocks ? 1 : 0}`,
+			`htb:${this.#hideThinkingBlock ? 1 : 0}|pot:${this.#proseOnlyThinking ? 1 : 0}|etb:${this.#expandThinkingBlocks ? 1 : 0}|ad:${this.#showsAnswerDivider(message) ? 1 : 0}`,
 		];
 		for (const content of message.content) {
 			if (content.type === "text") {
@@ -1786,9 +1834,15 @@ export class AssistantMessageComponent extends Container {
 		// Render content in order
 		let thinkingIndex = 0;
 		let hasRenderedContent = false;
+		let answerDivider = this.#showsAnswerDivider(message);
 		for (let i = 0; i < message.content.length; i++) {
 			const content = message.content[i];
 			if (content.type === "text" && canonicalizeMessage(content.text)) {
+				if (answerDivider) {
+					this.#contentContainer.addChild(new AnswerDivider());
+					this.#contentContainer.addChild(new Spacer(1));
+					answerDivider = false;
+				}
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				const trimmed = content.text.trim();
 				const md = this.#proseBlock(i, trimmed, previousFigures);

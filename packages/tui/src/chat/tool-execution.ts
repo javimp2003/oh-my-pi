@@ -7,7 +7,7 @@ import { Spacer } from "../components/spacer";
 import { Text } from "../components/text";
 import { getImageDimensions, ImageProtocol, imageFallback, TERMINAL } from "../terminal-capabilities";
 import { type Component, Container, type TUI } from "../tui";
-import { truncateToWidth } from "../utils";
+import { sliceByColumn, truncateToWidth, visibleWidth } from "../utils";
 import { getProjectDir, isRecord, logger, sanitizeText } from "@oh-my-pi/pi-utils";
 import type { Theme } from "../theme/theme";
 import { ensureThemeSync, getThemeEpoch, theme } from "../theme/theme";
@@ -49,6 +49,7 @@ import type { XdevMountedState } from "../tools/xdev";
 import { isFramedBlockComponent, markFramedBlockComponent, renderStatusLine, WidthAwareText } from "../render/index";
 import { ToolCard } from "../render/tool-card";
 import { chatTranscriptDisplayPreferences } from "./display-preferences";
+import { compactToolEmoji } from "./tool-emoji";
 import { cachedPngConversion, convertImageToPngShared, imagePayloadKey } from "./image-loading";
 import { FenceFigure } from "./fence-figure";
 import { sanitizeWithOptionalSixelPassthrough } from "../render/sixel";
@@ -208,22 +209,39 @@ class SafeToolRendererComponent implements Component {
 
 /**
  * Compact transcript view of a settled tool result (`display.compactToolOutput`):
- * only the header row naming the call and summarizing its outcome. A
- * {@link ToolCard} drops its body itself; any other renderer leads with its
- * status line, so its first visible row is the header.
+ * one row naming the call and summarizing its outcome. A {@link ToolCard}
+ * drops its body itself; any other renderer leads with its status line, so its
+ * first visible row is the header. The renderer's own leading icon is replaced
+ * by the tool's emoji, so every compact row starts its name in the same column.
  */
 class ToolResultHeaderRow implements Component {
 	readonly #component: Component;
+	readonly #toolName: string;
+	readonly #label: string;
 
-	constructor(component: Component) {
+	constructor(component: Component, toolName: string, label: string) {
 		this.#component = component;
+		this.#toolName = toolName;
+		this.#label = label;
 		if (component instanceof ToolCard) component.setHeaderOnly(true);
 	}
 
 	render(width: number): readonly string[] {
 		const rows = this.#component.render(width);
 		const header = rows.find(row => Bun.stripANSI(row).trim() !== "");
-		return header === undefined ? [] : [header];
+		if (header === undefined) return [];
+		const plain = Bun.stripANSI(header);
+		const trimmed = plain.trimStart();
+		// A leading token without letters or digits is the renderer's status/tool icon.
+		const lead = trimmed.split(" ", 1)[0] ?? "";
+		const iconWidth = /[\p{L}\p{N}$]/u.test(lead) ? 0 : visibleWidth(lead) + 1;
+		const start = plain.length - trimmed.length + iconWidth;
+		let rest = sliceByColumn(header, start, Math.max(0, visibleWidth(header) - start));
+		// Headers that open with their subject (bash's `$ command`) get the tool name first.
+		if (!Bun.stripANSI(rest).toLowerCase().startsWith(this.#label.toLowerCase())) {
+			rest = `${theme.fg("toolTitle", theme.bold(this.#label))}: ${rest}`;
+		}
+		return [truncateToWidth(` ${compactToolEmoji(this.#toolName)} ${rest}`, width)];
 	}
 
 	invalidate(): void {
@@ -1525,7 +1543,9 @@ export class ToolExecutionComponent extends Container {
 							new SafeToolRendererComponent(
 								this.#toolName,
 								"result",
-								compact ? new ToolResultHeaderRow(resultComponent) : resultComponent,
+								compact
+									? new ToolResultHeaderRow(resultComponent, this.#toolName, this.#toolLabel)
+									: resultComponent,
 								() => {
 									const output = this.#getTextOutput();
 									if (!output) return undefined;
@@ -1596,7 +1616,9 @@ export class ToolExecutionComponent extends Container {
 								new SafeToolRendererComponent(
 									this.#toolName,
 									"result",
-									compact ? new ToolResultHeaderRow(resultComponent) : resultComponent,
+									compact
+										? new ToolResultHeaderRow(resultComponent, this.#toolName, this.#toolLabel)
+										: resultComponent,
 									() => undefined,
 								),
 							);
@@ -1683,7 +1705,9 @@ export class ToolExecutionComponent extends Container {
 								new SafeToolRendererComponent(
 									this.#toolName,
 									"result",
-									compact ? new ToolResultHeaderRow(resultComponent) : resultComponent,
+									compact
+										? new ToolResultHeaderRow(resultComponent, this.#toolName, this.#toolLabel)
+										: resultComponent,
 									() => {
 										const output = this.#getTextOutput();
 										if (!output) return undefined;
@@ -1940,6 +1964,7 @@ export class ToolExecutionComponent extends Container {
 							isError: this.#result.isError,
 							skipped: this.#isBenignSkip(),
 							omitOutput: this.#isCompactResult(),
+							compactIcon: compactToolEmoji(this.#toolName),
 						}
 					: undefined,
 				options: this.#renderState,

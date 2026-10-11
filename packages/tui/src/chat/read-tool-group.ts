@@ -16,6 +16,8 @@ import {
 import { PREVIEW_LIMITS, shortenPath } from "../render/render-utils";
 import { fileHyperlink, renderCodeCell } from "../render";
 import { canonicalizeMessage } from "./thinking-display";
+import { chatTranscriptDisplayPreferences } from "./display-preferences";
+import { compactToolEmoji } from "./tool-emoji";
 import { internalUrlSchemeSpec, splitUrlScheme } from "../tools/url-scheme-host";
 import type { ToolExecutionHandle } from "./tool-execution";
 import { formatUsageRow } from "../overlays/usage-row";
@@ -889,7 +891,10 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 		}
 
 		const header = `${theme.fg("toolTitle", theme.bold("Read"))}${theme.fg("dim", ` (${displayRows.length})`)}`;
-		const lines = [` ${theme.format.bullet} ${header}`];
+		const groupIcon = chatTranscriptDisplayPreferences.compactToolOutput
+			? compactToolEmoji("read")
+			: theme.format.bullet;
+		const lines = [` ${groupIcon} ${header}`];
 		const entriesWithoutPreview = entries.filter(entry => !this.#shouldRenderPreview(entry));
 		const summaryTargets = this.#displayTargetsForEntries(entriesWithoutPreview);
 		const rows = this.#buildSummaryRows(summaryTargets);
@@ -1201,6 +1206,8 @@ export class ReadToolGroupComponent extends Container implements ToolExecutionHa
 
 	#formatStatus(status: ReadEntry["status"]): string {
 		if (status === "success") {
+			// Compact rows lead with the tool emoji so names align with other tool rows.
+			if (chatTranscriptDisplayPreferences.compactToolOutput) return compactToolEmoji("read");
 			return theme.fg("text", theme.status.enabled);
 		}
 		if (status === "warning") {

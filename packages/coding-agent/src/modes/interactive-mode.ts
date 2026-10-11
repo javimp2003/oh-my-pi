@@ -342,6 +342,7 @@ import {
 	cfgComposerShape,
 	cfgComposerTokenRate,
 	cfgDisplayCacheMissMarker,
+	cfgDisplayAnswerDivider,
 	cfgDisplayCollapseCompacted,
 	cfgDisplayCompactToolOutput,
 	cfgDisplayHideToolActivity,
@@ -440,6 +441,7 @@ const cfgLiveUiSettings = combine({
 	"compaction.methodOrder": cfgCompactionMethodOrder,
 	"display.hideToolActivity": cfgDisplayHideToolActivity,
 	"display.compactToolOutput": cfgDisplayCompactToolOutput,
+	"display.answerDivider": cfgDisplayAnswerDivider,
 	"terminal.showImages": cfgTerminalShowImages,
 	"terminal.programStatus": cfgTerminalProgramStatus,
 	hideThinkingBlock: cfgHideThinkingBlock,
@@ -3544,8 +3546,13 @@ export class InteractiveMode implements InteractiveModeContext {
 			setChatTranscriptDisplayPreferences({ compactToolOutput: cfgDisplayCompactToolOutput.get(this.settings) });
 			for (const child of this.chatContainer.children) {
 				if (child instanceof ToolExecutionComponent) child.invalidate();
+				else if (child instanceof ReadToolGroupComponent) child.setExpanded(this.toolOutputExpanded);
 			}
 			resetDisplay = true;
+		}
+		if (any("display.answerDivider")) {
+			setChatTranscriptDisplayPreferences({ answerDivider: cfgDisplayAnswerDivider.get(this.settings) });
+			rebuildChat = true;
 		}
 		if (any("terminal.showImages")) {
 			const visible = cfgTerminalShowImages.get(this.settings);

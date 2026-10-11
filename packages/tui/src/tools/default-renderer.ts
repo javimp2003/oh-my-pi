@@ -36,6 +36,8 @@ export interface DefaultToolRenderInput {
 		skipped?: boolean;
 		/** Compact transcript (`display.compactToolOutput`): keep the header and args, omit the output. */
 		omitOutput?: boolean;
+		/** Leading glyph replacing the status icon on a compact row. */
+		compactIcon?: string;
 	};
 	/** Current expansion and lifecycle state. */
 	options: RenderResultOptions;
@@ -57,6 +59,7 @@ function buildDefaultToolStatus(input: DefaultToolRenderInput): { status: Status
 		spinnerFrame: options.spinnerFrame,
 		title: input.label,
 	};
+	if (result?.omitOutput && result.compactIcon) status.iconOverride = result.compactIcon;
 	if (result?.skipped) status.titleColor = "muted";
 	const phase: ToolCardPhase = options.isPartial
 		? options.spinnerFrame !== undefined

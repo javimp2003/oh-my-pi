@@ -685,6 +685,18 @@ export const cfgDisplayCompactToolOutput = register({
 	},
 });
 
+export const cfgDisplayAnswerDivider = register({
+	id: "display.answerDivider",
+	type: "boolean",
+	default: false,
+	ui: {
+		tab: "appearance",
+		group: "Display",
+		label: "Answer Divider",
+		description: "Draw a horizontal rule between a turn's internal work (thinking, tool calls) and its final answer",
+	},
+});
+
 export const cfgDisplayShowTokenUsage = register({
 	id: "display.showTokenUsage",
 	type: "boolean",
@@ -724,6 +736,7 @@ effect(
 	combine({
 		hideToolActivity: cfgDisplayHideToolActivity,
 		compactToolOutput: cfgDisplayCompactToolOutput,
+		answerDivider: cfgDisplayAnswerDivider,
 		readToolResultPreview: cfgReadToolResultPreview,
 		showImages: cfgTerminalShowImages,
 		cacheMissMarker: cfgDisplayCacheMissMarker,

@@ -6,7 +6,8 @@
 
 - Added the `pinnedInput` composer preference: the chrome below the transcript owns the bottom rows and the header plus transcript render through `TranscriptContainer.renderScrollWindow()` into a scrollable window above it, driven by `Composer.scrollTranscript()`, `scrollTranscriptPage()`, and `followTranscript()`; nothing retires to native scrollback until the shutdown flush ([#1155](https://github.com/can1357/oh-my-pi/issues/1155))
 - Added `TUI.requestInteractiveRender()`, an ordinary render paced at 60 fps for a short hold so continuous gestures like pinned-transcript scrolling do not stutter at the default 30 fps cadence
-- Added the `compactToolOutput` transcript display preference and `ToolCard.setHeaderOnly()`: settled, successful tool results render only their header row until expanded, and `RenderResultOptions.compact` tells renderers to fold the call's subject into that row (web search folds in its query)
+- Added the `compactToolOutput` transcript display preference and `ToolCard.setHeaderOnly()`: settled, successful tool results render one header row led by the tool's emoji (`compactToolEmoji()`) until expanded, and `RenderResultOptions.compact` tells renderers to fold the call's subject into that row (web search folds in its query)
+- Added the `answerDivider` transcript display preference: a finished final answer (`stop`, no tool calls) draws a rule above its text when it thought first or follows other transcript blocks (`TranscriptPredecessorAware`); while it is on, reply text no longer publishes stable rows mid-stream
 
 ### Fixed
 
