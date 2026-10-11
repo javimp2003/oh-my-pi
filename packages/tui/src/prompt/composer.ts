@@ -315,9 +315,11 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 				anchor: SelectionPoint | undefined;
 				head: SelectionPoint;
 				moved: boolean;
-				/** The window followed the newest rows when the press landed; release resumes that. */
+				/** The window followed the newest rows when the press landed; clearing resumes that. */
 				following: boolean;
-				/** Last painted ordered range and the rows it indexes, for the copy on release. */
+				/** Released after a drag: the range stays painted until copied or cleared. */
+				held: boolean;
+				/** Last painted ordered range and the rows it indexes, for the copy. */
 				range?: { start: SelectionPoint; end: SelectionPoint; lines: readonly string[] };
 		  }
 		| undefined;
@@ -570,24 +572,33 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			const top = window.top;
 			const clampRow = (row: number): number => top + Math.min(capacity - 1, Math.max(0, row));
 			selection.anchor ??= { row: clampRow(selection.press.row), col: selection.press.col };
-			// Past the window's bottom the drag covers whole rows; above the top it starts at column 0.
-			const head = selection.head;
-			const headCol = head.row >= capacity ? Number.POSITIVE_INFINITY : head.row < 0 ? 0 : head.col;
-			const [start, end] = orderSelection(selection.anchor, { row: clampRow(head.row), col: headCol });
-			selection.range = { start, end, lines: window.content };
+			let range = selection.range;
+			if (!selection.held || range === undefined) {
+				// Past the window's bottom the drag covers whole rows; above the top it starts at column 0.
+				const head = selection.head;
+				const headCol = head.row >= capacity ? Number.POSITIVE_INFINITY : head.row < 0 ? 0 : head.col;
+				const [start, end] = orderSelection(selection.anchor, { row: clampRow(head.row), col: headCol });
+				range = { start, end, lines: window.content };
+			}
+			// A held range stays in content rows, so it scrolls with the wheel; its text follows the latest layout.
+			selection.range = { ...range, lines: window.content };
 			for (let index = 0; index < content.length; index++) {
-				content[index] = paintSelection(content[index]!, top + index, start, end);
+				content[index] = paintSelection(content[index]!, top + index, range.start, range.end);
 			}
 		} else if (selection?.region === "chrome" && after.length > 0) {
 			const clampRow = (row: number): number => Math.min(after.length - 1, Math.max(0, row - capacity));
 			selection.anchor ??= { row: clampRow(selection.press.row), col: selection.press.col };
-			const [start, end] = orderSelection(selection.anchor, {
-				row: clampRow(selection.head.row),
-				col: selection.head.col,
-			});
-			selection.range = { start, end, lines: after.slice() };
+			let range = selection.range;
+			if (!selection.held || range === undefined) {
+				const [start, end] = orderSelection(selection.anchor, {
+					row: clampRow(selection.head.row),
+					col: selection.head.col,
+				});
+				range = { start, end, lines: after };
+			}
+			selection.range = { ...range, lines: after.slice() };
 			for (let index = 0; index < after.length; index++)
-				after[index] = paintSelection(after[index]!, index, start, end);
+				after[index] = paintSelection(after[index]!, index, range.start, range.end);
 		}
 		// The follow hint would cover the row under a drag.
 		if (window.anchor !== undefined && content.length > 0 && selection === undefined) {
@@ -625,6 +636,8 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		if (!this.#preferences.pinnedInput || this.#stopped) return false;
 		if (rows === 0) return true;
 		this.#scrollDelta += Math.trunc(rows);
+		// Older rows pulled into view under a selection stay there once it clears.
+		if (rows < 0 && this.#selection) this.#selection.following = false;
 		this.ui.requestInteractiveRender();
 		return true;
 	}
@@ -652,7 +665,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		const viewport = this.ui.getMutableViewport();
 		const row = screenRow - viewport.top;
 		if (viewport.length === 0 || row < 0 || row >= viewport.length) return false;
-		this.#stopSelectionScroll();
+		this.clearSelection();
 		const point = { row, col: Math.max(0, col) };
 		this.#selection = {
 			region: row < this.#scrollCapacity ? "transcript" : "chrome",
@@ -661,6 +674,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			head: point,
 			moved: false,
 			following: this.#scrollAnchor === undefined,
+			held: false,
 		};
 		this.ui.requestRender();
 		return true;
@@ -673,7 +687,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	 */
 	extendSelection(screenRow: number, col: number): void {
 		const selection = this.#selection;
-		if (selection === undefined) return;
+		if (selection === undefined || selection.held) return;
 		const row = screenRow - this.ui.getMutableViewport().top;
 		selection.head = { row, col: Math.max(0, col) };
 		selection.moved ||= row !== selection.press.row || col !== selection.press.col;
@@ -684,29 +698,53 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	}
 
 	/**
-	 * End the selection and return its text, or undefined for a press that
-	 * never dragged (an ordinary click). The highlight clears and the window
-	 * resumes following when it rests at the bottom.
+	 * End the drag. A drag over text stays highlighted (the window stays put
+	 * under it) until {@link takeSelection} copies it or {@link clearSelection}
+	 * drops it; returns whether one is held. A press that never dragged (an
+	 * ordinary click) clears.
 	 */
-	finishSelection(): string | undefined {
+	finishSelection(): boolean {
 		const selection = this.#selection;
-		if (selection === undefined) return undefined;
+		if (selection === undefined || selection.held) return false;
+		this.#stopSelectionScroll();
+		const range = selection.range;
+		if (!selection.moved || range === undefined || selectedText(range.lines, range.start, range.end).trim() === "") {
+			this.clearSelection();
+			return false;
+		}
+		selection.held = true;
+		this.ui.requestRender();
+		return true;
+	}
+
+	/** Whether a released selection is highlighted, waiting to be copied. */
+	get hasSelection(): boolean {
+		return this.#selection?.held === true;
+	}
+
+	/** The held selection's text, clearing it; undefined when none is held. */
+	takeSelection(): string | undefined {
+		const range = this.#selection?.held ? this.#selection.range : undefined;
+		if (range === undefined) return undefined;
+		const text = selectedText(range.lines, range.start, range.end);
+		this.clearSelection();
+		return text;
+	}
+
+	/** Drop any selection; a window that followed the newest rows before it resumes following. */
+	clearSelection(): void {
+		const selection = this.#selection;
+		if (selection === undefined) return;
 		this.#stopSelectionScroll();
 		this.#selection = undefined;
 		if (selection.following) this.#scrollAnchor = undefined;
 		this.ui.requestRender();
-		const range = selection.range;
-		if (!selection.moved || range === undefined) return undefined;
-		const text = selectedText(range.lines, range.start, range.end);
-		return text.trim() === "" ? undefined : text;
 	}
 
 	#setSelectionScroll(direction: -1 | 0 | 1): void {
 		if (direction === this.#selectionScrollDirection) return;
 		this.#stopSelectionScroll();
 		if (direction === 0) return;
-		// A drag that pulled older rows into view keeps them there on release.
-		if (direction < 0 && this.#selection) this.#selection.following = false;
 		this.#selectionScrollDirection = direction;
 		this.scrollTranscript(direction);
 		this.#selectionScrollTimer = setInterval(() => this.scrollTranscript(direction), SELECTION_SCROLL_INTERVAL_MS);

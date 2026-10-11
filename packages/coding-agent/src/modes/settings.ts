@@ -595,7 +595,7 @@ export const cfgTuiMouseSelection = register({
 		group: "Display",
 		label: "Mouse Text Selection",
 		description:
-			"With Pinned Input on, drag with the mouse to select conversation or input text without a modifier key; the selection is copied to the clipboard when you release",
+			"With Pinned Input on, drag with the mouse to select conversation or input text without a modifier key; the selection stays highlighted until Ctrl+C copies it to the clipboard or Esc (or a click) clears it",
 	},
 });
 

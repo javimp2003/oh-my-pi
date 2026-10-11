@@ -1671,8 +1671,20 @@ export class InteractiveMode implements InteractiveModeContext {
 		this.composer.extendSelection(row, col);
 	}
 
-	finishTextSelection(): string | undefined {
+	finishTextSelection(): boolean {
 		return this.composer.finishSelection();
+	}
+
+	hasTextSelection(): boolean {
+		return this.composer.hasSelection;
+	}
+
+	takeTextSelection(): string | undefined {
+		return this.composer.takeSelection();
+	}
+
+	clearTextSelection(): void {
+		this.composer.clearSelection();
 	}
 
 	clearTransientSessionUi(): void {

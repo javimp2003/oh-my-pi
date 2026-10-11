@@ -171,8 +171,14 @@ export interface InteractiveModeContext {
 	beginTextSelection(row: number, col: number): boolean;
 	/** Move the selection head to a 0-based screen cell. */
 	extendTextSelection(row: number, col: number): void;
-	/** End the drag; the selected text, or undefined for a press that never dragged. */
-	finishTextSelection(): string | undefined;
+	/** End the drag; true when a selection stays highlighted for copying, false for a press that never dragged. */
+	finishTextSelection(): boolean;
+	/** Whether a released selection is highlighted, waiting to be copied. */
+	hasTextSelection(): boolean;
+	/** The held selection's text, clearing it. */
+	takeTextSelection(): string | undefined;
+	/** Drop the held selection. */
+	clearTextSelection(): void;
 	/** Clear loader, transient HUD/pending containers, streaming state, and pending tools. */
 	clearTransientSessionUi(): void;
 	settings: Settings;

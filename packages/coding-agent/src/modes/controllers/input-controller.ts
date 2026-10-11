@@ -287,7 +287,7 @@ export class InputController {
 	#globalEditorActionsListenerInstalled = false;
 	#expandToolsListenerInstalled = false;
 	#inlineMouseListenerInstalled = false;
-	/** A `tui.mouseSelection` press is down: motion extends the selection and the release copies it. */
+	/** A `tui.mouseSelection` press is down: motion extends the selection and the release holds it for copying. */
 	#selectionDrag = false;
 
 	/** Click-candidate id the hover band currently tracks; repaint only on change. */
@@ -381,6 +381,24 @@ export class InputController {
 			// These actions target the main transcript/editor rather than the
 			// focused prompt. Keep focused components' own bindings authoritative.
 			this.ctx.ui.addInputListener(data => {
+				// A held mouse selection takes the copy chords (Ctrl+C; Ctrl+Shift+C and
+				// Cmd+C where the terminal forwards them) and Esc before the editor's
+				// clear/interrupt bindings see them.
+				if (
+					cfgTuiPinnedInput.get(this.ctx.settings) &&
+					cfgTuiMouseSelection.get(this.ctx.settings) &&
+					this.ctx.hasTextSelection()
+				) {
+					if (matchesKey(data, "ctrl+c") || matchesKey(data, "ctrl+shift+c") || matchesKey(data, "super+c")) {
+						const text = this.ctx.takeTextSelection();
+						if (text !== undefined) void this.#copySelection(text);
+						return { consume: true };
+					}
+					if (matchesKey(data, "escape")) {
+						this.ctx.clearTextSelection();
+						return { consume: true };
+					}
+				}
 				// Scroll gestures fall through while the pinned layout is off, so the
 				// focused component keeps its own Shift+PgUp/PgDn handling.
 				if (this.ctx.keybindings.matches(data, "app.transcript.scrollUp")) {
@@ -811,9 +829,10 @@ export class InputController {
 			}
 			if (this.#selectionDrag && event.release) {
 				this.#selectionDrag = false;
-				const text = this.ctx.finishTextSelection();
-				if (text !== undefined) void this.#copySelection(text);
-				else if (clickCapture) this.#focusClickedAgent(event.row);
+				// A held selection waits for the copy chord; a press that never dragged is a click.
+				if (!this.ctx.finishTextSelection() && clickCapture) {
+					this.#focusClickedAgent(event.row);
+				}
 				return { consume: true };
 			}
 		}

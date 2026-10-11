@@ -120,7 +120,7 @@ describe("composer pinned input", () => {
 		h.composer.stop();
 	});
 
-	it("selects across transcript rows by drag and returns the text on release", async () => {
+	it("keeps a released drag highlighted until its text is taken", async () => {
 		const h = await makeHarness(3);
 		// Rows 0, 2, 4 hold transcript rows 0, 1, 2 (blank separators between blocks).
 		expect(h.composer.beginSelection(0, 1)).toBe(true);
@@ -129,16 +129,24 @@ describe("composer pinned input", () => {
 		expect(h.terminal.getCellReverse(0, 1)).toBe(true);
 		expect(h.terminal.getCellReverse(0, 0)).toBe(false);
 		expect(h.terminal.getCellReverse(2, 11)).toBe(false);
+		expect(h.composer.finishSelection()).toBe(true);
+		await h.scheduler.settle(h.terminal);
+		expect(h.composer.hasSelection).toBe(true);
+		expect(h.terminal.getCellReverse(0, 1)).toBe(true);
 		// Text rows have no left padding: column 1 drops the first letter; the drag ends inclusive at column 10.
-		expect(h.composer.finishSelection()).toBe(`${PREFIX.slice(1)}0\n\n${PREFIX.slice(0, 11).trimEnd()}`);
+		expect(h.composer.takeSelection()).toBe(`${PREFIX.slice(1)}0\n\n${PREFIX.slice(0, 11).trimEnd()}`);
+		await h.scheduler.settle(h.terminal);
+		expect(h.composer.hasSelection).toBe(false);
+		expect(h.terminal.getCellReverse(0, 1)).toBe(false);
 		h.composer.stop();
 	});
 
-	it("treats a press without a drag as a click and clears the highlight", async () => {
+	it("treats a press without a drag as a click and holds nothing", async () => {
 		const h = await makeHarness(3);
 		expect(h.composer.beginSelection(0, 3)).toBe(true);
 		await h.scheduler.settle(h.terminal);
-		expect(h.composer.finishSelection()).toBeUndefined();
+		expect(h.composer.finishSelection()).toBe(false);
+		expect(h.composer.hasSelection).toBe(false);
 		h.composer.stop();
 	});
 
@@ -147,23 +155,44 @@ describe("composer pinned input", () => {
 		expect(h.composer.beginSelection(ROWS - 1, 0)).toBe(true);
 		h.composer.extendSelection(ROWS - 1, 5);
 		await h.scheduler.settle(h.terminal);
-		expect(h.composer.finishSelection()).toBe("EDITOR");
+		expect(h.composer.finishSelection()).toBe(true);
+		expect(h.composer.takeSelection()).toBe("EDITOR");
 		h.composer.stop();
 	});
 
-	it("holds the window still under a drag while rows stream in, then follows again", async () => {
+	it("holds the window still under a selection while rows stream in, then follows once it clears", async () => {
 		const h = await makeHarness(100);
 		const before = visibleRows(h.terminal);
 		expect(h.composer.beginSelection(1, 0)).toBe(true);
 		h.composer.extendSelection(3, 5);
 		await h.scheduler.settle(h.terminal);
+		expect(h.composer.finishSelection()).toBe(true);
 		addRows(h.transcript, 100, 3);
 		h.composer.ui.requestRender();
 		await h.scheduler.settle(h.terminal);
 		expect(visibleRows(h.terminal)).toEqual(before);
-		expect(h.composer.finishSelection()).toContain(`${PREFIX}${before[0]! + 1}`);
+		h.composer.clearSelection();
 		await h.scheduler.settle(h.terminal);
+		expect(h.composer.hasSelection).toBe(false);
 		expect(visibleRows(h.terminal).at(-1)).toBe(102);
+		h.composer.stop();
+	});
+
+	it("scrolls a held selection with the wheel and still copies its rows", async () => {
+		const h = await makeHarness(100);
+		// Select the second visible transcript row: the top row is the drag's auto-scroll edge.
+		const row = h.terminal.getViewport().findIndex(line => line.startsWith(PREFIX)) + 2;
+		const target = visibleRows(h.terminal)[1]!;
+		expect(h.composer.beginSelection(row, 0)).toBe(true);
+		h.composer.extendSelection(row, 30);
+		await h.scheduler.settle(h.terminal);
+		expect(h.composer.finishSelection()).toBe(true);
+		h.composer.scrollTranscript(-4);
+		await h.scheduler.settle(h.terminal);
+		expect(visibleRows(h.terminal)[1]).toBe(target - 2);
+		const moved = h.terminal.getViewport().findIndex(line => line.startsWith(`${PREFIX}${target}`));
+		expect(h.terminal.getCellReverse(moved, 0)).toBe(true);
+		expect(h.composer.takeSelection()).toBe(`${PREFIX}${target}`);
 		h.composer.stop();
 	});
 });
