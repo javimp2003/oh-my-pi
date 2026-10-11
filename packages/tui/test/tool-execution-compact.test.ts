@@ -119,7 +119,7 @@ describe("answer divider", () => {
 	const hasRule = (component: AssistantMessageComponent): boolean =>
 		component.render(60).some(row => Bun.stripANSI(row).includes("─".repeat(20)));
 
-	it("separates a finished answer from the tools before it, but not while streaming", () => {
+	it("shows the rule while the answer streams and keeps it once it settles", () => {
 		setChatTranscriptDisplayPreferences({ answerDivider: true });
 		const transcript = new TranscriptContainer();
 		transcript.addChild(new UserMessageComponent("question"));
@@ -128,9 +128,26 @@ describe("answer divider", () => {
 		transcript.addChild(reply);
 		const message = answer([{ type: "text", text: "The answer." }]);
 		reply.updateContent(message, { transient: true });
-		expect(hasRule(reply)).toBe(false);
+		expect(hasRule(reply)).toBe(true);
 		reply.updateContent(message);
 		expect(hasRule(reply)).toBe(true);
+	});
+
+	it("drops the rule when streamed text turns out to precede a tool call", () => {
+		setChatTranscriptDisplayPreferences({ answerDivider: true });
+		const transcript = new TranscriptContainer();
+		transcript.addChild(new UserMessageComponent("question"));
+		transcript.addChild(grep());
+		const narration = new AssistantMessageComponent(undefined, false, () => {});
+		transcript.addChild(narration);
+		narration.updateContent(answer([{ type: "text", text: "Let me check." }]), { transient: true });
+		expect(hasRule(narration)).toBe(true);
+		const withTool = answer([
+			{ type: "text", text: "Let me check." },
+			{ type: "toolCall", id: "t1", name: "grep", arguments: {} },
+		]);
+		narration.updateContent(withTool, { transient: true });
+		expect(hasRule(narration)).toBe(false);
 	});
 
 	it("leaves a direct reply to the prompt undivided unless it thought first", () => {

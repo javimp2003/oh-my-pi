@@ -594,13 +594,16 @@ export class AssistantMessageComponent extends Container {
 
 	/**
 	 * Whether a rule separates the reply from the work before it
-	 * (`display.answerDivider`): only on a finished final answer (`stop`, no
-	 * tool calls) whose turn thought or ran tools first. Decided after the
-	 * stream ends because a streaming message may still turn into a tool call.
+	 * (`display.answerDivider`): a reply with text and no tool calls whose turn
+	 * thought or ran tools first. It shows as soon as the reply text starts
+	 * streaming; a streamed message that then calls a tool was narration, not
+	 * the answer, and drops it again. Once settled, only a `stop` answer keeps it.
+	 * The rule sits after the thinking rows, so dropping it never rewrites rows
+	 * the block already published.
 	 */
 	#showsAnswerDivider(message: AssistantMessage): boolean {
-		if (!chatTranscriptDisplayPreferences.answerDivider || this.#lastUpdateTransient) return false;
-		if (message.stopReason !== "stop") return false;
+		if (!chatTranscriptDisplayPreferences.answerDivider) return false;
+		if (!this.#lastUpdateTransient && message.stopReason !== "stop") return false;
 		let hasText = false;
 		let hasThinking = false;
 		for (const content of message.content) {
