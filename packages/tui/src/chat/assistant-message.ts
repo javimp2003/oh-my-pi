@@ -50,10 +50,14 @@ const MAX_TRANSCRIPT_ERROR_ROWS = 8;
 
 const EMPTY_STABLE_RENDER: readonly string[] = [];
 
-/** Full-width rule above a turn's final answer (`display.answerDivider`). */
+/** Share of the row the centered answer rule spans. */
+const ANSWER_DIVIDER_WIDTH_RATIO = 0.4;
+
+/** Centered rule above a turn's final answer (`display.answerDivider`). */
 class AnswerDivider implements Component {
 	render(width: number): readonly string[] {
-		return [` ${"─".repeat(Math.max(0, width - 2))}`];
+		const length = Math.min(Math.max(0, width - 2), Math.max(10, Math.round(width * ANSWER_DIVIDER_WIDTH_RATIO)));
+		return [`${" ".repeat(Math.floor((width - length) / 2))}${"─".repeat(length)}`];
 	}
 
 	invalidate(): void {}
