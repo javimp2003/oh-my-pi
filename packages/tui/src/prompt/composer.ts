@@ -572,7 +572,7 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		if (!this.#preferences.pinnedInput || this.#stopped) return false;
 		if (rows === 0) return true;
 		this.#scrollDelta += Math.trunc(rows);
-		this.ui.requestRender();
+		this.ui.requestInteractiveRender();
 		return true;
 	}
 

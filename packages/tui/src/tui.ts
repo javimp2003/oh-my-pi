@@ -928,7 +928,12 @@ export class TUI extends Container {
 	 */
 	#lastFrameCostMs = 0;
 	static readonly #MIN_RENDER_INTERVAL_MS = 1000 / 30;
+	/** Cadence while a continuous gesture (transcript scrolling) is in flight; see {@link requestInteractiveRender}. */
+	static readonly #INTERACTIVE_RENDER_INTERVAL_MS = 1000 / 60;
+	/** How long one interactive request keeps the faster cadence: covers the gaps between wheel reports. */
+	static readonly #INTERACTIVE_CADENCE_HOLD_MS = 150;
 	static readonly #INPUT_RENDER_GRACE_MS = TUI.#MIN_RENDER_INTERVAL_MS;
+	#interactiveCadenceUntilMs = 0;
 	/**
 	 * Cap on the adaptive floor derived from `#lastFrameCostMs`. Bounds the UI
 	 * responsiveness at ~5 fps under sustained heavy renders — anything slower
@@ -2698,6 +2703,18 @@ export class TUI extends Container {
 		this.#requestOrdinaryRender();
 	}
 
+	/**
+	 * Ordinary render paced at 60 fps instead of 30 for the next
+	 * {@link TUI.#INTERACTIVE_CADENCE_HOLD_MS}: a continuous gesture such as
+	 * transcript scrolling moves every row each frame, and 30 fps reads as
+	 * stutter. Adaptive backpressure still applies, so slow frames back off.
+	 */
+	requestInteractiveRender(): void {
+		if (this.#stopped) return;
+		this.#interactiveCadenceUntilMs = this.#renderScheduler.now() + TUI.#INTERACTIVE_CADENCE_HOLD_MS;
+		this.#requestOrdinaryRender();
+	}
+
 	/** Ordinary (non-forced) render scheduling. */
 	#requestOrdinaryRender(): void {
 		if (this.#renderRequested) return;
@@ -2766,7 +2783,9 @@ export class TUI extends Container {
 		}
 		const now = this.#renderScheduler.now();
 		const elapsed = now - this.#lastRenderAt;
-		const cadenceDelay = Math.max(0, TUI.#MIN_RENDER_INTERVAL_MS - elapsed);
+		const minInterval =
+			now < this.#interactiveCadenceUntilMs ? TUI.#INTERACTIVE_RENDER_INTERVAL_MS : TUI.#MIN_RENDER_INTERVAL_MS;
+		const cadenceDelay = Math.max(0, minInterval - elapsed);
 		// Adaptive backpressure — target ~50% render duty cycle: the next frame
 		// starts no sooner than `last_frame_end + last_frame_cost`, i.e.
 		// `last_frame_start + 2 × last_frame_cost`. So `elapsed` (which counts

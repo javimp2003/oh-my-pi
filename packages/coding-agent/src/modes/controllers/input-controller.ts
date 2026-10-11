@@ -87,8 +87,12 @@ import { cfgHideThinkingBlock } from "../../session/settings";
 
 /** Bare words that quit (as `/<word>`) when typed alone into a session with no messages. */
 const BARE_EXIT_WORDS: Record<string, true> = { exit: true, quit: true, q: true };
-/** Transcript rows one wheel notch scrolls in the pinned-input layout. */
-const WHEEL_SCROLL_ROWS = 3;
+/**
+ * Transcript rows one wheel report scrolls in the pinned-input layout. One row
+ * matches the terminal's own scrollback step: trackpads and accelerated wheels
+ * already send a report per line, so larger steps read as jumps.
+ */
+const WHEEL_SCROLL_ROWS = 1;
 
 /**
  * Slash commands that may carry secrets in their arguments should never be
