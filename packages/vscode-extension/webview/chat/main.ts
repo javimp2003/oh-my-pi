@@ -140,6 +140,9 @@ function handle(update: ChatUpdate): void {
 		case "sessions":
 			history.setSessions(update.sessions);
 			break;
+		case "sessionActivity":
+			history.setActivity(update.activity);
+			break;
 		case "planReview":
 			history.close();
 			transcript.showPlanReview(update);

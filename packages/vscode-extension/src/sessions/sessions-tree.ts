@@ -1,27 +1,44 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
+import type { SessionActivity } from "../protocol";
 import { type SessionSummary, listSessions, relativeTime, sessionLabel } from "./session-store";
+
+/** Icon per activity: a spinner while the session works, a green dot once it finished unseen. */
+const ACTIVITY_ICONS: Record<SessionActivity, vscode.ThemeIcon> = {
+	running: new vscode.ThemeIcon("loading~spin"),
+	done: new vscode.ThemeIcon("circle-filled", new vscode.ThemeColor("testing.iconPassed")),
+};
+const ACTIVITY_LABELS: Record<SessionActivity, string> = {
+	running: "Running",
+	done: "Finished",
+};
 
 export class SessionItem extends vscode.TreeItem {
 	constructor(
 		readonly session: SessionSummary,
 		active: boolean,
+		activity: SessionActivity | undefined,
 	) {
 		super(sessionLabel(session), vscode.TreeItemCollapsibleState.None);
 		this.id = session.path;
-		this.description = `${active ? "● " : ""}${relativeTime(session.modified)}`;
+		const state = activity ? `${ACTIVITY_LABELS[activity]} · ` : "";
+		this.description = `${active ? "● " : ""}${state}${relativeTime(session.modified)}`;
 		const count = `${session.messageCount}${session.truncated ? "+" : ""} messages`;
 		this.tooltip = new vscode.MarkdownString(
 			[
 				`**${escapeMarkdown(sessionLabel(session))}**`,
 				session.title && session.firstMessage ? escapeMarkdown(session.firstMessage) : undefined,
+				activity === "running" ? "omp is working on this session." : undefined,
+				activity === "done" ? "Finished while you were in another session." : undefined,
 				`${count} · ${session.modified.toLocaleString()}`,
 				`\`${session.id}\``,
 			]
 				.filter(Boolean)
 				.join("\n\n"),
 		);
-		this.iconPath = new vscode.ThemeIcon(active ? "comment-discussion" : "comment");
+		this.iconPath = activity
+			? ACTIVITY_ICONS[activity]
+			: new vscode.ThemeIcon(active ? "comment-discussion" : "comment");
 		this.contextValue = active ? "session.active" : "session";
 		this.command = { command: "ompCustom.openSession", title: "Open Session", arguments: [this] };
 	}
@@ -36,6 +53,9 @@ export class SessionsTree implements vscode.TreeDataProvider<SessionItem>, vscod
 	#watcher: fs.FSWatcher | undefined;
 	#debounce: NodeJS.Timeout | undefined;
 	#sessions: SessionSummary[] = [];
+
+	/** @param activities what each session with a process in this window is doing */
+	constructor(private readonly activities: () => Record<string, SessionActivity>) {}
 
 	/** Point the tree at `dir` (the active chat's session directory) and mark `activeFile`. */
 	setLocation(dir: string | undefined, activeFile: string | undefined): void {
@@ -66,7 +86,10 @@ export class SessionsTree implements vscode.TreeDataProvider<SessionItem>, vscod
 	async getChildren(element?: SessionItem): Promise<SessionItem[]> {
 		if (element || !this.#dir) return [];
 		this.#sessions = await listSessions(this.#dir);
-		return this.#sessions.map(session => new SessionItem(session, session.path === this.#activeFile));
+		const activities = this.activities();
+		return this.#sessions.map(
+			session => new SessionItem(session, session.path === this.#activeFile, activities[session.path]),
+		);
 	}
 
 	dispose(): void {

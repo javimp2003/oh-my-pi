@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0]
+
+### Fixed
+
+- Moving to another session (History, New chat, the Sessions view, `omp: Switch Session…`) no longer kills the turn running in the current one. Each session now runs in its own omp process: a session that is working keeps going in the background while you open, start, or prompt others, and switching back joins it live. Before, the chat reused one process for every session it showed, and omp's session switch aborted the running turn (the interrupted session could even be lost from disk)
+
+### Added
+
+- The Sessions view and the History panel mark each session's activity: a spinner while it works, a green dot once it finished while you were in another session (cleared when you open it)
+- When a session in the background waits for a plan approval, a notification offers to show it
+
+### Changed
+
+- An idle process is reused in place when you switch sessions (no new start-up), and a background process stops once its work has settled; the session reopens from disk when you go back to it
+
 ## [0.2.4]
 
 ### Fixed

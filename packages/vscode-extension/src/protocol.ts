@@ -46,6 +46,9 @@ export interface ModelChoice {
 	contextWindow: number | null;
 }
 
+/** What a session is doing in this window: working, or finished while no chat showed it. */
+export type SessionActivity = "running" | "done";
+
 /** One row of the chat's history panel (a session file of the workspace). */
 export interface SessionListItem {
 	path: string;
@@ -53,6 +56,7 @@ export interface SessionListItem {
 	detail?: string;
 	age: string;
 	active: boolean;
+	activity?: SessionActivity;
 }
 
 /** Lifecycle of the omp process behind a chat view. */
@@ -93,6 +97,8 @@ export type ChatUpdate =
 	| { type: "focusInput" }
 	/** Sessions of the workspace, newest first (answer to `listSessions`). */
 	| { type: "sessions"; sessions: SessionListItem[] }
+	/** Activity of every session that is running or finished unseen, by session file; sent when it changes. */
+	| { type: "sessionActivity"; activity: Record<string, SessionActivity> }
 	/**
 	 * omp asks to approve the plan it proposed: show it in the chat with `options`
 	 * as buttons and answer with `planDecision`. `path` is the plan file on disk.

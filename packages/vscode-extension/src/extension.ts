@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { ChatSession, errorMessage } from "./chat/chat-session";
+import { errorMessage } from "./chat/agent-host";
+import type { ChatSession } from "./chat/chat-session";
 import { ChatRegistry } from "./chat/chat-views";
 import { agentDir, readConfig, workspaceCwd } from "./config";
 import { renameStoredSession } from "./sessions/rename";
@@ -10,12 +11,13 @@ import { SettingsPanel, openConfigFile } from "./settings/settings-panel";
 
 export function activate(context: vscode.ExtensionContext): void {
 	const log = vscode.window.createOutputChannel("omp (custom)");
-	const tree = new SessionsTree();
 	const chats: ChatRegistry = new ChatRegistry(context.extensionUri, log, {
 		openSettings: () => SettingsPanel.show(context.extensionUri),
 		login: session => void login(session),
 		attachFiles: session => void attachFiles(session),
 	});
+	// Running and finished-unseen marks for every session with a process in this window.
+	const tree = new SessionsTree(() => chats.pool.activities());
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 	statusBar.command = "ompCustom.focusChat";
 
@@ -129,7 +131,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			prompt: "New name",
 		});
 		if (!name?.trim()) return;
-		if (chat?.process && chat.state?.sessionFile === target) await chat.rename(name.trim());
+		// A session open in some process is renamed there: two writers would clobber its file.
+		const host = chats.pool.find(target);
+		if (host) await host.rename(name.trim());
 		else await renameStoredSession(target, name.trim(), log);
 		tree.refresh();
 	};
@@ -145,6 +149,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		if (choice !== "Delete") return;
 		const chat = chats.active;
 		if (chat?.process && chat.state?.sessionFile === item.session.path) await chat.newSession();
+		await chats.pool.stopSession(item.session.path);
 		for (const file of sessionPaths(item.session.path)) {
 			await vscode.workspace.fs
 				.delete(vscode.Uri.file(file), { recursive: true, useTrash: true })
@@ -238,6 +243,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		}),
 		vscode.window.createTreeView("ompCustom.sessions", { treeDataProvider: tree, showCollapseAll: false }),
 		chats.onDidChangeActive(session => void updateActive(session)),
+		chats.pool.onDidChangeActivity(() => tree.refresh()),
 		vscode.commands.registerCommand(
 			"ompCustom.focusChat",
 			run(() => chats.focusSidebar()),

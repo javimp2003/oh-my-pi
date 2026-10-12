@@ -1,17 +1,22 @@
 /**
- * Chat surfaces: the sidebar webview view and any number of editor tabs, each
- * with its own omp process. The most recently focused one is "active": it is
- * what commands, the sessions list, and the status bar act on.
+ * Chat surfaces: the sidebar webview view and any number of editor tabs. Each
+ * shows one session; the omp processes behind them live in one `AgentPool`, so
+ * a session keeps running when its view moves on. The most recently focused
+ * view is "active": it is what commands, the sessions list, and the status bar
+ * act on.
  */
 import * as vscode from "vscode";
 import { readConfig } from "../config";
-import { ChatSession, type SessionTarget } from "./chat-session";
+import type { AgentHost, SessionTarget } from "./agent-host";
+import { AgentPool } from "./agent-pool";
+import { ChatSession, type ChatSurface } from "./chat-session";
 
 type SessionCommands = ChatSession["commands"];
 
 export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposable {
 	static readonly viewId = "ompCustom.chat";
 
+	readonly pool: AgentPool;
 	#sidebar: ChatSession | undefined;
 	#sidebarView: vscode.WebviewView | undefined;
 	readonly #panels = new Set<ChatSession>();
@@ -24,7 +29,10 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 		readonly extensionUri: vscode.Uri,
 		readonly log: vscode.OutputChannel,
 		readonly commands: SessionCommands,
-	) {}
+	) {
+		this.pool = new AgentPool(log);
+		this.pool.onNeedsAttention(host => void this.#offerHost(host));
+	}
 
 	get active(): ChatSession | undefined {
 		return this.#active ?? this.#sidebar;
@@ -32,20 +40,14 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 
 	resolveWebviewView(view: vscode.WebviewView): void {
 		this.#sidebarView = view;
-		const session = new ChatSession(
-			{
-				webview: view.webview,
-				get visible() {
-					return view.visible;
-				},
-				reveal: () => view.show(true),
+		const session = this.#createView({
+			webview: view.webview,
+			get visible() {
+				return view.visible;
 			},
-			this.extensionUri,
-			this.log,
-			this.commands,
-		);
+			reveal: () => view.show(true),
+		});
 		this.#sidebar = session;
-		this.#track(session);
 		view.onDidChangeVisibility(() => {
 			if (view.visible) this.#setActive(session);
 		});
@@ -55,7 +57,7 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 			this.#forget(session);
 		});
 		this.#setActive(session);
-		void session.start(readConfig().resumeLastSession ? { kind: "continue" } : { kind: "new" });
+		void session.open(readConfig().resumeLastSession ? { kind: "continue" } : { kind: "new" });
 	}
 
 	/** Reveal the sidebar chat (creating it if VS Code has not resolved the view yet). */
@@ -74,20 +76,14 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 			{ enableScripts: true, retainContextWhenHidden: true },
 		);
 		panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "media", "icon.png");
-		const session = new ChatSession(
-			{
-				webview: panel.webview,
-				get visible() {
-					return panel.visible;
-				},
-				reveal: () => panel.reveal(),
+		const session = this.#createView({
+			webview: panel.webview,
+			get visible() {
+				return panel.visible;
 			},
-			this.extensionUri,
-			this.log,
-			this.commands,
-		);
+			reveal: () => panel.reveal(),
+		});
 		this.#panels.add(session);
-		this.#track(session);
 		session.onDidChange(() => {
 			panel.title = session.title ? `omp: ${session.title}` : "omp";
 		});
@@ -99,7 +95,7 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 			this.#forget(session);
 		});
 		this.#setActive(session);
-		void session.start(target);
+		void session.open(target);
 		return session;
 	}
 
@@ -111,13 +107,29 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 	dispose(): void {
 		this.#sidebar?.dispose();
 		for (const panel of this.#panels) panel.dispose();
+		this.pool.dispose();
 		this.#onDidChangeActive.dispose();
 	}
 
-	#track(session: ChatSession): void {
+	#createView(surface: ChatSurface): ChatSession {
+		const session = new ChatSession(surface, this.extensionUri, this.log, this.commands, this.pool);
 		session.onDidChange(() => {
 			if (session === this.active) this.#onDidChangeActive.fire(session);
 		});
+		return session;
+	}
+
+	/** A session no chat shows waits for the user: offer to show it in the active chat. */
+	async #offerHost(host: AgentHost): Promise<void> {
+		const name = host.title ?? "A background session";
+		const choice = await vscode.window.showInformationMessage(
+			`omp: ${name} is waiting for you to review its plan.`,
+			"Show",
+		);
+		if (choice !== "Show" || !host.process) return;
+		const chat = await this.ensureActive();
+		chat?.surface.reveal();
+		chat?.showHost(host);
 	}
 
 	#forget(session: ChatSession): void {

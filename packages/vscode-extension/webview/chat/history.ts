@@ -2,10 +2,12 @@
  * Session history overlay: a searchable list of the workspace's sessions
  * covering the transcript. Opening it asks the host for `listSessions`;
  * picking a row posts `openSession`, its pencil renames it in place
- * (`renameSession`).
+ * (`renameSession`). Sessions working in the window show a spinner, those that
+ * finished unseen a green dot.
  */
-import type { ChatRequest, SessionListItem } from "../../src/protocol";
+import type { ChatRequest, SessionActivity, SessionListItem } from "../../src/protocol";
 import { h, iconButton } from "../dom";
+import { setTooltip } from "../tooltip";
 
 type Post = (request: ChatRequest) => void;
 
@@ -71,6 +73,32 @@ export class HistoryPanel {
 		this.#render();
 	}
 
+	/** Running/finished marks changed somewhere in the window: update the listed rows. */
+	setActivity(activity: Record<string, SessionActivity>): void {
+		if (!this.#sessions) return;
+		for (const item of this.#sessions) item.activity = activity[item.path];
+		// Re-rendering would discard a name being typed; the next render shows the marks.
+		if (this.isOpen && this.#editing === undefined) this.#render();
+	}
+
+	/**
+	 * Spinner while the session runs, green dot once it finished unseen, accent dot for
+	 * the open one; a fixed-width slot either way so every label lines up.
+	 */
+	#marker(item: SessionListItem): HTMLElement {
+		const slot = h("span", { className: "history-marker" });
+		if (item.activity === "running") {
+			slot.append(h("span", { className: "history-activity running" }));
+			setTooltip(slot, "Running");
+		} else if (item.activity === "done") {
+			slot.append(h("span", { className: "history-activity done" }));
+			setTooltip(slot, "Finished while you were in another session");
+		} else if (item.active) {
+			slot.append(h("span", { className: "history-active-dot" }));
+		}
+		return slot;
+	}
+
 	#render(): void {
 		if (this.#sessions === undefined) {
 			this.#matches = [];
@@ -112,7 +140,7 @@ export class HistoryPanel {
 			h(
 				"div",
 				{ className: "history-line" },
-				item.active ? h("span", { className: "history-active-dot" }) : null,
+				this.#marker(item),
 				label,
 				editing ? null : h("span", { className: "history-age" }, item.age),
 				editing ? null : rename,
