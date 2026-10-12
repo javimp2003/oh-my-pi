@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1]
+
+### Changed
+
+- Going back to a session you left while it was working no longer starts omp again: once its work is done, its process stays warm (up to 3 idle sessions, each for 10 minutes, the least recently used stopping first), so returning joins it at once instead of showing "Starting omp…"
+
 ## [0.3.0]
 
 ### Fixed

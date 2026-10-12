@@ -2,16 +2,26 @@
  * Every live omp process of the window, one per open session, and what each
  * session is doing.
  *
- * A host no view shows keeps running until its work settles; then it stops
- * (the session is on disk and reopens with `--resume`). A turn that finished
- * that way is remembered as "done" until a view shows the session again.
+ * A host no view shows keeps running until its work settles. Then it stays
+ * warm for a while, so going back to that session joins it instead of starting
+ * omp again: at most `MAX_WARM_HOSTS` idle hosts, each for up to `WARM_TTL_MS`,
+ * the least recently used stopping first (the session is on disk and reopens
+ * with `--resume`). A turn that finished with no view attached is remembered as
+ * "done" until a view shows the session again.
  */
 import * as vscode from "vscode";
 import type { SessionActivity } from "../protocol";
 import { AgentHost } from "./agent-host";
 
+/** Idle hosts no view shows that stay running for a quick return. */
+const MAX_WARM_HOSTS = 3;
+/** How long such a host stays running before it stops. */
+const WARM_TTL_MS = 10 * 60_000;
+
 export class AgentPool implements vscode.Disposable {
 	readonly #hosts = new Set<AgentHost>();
+	/** Idle hosts no view shows, oldest first, each with the timer that stops it. */
+	readonly #warm = new Map<AgentHost, NodeJS.Timeout>();
 	/** Session files whose background turn finished since a view last showed them. */
 	readonly #done = new Set<string>();
 	#signature = "";
@@ -56,7 +66,7 @@ export class AgentPool implements vscode.Disposable {
 		if (sessionFile && this.#done.delete(sessionFile)) this.#fireIfChanged();
 	}
 
-	/** A view stopped showing `host`: stop it now if it has nothing left to do. */
+	/** A view stopped showing `host`: keep it warm if it is idle, or let it finish its work. */
 	release(host: AgentHost): void {
 		this.#update(host);
 	}
@@ -70,6 +80,8 @@ export class AgentPool implements vscode.Disposable {
 	}
 
 	dispose(): void {
+		for (const timer of this.#warm.values()) clearTimeout(timer);
+		this.#warm.clear();
 		for (const host of this.#hosts) host.dispose();
 		this.#hosts.clear();
 		this.#onDidChangeActivity.dispose();
@@ -77,17 +89,43 @@ export class AgentPool implements vscode.Disposable {
 	}
 
 	#update(host: AgentHost): void {
-		if (this.#hosts.has(host) && host.views.size === 0 && !host.running && host.settled) {
-			if (host.finishedUnseen && host.sessionFile) this.#done.add(host.sessionFile);
-			void this.#retire(host);
+		if (this.#hosts.has(host)) {
+			const idleAndHidden = host.views.size === 0 && !host.running && host.settled;
+			if (!idleAndHidden) this.#unwarm(host);
+			else if (!this.#warm.has(host)) this.#keepWarm(host);
 		}
 		this.#fireIfChanged();
 	}
 
+	/** An idle host no view shows: keep it for a quick return, within the warm limits. */
+	#keepWarm(host: AgentHost): void {
+		if (host.finishedUnseen && host.sessionFile) this.#done.add(host.sessionFile);
+		// A dead process or one with no session has nothing to return to.
+		if (!host.process || !host.sessionFile) {
+			void this.#retire(host);
+			return;
+		}
+		this.#warm.set(
+			host,
+			setTimeout(() => void this.#retire(host), WARM_TTL_MS),
+		);
+		for (const oldest of this.#warm.keys()) {
+			if (this.#warm.size <= MAX_WARM_HOSTS) break;
+			void this.#retire(oldest);
+		}
+	}
+
+	#unwarm(host: AgentHost): void {
+		clearTimeout(this.#warm.get(host));
+		this.#warm.delete(host);
+	}
+
 	async #retire(host: AgentHost): Promise<void> {
+		this.#unwarm(host);
 		if (!this.#hosts.delete(host)) return;
 		await host.stop();
 		host.dispose();
+		this.#fireIfChanged();
 	}
 
 	/** Hosts fire on every state refresh; the sessions list only cares when activity changes. */
