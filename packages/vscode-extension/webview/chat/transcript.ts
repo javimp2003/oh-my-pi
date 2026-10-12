@@ -69,6 +69,44 @@ function summaryDivider(title: string, summary: string): HTMLElement {
 	return h("div", { className: "msg divider" }, details);
 }
 
+/** `details` of omp's `skill-prompt` custom message (packages/tui/src/chat/messages.ts `SkillPromptDetails`). */
+interface SkillPromptDetails {
+	name: string;
+	args?: string;
+	/** The draft as submitted, `/skill:<name>` token in place; absent on older sessions. */
+	prompt?: string;
+	lineCount?: number;
+}
+
+function isSkillPromptDetails(details: unknown): details is SkillPromptDetails {
+	return typeof details === "object" && details !== null && "name" in details && typeof details.name === "string";
+}
+
+/**
+ * A skill invocation as the user wrote it: the draft with each `/skill:name`
+ * token as a chip, and the loaded SKILL.md (the message content sent to the
+ * model) folded below, as the terminal shows it.
+ */
+function skillBubble(details: SkillPromptDetails, skillText: string): HTMLElement {
+	const token = `/skill:${details.name}`;
+	const draft = details.prompt ?? (details.args ? `${token} ${details.args}` : token);
+	const text = h("div", { className: "bubble-text" });
+	for (const part of draft.split(/(\/skill:[\w.:-]+)/)) {
+		if (!part) continue;
+		text.append(part.startsWith("/skill:") ? h("span", { className: "skill-chip" }, `✦ ${part.slice(7)}`) : part);
+	}
+	const lines = details.lineCount ?? skillText.split("\n").length;
+	const prompt = h("div", { className: "markdown" });
+	prompt.innerHTML = renderMarkdown(skillText);
+	const folded = h(
+		"details",
+		{ className: "skill-details" },
+		h("summary", null, `Skill ${details.name} · ${lines} ${lines === 1 ? "line" : "lines"}`),
+		prompt,
+	);
+	return h("div", { className: "msg user" }, h("div", { className: "bubble" }, text, folded));
+}
+
 interface Slot {
 	type: string;
 	el: HTMLElement;
@@ -417,7 +455,12 @@ export class Transcript {
 			case "custom":
 			case "hookMessage":
 				if (!message.display) return undefined;
-				el = bubble(contentText(message.content), contentImages(message.content), message.customType);
+				el =
+					message.role === "custom" &&
+					message.customType === "skill-prompt" &&
+					isSkillPromptDetails(message.details)
+						? skillBubble(message.details, contentText(message.content))
+						: bubble(contentText(message.content), contentImages(message.content), message.customType);
 				break;
 			case "toolResult":
 				this.#applyToolResult(message);

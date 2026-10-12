@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.2]
+
+### Fixed
+
+- A prompt that invokes a skill shows what you wrote, with the skill as a chip, instead of the whole SKILL.md; the skill's instructions sent to the model are folded below it, as in the terminal
+
 ## [0.1.1]
 
 ### Fixed

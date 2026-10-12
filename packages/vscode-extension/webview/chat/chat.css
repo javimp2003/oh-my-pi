@@ -199,6 +199,34 @@ code {
 	margin-bottom: 2px;
 }
 
+.skill-chip {
+	padding: 0 5px;
+	border-radius: 4px;
+	background: var(--vscode-badge-background);
+	color: var(--vscode-badge-foreground);
+	font-size: 0.92em;
+	white-space: nowrap;
+}
+
+.skill-details {
+	margin-top: 4px;
+}
+
+.skill-details > summary {
+	cursor: pointer;
+	color: var(--vscode-descriptionForeground);
+	font-size: 11px;
+	user-select: none;
+}
+
+.skill-details > .markdown {
+	margin-top: 4px;
+	padding-top: 4px;
+	max-height: 320px;
+	overflow-y: auto;
+	border-top: 1px solid var(--vscode-widget-border, var(--vscode-input-border, transparent));
+}
+
 .thumbs {
 	display: flex;
 	flex-wrap: wrap;
