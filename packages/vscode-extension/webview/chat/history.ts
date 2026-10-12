@@ -1,10 +1,11 @@
 /**
  * Session history overlay: a searchable list of the workspace's sessions
  * covering the transcript. Opening it asks the host for `listSessions`;
- * picking a row posts `openSession`.
+ * picking a row posts `openSession`, its pencil renames it in place
+ * (`renameSession`).
  */
 import type { ChatRequest, SessionListItem } from "../../src/protocol";
-import { h } from "../dom";
+import { h, iconButton } from "../dom";
 
 type Post = (request: ChatRequest) => void;
 
@@ -21,6 +22,8 @@ export class HistoryPanel {
 	#sessions: SessionListItem[] | undefined;
 	#matches: SessionListItem[] = [];
 	#selected = 0;
+	/** Path of the row whose name is being edited. */
+	#editing: string | undefined;
 
 	constructor(
 		private readonly post: Post,
@@ -84,31 +87,82 @@ export class HistoryPanel {
 			return;
 		}
 		this.#selected = Math.min(this.#selected, this.#matches.length - 1);
-		this.#list.replaceChildren(
-			...this.#matches.map((item, index) => {
-				const row = h(
-					"div",
-					{
-						className: `history-row${item.active ? " active" : ""}`,
-						role: "option",
-						ariaSelected: String(index === this.#selected),
-						dataset: { tooltip: item.path },
-					},
-					h(
-						"div",
-						{ className: "history-line" },
-						item.active ? h("span", { className: "history-active-dot" }) : null,
-						h("span", { className: "history-label" }, item.label),
-						h("span", { className: "history-age" }, item.age),
-					),
-					item.detail ? h("div", { className: "history-detail" }, item.detail) : null,
-				);
-				row.addEventListener("mousedown", event => event.preventDefault());
-				row.addEventListener("click", () => this.#open(item));
-				return row;
-			}),
-		);
+		this.#list.replaceChildren(...this.#matches.map((item, index) => this.#row(item, index)));
 		this.#list.children[this.#selected]?.scrollIntoView({ block: "nearest" });
+		this.#list.querySelector<HTMLInputElement>(".history-rename")?.focus();
+	}
+
+	#row(item: SessionListItem, index: number): HTMLElement {
+		const editing = item.path === this.#editing;
+		const label = editing ? this.#renameInput(item) : h("span", { className: "history-label" }, item.label);
+		const rename = iconButton("pencil", "Rename", event => {
+			event.stopPropagation();
+			this.#editing = item.path;
+			this.#render();
+		});
+		rename.classList.add("history-rename-button");
+		const row = h(
+			"div",
+			{
+				className: `history-row${item.active ? " active" : ""}${editing ? " editing" : ""}`,
+				role: "option",
+				ariaSelected: String(index === this.#selected),
+				dataset: { tooltip: item.path },
+			},
+			h(
+				"div",
+				{ className: "history-line" },
+				item.active ? h("span", { className: "history-active-dot" }) : null,
+				label,
+				editing ? null : h("span", { className: "history-age" }, item.age),
+				editing ? null : rename,
+			),
+			item.detail && !editing ? h("div", { className: "history-detail" }, item.detail) : null,
+		);
+		// Keep focus in the search box, except when clicking into the rename field.
+		row.addEventListener("mousedown", event => {
+			if (!(event.target as Element).closest(".history-rename")) event.preventDefault();
+		});
+		row.addEventListener("click", () => {
+			if (!editing) this.#open(item);
+		});
+		return row;
+	}
+
+	/** Inline name editor: Enter renames, Escape or leaving the field cancels. */
+	#renameInput(item: SessionListItem): HTMLInputElement {
+		const input = h("input", {
+			type: "text",
+			className: "history-rename",
+			value: item.label,
+			ariaLabel: "Session name",
+		});
+		const finish = (save: boolean) => {
+			if (this.#editing !== item.path) return;
+			this.#editing = undefined;
+			const name = input.value.trim();
+			if (save && name && name !== item.label) {
+				// Shown at once; the host's refreshed list follows.
+				item.label = name;
+				this.post({ type: "renameSession", path: item.path, name });
+			}
+			this.#render();
+			this.#search.focus();
+		};
+		input.addEventListener("keydown", event => {
+			event.stopPropagation();
+			if (event.isComposing) return;
+			if (event.key === "Enter") {
+				event.preventDefault();
+				finish(true);
+			} else if (event.key === "Escape") {
+				event.preventDefault();
+				finish(false);
+			}
+		});
+		input.addEventListener("blur", () => finish(false));
+		queueMicrotask(() => input.select());
+		return input;
 	}
 
 	#open(item: SessionListItem): void {

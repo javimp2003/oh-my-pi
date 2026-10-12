@@ -235,13 +235,47 @@ code {
 }
 
 .session-title {
-	flex: 1;
+	flex: 0 1 auto;
 	min-width: 0;
 	font-size: 13px;
 	font-weight: 500;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+	cursor: default;
+}
+
+/* Rename pencil beside the title, shown while the bar is hovered. */
+.title-rename {
+	width: 20px;
+	height: 20px;
+	opacity: 0;
+	transition: opacity 0.1s;
+}
+
+.title-rename .icon {
+	width: 13px;
+	height: 13px;
+}
+
+.header:hover .title-rename,
+.title-rename:focus-visible {
+	opacity: 1;
+}
+
+.title-input {
+	flex: 1;
+	min-width: 0;
+	height: 24px;
+	padding: 0 6px;
+	margin-left: -6px;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--vscode-focusBorder);
+	background: var(--vscode-input-background);
+	color: var(--c-fg);
+	font-size: 13px;
+	font-weight: 500;
+	outline: none;
 }
 
 .header-actions {
@@ -249,6 +283,7 @@ code {
 	align-items: center;
 	gap: 2px;
 	flex: none;
+	margin-left: auto;
 }
 
 /* ---- Main area ---- */
@@ -1228,6 +1263,38 @@ code {
 	flex: none;
 }
 
+/* Rename pencil of a history row, shown on hover or when the row is selected. */
+.history-rename-button {
+	width: 20px;
+	height: 20px;
+	margin: -2px -4px -2px 0;
+	opacity: 0;
+}
+
+.history-rename-button .icon {
+	width: 13px;
+	height: 13px;
+}
+
+.history-row:hover .history-rename-button,
+.history-row[aria-selected="true"] .history-rename-button,
+.history-rename-button:focus-visible {
+	opacity: 1;
+}
+
+.history-rename {
+	flex: 1;
+	min-width: 0;
+	height: 24px;
+	padding: 0 6px;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--vscode-focusBorder);
+	background: var(--vscode-input-background);
+	color: var(--c-fg);
+	font-size: 13px;
+	outline: none;
+}
+
 .history-detail {
 	white-space: nowrap;
 	overflow: hidden;
@@ -1356,6 +1423,58 @@ code {
 
 .composer:focus-within {
 	border-color: color-mix(in oklab, var(--vscode-foreground) 22%, transparent);
+}
+
+/* Pasted images waiting to be sent with the next prompt. */
+.attachments {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+
+.attachment {
+	position: relative;
+	width: 56px;
+	height: 56px;
+	border-radius: var(--r-md);
+	border: 1px solid var(--c-border-heavy);
+	overflow: hidden;
+	background: var(--c-surface);
+}
+
+.attachment img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+
+.attachment-remove {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	width: 18px;
+	height: 18px;
+	border-radius: 9999px;
+	background: rgb(0 0 0 / 0.6);
+	color: #fff;
+	opacity: 0;
+}
+
+.attachment-remove .icon {
+	width: 11px;
+	height: 11px;
+}
+
+.attachment:hover .attachment-remove,
+.attachment-remove:focus-visible {
+	opacity: 1;
+}
+
+.attachment-remove:hover {
+	background: rgb(0 0 0 / 0.8);
+	color: #fff;
 }
 
 .input {

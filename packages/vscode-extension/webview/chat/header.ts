@@ -1,4 +1,4 @@
-/** Top bar: π mark, session title, and New chat / History / Settings icon buttons. */
+/** Top bar: π mark, session title (renamable in place), and New chat / History / Settings icon buttons. */
 import type { ChatRequest, SessionState, SessionStats } from "../../src/protocol";
 import { h, iconButton } from "../dom";
 import { setTooltip } from "../tooltip";
@@ -8,20 +8,43 @@ type Post = (request: ChatRequest) => void;
 export class Header {
 	readonly element: HTMLElement;
 	#title = h("div", { className: "session-title" }, "New chat");
+	#rename: HTMLButtonElement;
+	#input = h("input", { type: "text", className: "title-input", ariaLabel: "Session name", hidden: true });
 	#sessionTitle = "New chat";
 	#history: HTMLButtonElement;
 	#back: HTMLButtonElement;
 	#historyOpen = false;
+	/** A session is open (omp answered `get_state`), so it can be renamed. */
+	#hasSession = false;
 
-	constructor(post: Post, onHistory: () => void) {
+	constructor(
+		private readonly post: Post,
+		onHistory: () => void,
+	) {
 		this.#history = iconButton("history", "History", onHistory);
 		this.#back = iconButton("back", "Back to chat", onHistory);
 		this.#back.hidden = true;
+		this.#rename = iconButton("pencil", "Rename chat", () => this.#startRename());
+		this.#rename.classList.add("title-rename");
+		this.#title.addEventListener("dblclick", () => this.#startRename());
+		this.#input.addEventListener("keydown", event => {
+			if (event.isComposing) return;
+			if (event.key === "Enter") {
+				event.preventDefault();
+				this.#finishRename(true);
+			} else if (event.key === "Escape") {
+				event.preventDefault();
+				this.#finishRename(false);
+			}
+		});
+		this.#input.addEventListener("blur", () => this.#finishRename(true));
 		this.element = h(
 			"header",
 			{ className: "header" },
 			h("span", { className: "brand", ariaHidden: "true" }, "π"),
 			this.#title,
+			this.#input,
+			this.#rename,
 			h(
 				"div",
 				{ className: "header-actions" },
@@ -35,6 +58,7 @@ export class Header {
 	}
 
 	setState(state: SessionState, _stats: SessionStats | undefined, title: string | undefined): void {
+		this.#hasSession = true;
 		this.#sessionTitle = title || state.sessionName || "New chat";
 		this.#render();
 	}
@@ -44,12 +68,43 @@ export class Header {
 		this.#historyOpen = open;
 		this.#history.hidden = open;
 		this.#back.hidden = !open;
+		if (open) this.#finishRename(false);
+		this.#render();
+	}
+
+	#canRename(): boolean {
+		return this.#hasSession && !this.#historyOpen;
+	}
+
+	#startRename(): void {
+		if (!this.#canRename() || !this.#input.hidden) return;
+		this.#input.value = this.#sessionTitle === "New chat" ? "" : this.#sessionTitle;
+		this.#input.placeholder = "Name this chat";
+		this.#input.hidden = false;
+		this.#title.hidden = true;
+		this.#rename.hidden = true;
+		this.#input.focus();
+		this.#input.select();
+	}
+
+	/** Enter or leaving the field renames (an empty or unchanged name does nothing); Escape cancels. */
+	#finishRename(save: boolean): void {
+		if (this.#input.hidden) return;
+		this.#input.hidden = true;
+		const name = this.#input.value.trim();
+		if (save && name && name !== this.#sessionTitle) {
+			// Shown at once; omp's refreshed state follows.
+			this.#sessionTitle = name;
+			this.post({ type: "renameSession", name });
+		}
 		this.#render();
 	}
 
 	#render(): void {
 		const text = this.#historyOpen ? "History" : this.#sessionTitle;
 		this.#title.textContent = text;
-		setTooltip(this.#title, text);
+		this.#title.hidden = !this.#input.hidden;
+		this.#rename.hidden = !this.#canRename() || !this.#input.hidden;
+		setTooltip(this.#title, this.#canRename() ? `${text}\nDouble-click to rename` : text);
 	}
 }

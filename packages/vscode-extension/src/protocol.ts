@@ -12,6 +12,7 @@
 import type {
 	AgentMessage,
 	AvailableSlashCommand,
+	ImageContent,
 	RpcAgentEvent,
 	SessionState,
 	SessionStats,
@@ -104,13 +105,15 @@ export type ChatUpdate =
 export type ChatRequest =
 	/** Webview loaded; the host replies with status, history, state, models, commands. */
 	| { type: "ready" }
-	/** Send a prompt. While the agent is busy the host queues it (`ompCustom.sendWhileBusy`). */
-	| { type: "prompt"; text: string }
+	/** Send a prompt (with pasted images). While the agent is busy the host queues it (`ompCustom.sendWhileBusy`). */
+	| { type: "prompt"; text: string; images?: ImageContent[] }
 	| { type: "abort" }
 	| { type: "newSession" }
 	/** List the workspace's sessions for the history panel; the host answers with `sessions`. */
 	| { type: "listSessions" }
 	| { type: "openSession"; path: string }
+	/** Rename the session at `path`, or the open one when `path` is absent; the host re-sends `sessions`. */
+	| { type: "renameSession"; path?: string; name: string }
 	/** Pick files with the open dialog and insert them as `@path` mentions. */
 	| { type: "attachFiles" }
 	| { type: "setModel"; provider: string; modelId: string }

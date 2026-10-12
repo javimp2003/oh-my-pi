@@ -26,7 +26,8 @@ export type IconName =
 	| "shrink"
 	| "eraser"
 	| "handoff"
-	| "python";
+	| "python"
+	| "close";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -60,6 +61,7 @@ const PATHS: Record<IconName, string> = {
 	// The Python logo's two interlocking snakes, as an outline.
 	python:
 		"M12 2c-3 0-4 1.3-4 3v2h4v1H5c-2 0-3 1.5-3 4s1 4 3 4h2v-2.5c0-1.9 1.6-3.5 3.5-3.5h3c1.4 0 2.5-1.1 2.5-2.5V5c0-1.7-1-3-4-3zM12 22c3 0 4-1.3 4-3v-2h-4v-1h7c2 0 3-1.5 3-4s-1-4-3-4h-2v2.5c0 1.9-1.6 3.5-3.5 3.5h-3C9.1 14 8 15.1 8 16.5V19c0 1.7 1 3 4 3zM10 4.5h.01M14 19.5h.01",
+	close: "M18 6 6 18M6 6l12 12",
 };
 
 /** Icons drawn as filled shapes instead of strokes. */

@@ -18,6 +18,7 @@ import { DialogBridge } from "../dialogs";
 import type { AgentStatus, ChatRequest, ChatUpdate, ModelChoice } from "../protocol";
 import { OmpCommandError, OmpProcess } from "../rpc/omp-process";
 import { webviewHtml } from "../webview-html";
+import { renameStoredSession } from "../sessions/rename";
 import { guessSessionDir, listSessions, relativeTime, sessionLabel } from "../sessions/session-store";
 
 /** Notification frames that are not session events (everything else is forwarded as `event`). */
@@ -208,7 +209,9 @@ export class ChatSession implements vscode.Disposable {
 
 	async rename(name: string): Promise<void> {
 		await this.#requireProcess().request("set_session_name", { name });
-		this.#scheduleRefresh();
+		// The cached title would otherwise win over the new name until omp reports it.
+		this.#title = name;
+		await this.#refreshState();
 	}
 
 	async abort(): Promise<void> {
@@ -287,6 +290,24 @@ export class ChatSession implements vscode.Disposable {
 		this.post({ type: "notice", level, message });
 	}
 
+	/** The workspace's sessions for the history panel, newest first. */
+	async #postSessions(): Promise<void> {
+		const dir = this.#state?.sessionFile
+			? path.dirname(this.#state.sessionFile)
+			: await guessSessionDir(path.join(agentDir(), "sessions"), workspaceCwd());
+		const sessions = await listSessions(dir);
+		this.post({
+			type: "sessions",
+			sessions: sessions.map(session => ({
+				path: session.path,
+				label: sessionLabel(session),
+				detail: session.title ? session.firstMessage : undefined,
+				age: relativeTime(session.modified),
+				active: session.path === this.#state?.sessionFile,
+			})),
+		});
+	}
+
 	/**
 	 * omp's plan-approval dialog, shown as a card in the chat with the whole plan
 	 * (read from the plan file `get_state` reports) and the dialog's options.
@@ -337,6 +358,7 @@ export class ChatSession implements vscode.Disposable {
 				const process = this.#requireProcess();
 				await process.request("prompt", {
 					message: request.text,
+					...(request.images?.length ? { images: request.images } : {}),
 					streamingBehavior: readConfig().sendWhileBusy,
 				});
 				return;
@@ -347,26 +369,21 @@ export class ChatSession implements vscode.Disposable {
 			case "newSession":
 				await this.newSession();
 				return;
-			case "listSessions": {
-				const dir = this.#state?.sessionFile
-					? path.dirname(this.#state.sessionFile)
-					: await guessSessionDir(path.join(agentDir(), "sessions"), workspaceCwd());
-				const sessions = await listSessions(dir);
-				this.post({
-					type: "sessions",
-					sessions: sessions.map(session => ({
-						path: session.path,
-						label: sessionLabel(session),
-						detail: session.title ? session.firstMessage : undefined,
-						age: relativeTime(session.modified),
-						active: session.path === this.#state?.sessionFile,
-					})),
-				});
+			case "listSessions":
+				await this.#postSessions();
 				return;
-			}
 			case "openSession":
 				await this.switchSession(request.path);
 				return;
+			case "renameSession": {
+				const name = request.name.trim();
+				if (!name) return;
+				const open = this.#state?.sessionFile;
+				if (request.path === undefined || request.path === open) await this.rename(name);
+				else await renameStoredSession(request.path, name, this.log);
+				await this.#postSessions();
+				return;
+			}
 			case "attachFiles":
 				this.commands.attachFiles(this);
 				return;

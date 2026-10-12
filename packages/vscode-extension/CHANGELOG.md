@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2]
+
+### Added
+
+- Pasting an image (a screenshot or a copied picture) into the composer attaches it to the next prompt; attachments show as thumbnails above the text with a button to remove each one, and a prompt can be just images
+- Rename chats from the chat: double-click the title (or its pencil on hover) to rename the open one, or use the pencil of any row in History to rename an older one
+
 ## [0.2.1]
 
 ### Fixed

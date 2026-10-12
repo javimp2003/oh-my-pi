@@ -1,9 +1,9 @@
 /**
  * Bottom dock: notice banners, queued-message chips, and the composer card
- * (slash-command popup, auto-growing textarea, footer with attach, thinking
- * toggle, model picker, context meter, and Send/Stop).
+ * (slash-command popup, pasted-image attachments, auto-growing textarea,
+ * footer with attach, thinking toggle, model picker, context meter, and Send/Stop).
  */
-import type { AvailableSlashCommand, ChatRequest, SessionState, SessionStats } from "../../src/protocol";
+import type { AvailableSlashCommand, ChatRequest, ImageContent, SessionState, SessionStats } from "../../src/protocol";
 import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
@@ -34,6 +34,21 @@ const MAX_SUGGESTIONS = 50;
 const PLACEHOLDER = "Ask omp anything. / for commands and skills";
 const PLACEHOLDER_BUSY = "Ask for follow-up changes";
 const PLACEHOLDER_PLAN = "Plan mode: describe what to plan";
+
+/** A pasted image file as an omp image block (base64 data and MIME type). */
+function readImage(file: File): Promise<ImageContent> {
+	const { promise, resolve, reject } = Promise.withResolvers<ImageContent>();
+	const reader = new FileReader();
+	reader.onerror = () => reject(reader.error);
+	reader.onload = () => {
+		const url = String(reader.result);
+		const comma = url.indexOf(",");
+		const mimeType = file.type || url.slice("data:".length, url.indexOf(";"));
+		resolve({ type: "image", data: url.slice(comma + 1), mimeType });
+	};
+	reader.readAsDataURL(file);
+	return promise;
+}
 
 export class Composer {
 	readonly element: HTMLElement;
@@ -66,6 +81,9 @@ export class Composer {
 	/** Draft text for which the user dismissed the popup with Escape. */
 	#dismissedFor: string | undefined;
 	#busy = false;
+	/** Pasted images sent with the next prompt. */
+	#images: ImageContent[] = [];
+	#attachments = h("div", { className: "attachments", hidden: true });
 
 	constructor(
 		private readonly post: Post,
@@ -103,6 +121,7 @@ export class Composer {
 		this.#input.value = draft;
 		this.#input.addEventListener("input", () => this.#onInput());
 		this.#input.addEventListener("keydown", event => this.#onKeyDown(event));
+		this.#input.addEventListener("paste", event => this.#onPaste(event));
 		this.#input.addEventListener("blur", () => setTimeout(() => this.#closePopup(), 150));
 		this.#popup.addEventListener("mousedown", event => event.preventDefault());
 
@@ -115,6 +134,7 @@ export class Composer {
 				"div",
 				{ className: "composer" },
 				this.#popup,
+				this.#attachments,
 				this.#input,
 				h(
 					"div",
@@ -263,10 +283,10 @@ export class Composer {
 	#refresh(): void {
 		this.#input.style.height = "auto";
 		this.#input.style.height = `${this.#input.scrollHeight}px`;
-		const hasText = this.#input.value.trim() !== "";
+		const hasContent = this.#input.value.trim() !== "" || this.#images.length > 0;
 		this.#stop.hidden = !this.#busy;
-		this.#send.hidden = this.#busy && !hasText;
-		this.#send.disabled = !hasText || this.#input.disabled;
+		this.#send.hidden = this.#busy && !hasContent;
+		this.#send.disabled = !hasContent || this.#input.disabled;
 		setTooltip(this.#send, this.#busy ? "Queue message (Enter)" : "Send (Enter)");
 		this.#input.placeholder = this.#placeholder();
 	}
@@ -278,13 +298,65 @@ export class Composer {
 
 	#submit(): void {
 		const text = this.#input.value;
-		if (text.trim() === "" || this.#input.disabled) return;
+		if ((text.trim() === "" && this.#images.length === 0) || this.#input.disabled) return;
 		const command = /^\s*\/(\S+)\s*([\s\S]*)$/.exec(text);
 		const local = this.#local.get(command?.[1] ?? "");
-		if (local) local.run(command?.[2]?.trim() ?? "");
-		else this.post({ type: "prompt", text });
+		if (local) {
+			// Local commands take no images; they stay attached for the next prompt.
+			local.run(command?.[2]?.trim() ?? "");
+		} else {
+			this.post(this.#images.length > 0 ? { type: "prompt", text, images: this.#images } : { type: "prompt", text });
+			this.#images = [];
+			this.#renderAttachments();
+		}
 		this.#input.value = "";
 		this.#onInput();
+	}
+
+	/**
+	 * Images on the clipboard (screenshots, copied pictures) become attachments of
+	 * the next prompt. Text on the same clipboard still pastes as text.
+	 */
+	#onPaste(event: ClipboardEvent): void {
+		const data = event.clipboardData;
+		if (!data) return;
+		const files = [...data.items]
+			.filter(item => item.kind === "file" && item.type.startsWith("image/"))
+			.map(item => item.getAsFile())
+			.filter((file): file is File => file !== null);
+		if (files.length === 0) return;
+		if (!data.types.includes("text/plain")) event.preventDefault();
+		for (const file of files) {
+			void readImage(file).then(
+				image => {
+					this.#images.push(image);
+					this.#renderAttachments();
+					this.#refresh();
+				},
+				() => this.showNotice("warning", `Could not read the pasted image (${file.type}).`),
+			);
+		}
+	}
+
+	#renderAttachments(): void {
+		this.#attachments.replaceChildren(
+			...this.#images.map((image, index) => {
+				const remove = iconButton("close", "Remove image", () => {
+					this.#images.splice(index, 1);
+					this.#renderAttachments();
+					this.#refresh();
+					this.focus();
+				});
+				remove.classList.add("attachment-remove");
+				return h(
+					"div",
+					{ className: "attachment" },
+					h("img", { src: `data:${image.mimeType};base64,${image.data}`, alt: "Pasted image" }),
+					remove,
+				);
+			}),
+		);
+		this.#attachments.hidden = this.#images.length === 0;
 	}
 
 	#renderThinkingToggle(): void {

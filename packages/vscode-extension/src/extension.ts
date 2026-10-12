@@ -2,8 +2,8 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { ChatSession, errorMessage } from "./chat/chat-session";
 import { ChatRegistry } from "./chat/chat-views";
-import { agentDir, ompCommand, readConfig, workspaceCwd } from "./config";
-import { OmpProcess } from "./rpc/omp-process";
+import { agentDir, readConfig, workspaceCwd } from "./config";
+import { renameStoredSession } from "./sessions/rename";
 import { guessSessionDir, sessionLabel, sessionPaths } from "./sessions/session-store";
 import { SessionItem, SessionsTree, pickSession } from "./sessions/sessions-tree";
 import { SettingsPanel, openConfigFile } from "./settings/settings-panel";
@@ -129,23 +129,8 @@ export function activate(context: vscode.ExtensionContext): void {
 			prompt: "New name",
 		});
 		if (!name?.trim()) return;
-		if (chat?.process && chat.state?.sessionFile === target) {
-			await chat.rename(name.trim());
-		} else {
-			await vscode.window.withProgress(
-				{ location: vscode.ProgressLocation.Notification, title: "omp: renaming session…" },
-				async () => {
-					const process = new OmpProcess(ompCommand(workspaceCwd()));
-					process.on("stderr", text => log.append(text));
-					try {
-						await process.start(["--resume", target]);
-						await process.request("set_session_name", { name: name.trim() });
-					} finally {
-						await process.stop();
-					}
-				},
-			);
-		}
+		if (chat?.process && chat.state?.sessionFile === target) await chat.rename(name.trim());
+		else await renameStoredSession(target, name.trim(), log);
 		tree.refresh();
 	};
 
