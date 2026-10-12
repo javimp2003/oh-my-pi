@@ -518,15 +518,61 @@ export class ChatSession implements vscode.Disposable {
 	}
 }
 
-/** Open `file` (absolute, or relative to the workspace) at an optional 1-based line. */
+/** Open a file the transcript mentions at an optional 1-based line; see {@link resolveMentionedFile}. */
 export async function openWorkspaceFile(file: string, line?: number): Promise<void> {
-	const absolute = path.isAbsolute(file) ? file : path.join(workspaceCwd(), file);
-	const document = await vscode.workspace.openTextDocument(vscode.Uri.file(absolute));
+	const uri = await resolveMentionedFile(file);
+	if (!uri) {
+		void vscode.window.showWarningMessage(`omp: "${file}" was not found in this workspace.`);
+		return;
+	}
+	const document = await vscode.workspace.openTextDocument(uri);
 	const position = line && line > 0 ? new vscode.Position(line - 1, 0) : undefined;
 	await vscode.window.showTextDocument(document, {
 		preview: true,
 		selection: position && new vscode.Range(position, position),
 	});
+}
+
+/** Folders never searched for a mentioned file. */
+const SEARCH_EXCLUDE = "**/{node_modules,.git,.venv,venv,dist,build,out,target}/**";
+/** Matches listed for a mention that names several files. */
+const MAX_MATCHES = 50;
+
+/**
+ * The file behind a path the agent wrote. Agents cite paths relative to the
+ * repository they work in (often a subfolder of the open folder, such as one repo
+ * of several) or just a file name (`agent.md`), so a path missing under the
+ * workspace folders is looked up anywhere in the workspace: one match opens, several
+ * ask which one, none resolve to undefined.
+ */
+async function resolveMentionedFile(file: string): Promise<vscode.Uri | undefined> {
+	if (path.isAbsolute(file)) return (await isFile(file)) ? vscode.Uri.file(file) : undefined;
+	const roots = [workspaceCwd(), ...(vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)];
+	for (const root of new Set(roots)) {
+		const candidate = path.join(root, file);
+		if (await isFile(candidate)) return vscode.Uri.file(candidate);
+	}
+	const relative = file.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+	if (relative.startsWith("../")) return undefined;
+	// Glob metacharacters in names (`[id].tsx`) must match literally.
+	const pattern = `**/${relative.replace(/[[\]{}()*?!]/g, char => `[${char}]`)}`;
+	const matches = await vscode.workspace.findFiles(pattern, SEARCH_EXCLUDE, MAX_MATCHES);
+	if (matches.length <= 1) return matches[0];
+	const items = matches
+		.map(uri => ({ label: vscode.workspace.asRelativePath(uri, true), uri }))
+		.sort((a, b) => a.label.length - b.label.length || a.label.localeCompare(b.label));
+	const picked = await vscode.window.showQuickPick(items, {
+		title: `omp: open ${relative}`,
+		placeHolder: `${matches.length} files match "${relative}"`,
+	});
+	return picked?.uri;
+}
+
+async function isFile(file: string): Promise<boolean> {
+	return fs.stat(file).then(
+		stats => stats.isFile(),
+		() => false,
+	);
 }
 
 export function errorMessage(error: unknown): string {

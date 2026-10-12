@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.1]
+
+### Fixed
+
+- File links in answers open when the agent cites a path relative to the repository it works in (a subfolder of the open folder) or only a file name (`agent.md`): a path missing under the workspace folders is looked up anywhere in the workspace, opening the only match or asking which one when several match, instead of failing with "Unable to resolve nonexistent file"
+
 ## [0.2.0]
 
 ### Changed
