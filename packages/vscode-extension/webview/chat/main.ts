@@ -1,13 +1,15 @@
 /**
- * Chat webview entry: mounts header, transcript, and composer into `#root` and
- * routes host `ChatUpdate`s to them.
+ * Chat webview entry: mounts header, transcript, history panel, and composer
+ * into `#root` and routes host `ChatUpdate`s to them.
  */
 import type { AgentStatus, ChatRequest, ChatUpdate } from "../../src/protocol";
+import { button, h } from "../dom";
+import { installTooltips } from "../tooltip";
 import { getVsCodeApi } from "../vscode-api";
 import { Composer } from "./composer";
-import { button, h } from "../dom";
 import { Header } from "./header";
-import { Transcript } from "./transcript";
+import { HistoryPanel } from "./history";
+import { Transcript, brailleSpinner } from "./transcript";
 
 interface ChatViewState {
 	draft?: string;
@@ -16,29 +18,45 @@ interface ChatViewState {
 const vscode = getVsCodeApi<ChatRequest, ChatViewState>();
 const post = (request: ChatRequest) => vscode.postMessage(request);
 
-const header = new Header(post);
-const composer = new Composer(post, draft => vscode.setState({ draft }), vscode.getState()?.draft ?? "");
+const header = new Header(post, () => history.toggle());
+const history = new HistoryPanel(post, open => header.setHistoryMode(open));
+const composer = new Composer(post, draft => vscode.setState({ draft }), vscode.getState()?.draft ?? "", {
+	// TUI commands without an RPC handler, run by the chat itself.
+	localCommands: [
+		{ name: "new", description: "Start a new session", run: () => post({ type: "newSession" }) },
+		{
+			name: "resume",
+			description: "Resume a different session",
+			run: () => {
+				if (!history.isOpen) history.toggle();
+			},
+		},
+		{ name: "settings", description: "Open settings", run: () => post({ type: "openSettings" }) },
+	],
+	onToggleThinking: expanded => transcript.setThinkingExpanded(expanded),
+});
 const transcript = new Transcript(post, prompt => composer.fill(prompt));
 
+const statusSpinner = brailleSpinner();
 const statusLabel = h("div", { className: "status-label" });
 const statusMessage = h("pre", { className: "status-message" });
 const restart = button("Restart", "primary-button", () => post({ type: "restart" }));
 const statusPanel = h(
 	"div",
 	{ className: "status-overlay" },
-	h(
-		"div",
-		{ className: "status-card" },
-		h("span", { className: "spinner large" }),
-		statusLabel,
-		statusMessage,
-		restart,
-	),
+	h("div", { className: "status-card" }, statusSpinner.element, statusLabel, statusMessage, restart),
 );
 
 const root = document.getElementById("root")!;
 root.classList.add("chat");
-root.append(header.element, h("div", { className: "main" }, transcript.element, statusPanel), composer.element);
+installTooltips();
+root.append(
+	header.element,
+	h("div", { className: "main" }, transcript.element, statusPanel, history.element),
+	composer.element,
+);
+
+let sessionFile: string | undefined;
 
 let busy = false;
 function setBusy(next: boolean): void {
@@ -51,6 +69,9 @@ function setBusy(next: boolean): void {
 function setStatus(status: AgentStatus): void {
 	statusPanel.dataset.phase = status.phase;
 	statusPanel.hidden = status.phase === "ready";
+	statusSpinner.element.hidden = status.phase !== "starting";
+	if (status.phase === "starting") statusSpinner.start();
+	else statusSpinner.stop();
 	statusLabel.textContent = status.phase === "starting" ? "Starting omp…" : "omp is not running";
 	statusMessage.textContent = status.phase === "stopped" ? status.message : "";
 	statusMessage.hidden = status.phase !== "stopped";
@@ -66,6 +87,7 @@ function handle(update: ChatUpdate): void {
 			break;
 		case "history":
 			transcript.setHistory(update.messages);
+			history.close();
 			break;
 		case "event": {
 			const { event } = update;
@@ -84,7 +106,7 @@ function handle(update: ChatUpdate): void {
 					composer.showNotice(event.level, event.message);
 					break;
 				case "thinking_level_changed":
-					if (event.thinkingLevel) header.setThinkingLevel(event.thinkingLevel);
+					if (event.thinkingLevel) composer.picker.setThinkingLevel(event.thinkingLevel);
 					break;
 				default:
 					transcript.handleEvent(event);
@@ -94,18 +116,36 @@ function handle(update: ChatUpdate): void {
 		case "state": {
 			const { state } = update;
 			header.setState(state, update.stats, update.title);
+			composer.picker.setCurrent(state.model);
+			if (state.thinkingLevel) composer.picker.setThinkingLevel(state.thinkingLevel);
+			composer.setUsage(state, update.stats);
+			composer.setPlanState(state);
 			if (state.isStreaming !== undefined) setBusy(state.isStreaming);
 			if (state.queuedMessages) {
 				const queued = state.queuedMessages;
 				composer.setQueue(queued.steering, queued.followUp, queued.liveSteered);
 			}
+			if (state.sessionFile !== sessionFile) {
+				sessionFile = state.sessionFile;
+				history.close();
+			}
 			break;
 		}
 		case "models":
-			header.setModels(update.models);
+			composer.picker.setModels(update.models);
 			break;
 		case "thinkingLevels":
-			header.setThinkingLevels(update.levels);
+			composer.picker.setThinkingLevels(update.levels);
+			break;
+		case "sessions":
+			history.setSessions(update.sessions);
+			break;
+		case "planReview":
+			history.close();
+			transcript.showPlanReview(update);
+			break;
+		case "planReviewClosed":
+			transcript.closePlanReview(update.id);
 			break;
 		case "commands":
 			composer.setCommands(update.commands);

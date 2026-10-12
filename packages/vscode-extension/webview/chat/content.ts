@@ -24,5 +24,5 @@ export function parseFileRef(raw: string): FileRef {
 
 /** Clickable path; the transcript's delegated click handler turns `data-file` into `openFile`. */
 export function fileLink(path: string, label = path): HTMLAnchorElement {
-	return h("a", { className: "file-link", dataset: { file: path }, tabIndex: 0, title: `Open ${path}` }, label);
+	return h("a", { className: "file-link", dataset: { file: path, tooltip: `Open ${path}` }, tabIndex: 0 }, label);
 }

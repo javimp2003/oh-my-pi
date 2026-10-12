@@ -32,6 +32,18 @@ export function sessionLabel(session: SessionSummary): string {
 	return session.title || session.firstMessage || path.basename(session.path, ".jsonl");
 }
 
+export function relativeTime(date: Date): string {
+	const seconds = Math.round((Date.now() - date.getTime()) / 1000);
+	if (seconds < 60) return "just now";
+	const minutes = Math.round(seconds / 60);
+	if (minutes < 60) return `${minutes}m ago`;
+	const hours = Math.round(minutes / 60);
+	if (hours < 24) return `${hours}h ago`;
+	const days = Math.round(hours / 24);
+	if (days < 30) return `${days}d ago`;
+	return date.toLocaleDateString();
+}
+
 /** Sessions in `dir`, newest first; sessions without a single prompt are skipped. */
 export async function listSessions(dir: string): Promise<SessionSummary[]> {
 	let names: string[];

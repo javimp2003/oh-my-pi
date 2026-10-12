@@ -5,6 +5,7 @@
  * requests with RPC commands, and re-sends snapshots (history, state,
  * models) whenever the session changes underneath it.
  */
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type {
@@ -12,11 +13,12 @@ import type {
 	RpcNotification,
 	SessionState,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
-import { ompCommand, readConfig, workspaceCwd } from "../config";
+import { agentDir, ompCommand, readConfig, workspaceCwd } from "../config";
 import { DialogBridge } from "../dialogs";
 import type { AgentStatus, ChatRequest, ChatUpdate, ModelChoice } from "../protocol";
 import { OmpCommandError, OmpProcess } from "../rpc/omp-process";
 import { webviewHtml } from "../webview-html";
+import { guessSessionDir, listSessions, relativeTime, sessionLabel } from "../sessions/session-store";
 
 /** Notification frames that are not session events (everything else is forwarded as `event`). */
 const NON_EVENT_FRAMES: Record<string, true> = {
@@ -76,13 +78,22 @@ export class ChatSession implements vscode.Disposable {
 	/** Fires when the process, session file, title, model, or busy state changes. */
 	readonly onDidChange = this.#onDidChange.event;
 	readonly #statusTexts = new Map<string, string>();
+	/** Plan reviews awaiting a decision, by request id; re-sent when the webview reloads. */
+	readonly #planReviews = new Map<
+		string,
+		{ update: Extract<ChatUpdate, { type: "planReview" }>; resolve(value: string | undefined): void }
+	>();
 
 	constructor(
 		readonly surface: ChatSurface,
 		readonly extensionUri: vscode.Uri,
 		readonly log: vscode.OutputChannel,
 		/** Commands the webview can trigger that live outside this session. */
-		readonly commands: { openSettings(): void; login(session: ChatSession): void; showSessions(): void },
+		readonly commands: {
+			openSettings(): void;
+			login(session: ChatSession): void;
+			attachFiles(session: ChatSession): void;
+		},
 	) {
 		this.#dialogs = new DialogBridge({
 			respond: response => this.#process?.respond(response),
@@ -93,6 +104,7 @@ export class ChatSession implements vscode.Disposable {
 			},
 			setEditorText: text => this.post({ type: "insertText", text }),
 			log: line => this.log.appendLine(line),
+			reviewPlan: (request, token) => this.#reviewPlan(request, token),
 		});
 		surface.webview.options = {
 			enableScripts: true,
@@ -223,6 +235,15 @@ export class ChatSession implements vscode.Disposable {
 		await this.#refreshState();
 	}
 
+	async setPlanMode(enabled: boolean): Promise<void> {
+		try {
+			await this.#requireProcess().request("set_plan_mode", { enabled });
+		} finally {
+			// Also on failure: the webview toggled its button optimistically.
+			await this.#refreshState();
+		}
+	}
+
 	async availableModels(): Promise<ModelChoice[]> {
 		const { models } = await this.#requireProcess().request("get_available_models");
 		return models.map(model => ({
@@ -266,12 +287,51 @@ export class ChatSession implements vscode.Disposable {
 		this.post({ type: "notice", level, message });
 	}
 
+	/**
+	 * omp's plan-approval dialog, shown as a card in the chat with the whole plan
+	 * (read from the plan file `get_state` reports) and the dialog's options.
+	 */
+	async #reviewPlan(
+		request: { id: string; title: string; options: string[] },
+		token: vscode.CancellationToken,
+	): Promise<string | undefined> {
+		const [heading = "", ...preview] = request.title.split("\n");
+		const planFile = (await this.process?.request("get_state"))?.planMode?.planFile;
+		const content = planFile ? await fs.readFile(planFile, "utf8").catch(() => undefined) : undefined;
+		const update: Extract<ChatUpdate, { type: "planReview" }> = {
+			type: "planReview",
+			id: request.id,
+			// `Approve plan "<title>" and start implementation?`
+			title: /"(.+)"/.exec(heading)?.[1] ?? heading,
+			// Without a readable plan file, the dialog's own preview of the plan.
+			content: content ?? preview.join("\n").trim(),
+			path: content === undefined ? undefined : planFile,
+			options: request.options,
+		};
+		if (token.isCancellationRequested) return undefined;
+		const { promise, resolve } = Promise.withResolvers<string | undefined>();
+		this.#planReviews.set(request.id, { update, resolve });
+		const cancelled = token.onCancellationRequested(() => {
+			this.#planReviews.delete(request.id);
+			this.post({ type: "planReviewClosed", id: request.id });
+			resolve(undefined);
+		});
+		this.surface.reveal();
+		this.post(update);
+		try {
+			return await promise;
+		} finally {
+			cancelled.dispose();
+		}
+	}
+
 	async #handle(request: ChatRequest): Promise<void> {
 		switch (request.type) {
 			case "ready":
 				this.#webviewReady = true;
 				this.post({ type: "status", status: this.#status });
 				if (this.process) await this.#sendSnapshot(this.process);
+				for (const review of this.#planReviews.values()) this.post(review.update);
 				return;
 			case "prompt": {
 				const process = this.#requireProcess();
@@ -287,14 +347,38 @@ export class ChatSession implements vscode.Disposable {
 			case "newSession":
 				await this.newSession();
 				return;
-			case "showSessions":
-				this.commands.showSessions();
+			case "listSessions": {
+				const dir = this.#state?.sessionFile
+					? path.dirname(this.#state.sessionFile)
+					: await guessSessionDir(path.join(agentDir(), "sessions"), workspaceCwd());
+				const sessions = await listSessions(dir);
+				this.post({
+					type: "sessions",
+					sessions: sessions.map(session => ({
+						path: session.path,
+						label: sessionLabel(session),
+						detail: session.title ? session.firstMessage : undefined,
+						age: relativeTime(session.modified),
+						active: session.path === this.#state?.sessionFile,
+					})),
+				});
+				return;
+			}
+			case "openSession":
+				await this.switchSession(request.path);
+				return;
+			case "attachFiles":
+				this.commands.attachFiles(this);
 				return;
 			case "setModel":
 				await this.setModel(request.provider, request.modelId);
 				return;
 			case "setThinkingLevel":
 				await this.setThinkingLevel(request.level);
+				return;
+			case "setPlanMode":
+				await this.setPlanMode(request.enabled);
+				if (request.prompt) await this.#handle({ type: "prompt", text: request.prompt });
 				return;
 			case "openSettings":
 				this.commands.openSettings();
@@ -307,6 +391,16 @@ export class ChatSession implements vscode.Disposable {
 				return;
 			case "restart":
 				await this.restart();
+				return;
+			case "planDecision": {
+				const review = this.#planReviews.get(request.id);
+				this.#planReviews.delete(request.id);
+				review?.resolve(request.value);
+				return;
+			}
+			case "openPlan":
+				// Rendered, as Claude Code and Codex show plans; the preview links to the source.
+				await vscode.commands.executeCommand("markdown.showPreview", vscode.Uri.file(request.path));
 				return;
 			case "openFile":
 				await openWorkspaceFile(request.path, request.line);
@@ -351,7 +445,9 @@ export class ChatSession implements vscode.Disposable {
 			this.#busy = frame.type === "agent_start";
 			this.#onDidChange.fire(this);
 		}
-		if (STATE_CHANGING_EVENTS[frame.type]) this.#scheduleRefresh();
+		// Approving a plan (a `write` to `xd://propose`) leaves plan mode mid-turn.
+		const planDecision = frame.type === "tool_execution_end" && frame.toolName === "write";
+		if (STATE_CHANGING_EVENTS[frame.type] || (planDecision && this.#state?.planMode)) this.#scheduleRefresh();
 	}
 
 	/** Coalesce bursts of state-changing events into one `get_state`. */

@@ -4,10 +4,11 @@ Chat with the [omp](https://github.com/javimp2003/oh-my-pi) coding agent from VS
 
 ## Features
 
-- **Chat** in the activity bar (π icon) or in an editor tab (`omp: Open Chat in Editor`): streamed answers with markdown and code blocks, collapsible thinking, a card per tool call (file, command, search, diff), and a queue for messages sent while omp works.
-- **Composer**: `Enter` sends, `Shift+Enter` adds a line, `Esc` stops the reply. Typing `/` lists omp's slash commands and skills. Mention files with `@path`.
+- **Chat** in the activity bar (π icon) or in an editor tab (`omp: Open Chat in Editor`, in the view's `…` menu), styled after the Codex extension: streamed answers with markdown and code blocks, collapsible thinking, an activity row per tool call ("Read …", "Edited … +3 −1"; shell commands as "Bash" and Python/JS as "Code", titled by the call's purpose with the command beneath) that expands to its arguments and output, and a queue for messages sent while omp works. The header has New chat, History, and Settings buttons.
+- **Composer**: `Enter` sends, `Shift+Enter` adds a line, `Esc` stops the reply. Typing `/` lists omp's slash commands and skills. Mention files with `@path`, or pick them with the `+` button. The footer has a brain button that expands or folds all thinking, a plan button that turns plan mode on and off (the agent plans read-only; its plan appears in the chat with Approve and execute / Refine plan buttons and Open in editor), the model and reasoning picker, and a context-window ring that opens usage, session cost, and Compact / Clean up / Handoff.
+- **History** (clock icon in the chat header): searchable list of the workspace's sessions; pick one to load it.
 - **Sessions** view: every session of the workspace, newest first, titled automatically. Click to open; rename or delete from the item's buttons or context menu. `omp: Switch Session…` searches them.
-- **Model and thinking level** pickers in the chat header and the command palette.
+- **Model and reasoning level**: the picker in the composer, or `omp: Select Model…` / `omp: Select Thinking Level…`.
 - **Settings** (`omp: Settings`, gear icon): all omp settings by tab and group, with search, typed editors, and reset to default. Changes go through `omp config set`, so they apply to the terminal too.
 - **Editor integration**: `omp: Add Selection to Chat` (`Cmd+Alt+K` / `Ctrl+Alt+K`, editor context menu) quotes the selection with its file and lines; `omp: Add File to Chat` (Explorer context menu) inserts an `@file` mention.
 - **Dialogs**: questions from omp (`ask`), confirmations, and provider sign-in links open as native VS Code prompts.

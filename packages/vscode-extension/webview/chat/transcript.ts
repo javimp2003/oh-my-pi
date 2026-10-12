@@ -8,13 +8,16 @@ import type {
 	AgentMessage,
 	AssistantMessage,
 	ChatRequest,
+	ChatUpdate,
 	ImageContent,
 	RpcAgentEvent,
 	ToolResultMessage,
 } from "../../src/protocol";
-import { button, h } from "../dom";
+import { button, h, iconButton } from "../dom";
+import { icon } from "../icons";
 import { fileLink, imageSrc, parseFileRef } from "./content";
 import { renderMarkdown } from "./markdown";
+import { PlanCard } from "./plan-card";
 import { ToolCard, truncatedPre } from "./tools";
 
 type LiveEvent = RpcAgentEvent & { messageId?: string };
@@ -26,6 +29,60 @@ const EXAMPLE_PROMPTS = [
 	"Write tests for the file I have open",
 ];
 const PIN_THRESHOLD_PX = 32;
+/** The TUI's braille activity spinner (packages/tui/src/status-line/segments.ts `brandSpinnerFrame`). */
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_INTERVAL_MS = 80;
+
+export interface BrailleSpinner {
+	readonly element: HTMLElement;
+	/** Animate on one 80 ms interval; `onTick` runs on the same interval (e.g. a timer label). */
+	start(onTick?: () => void): void;
+	stop(): void;
+}
+
+/** The TUI's braille spinner glyph; it only animates between `start()` and `stop()`. */
+export function brailleSpinner(): BrailleSpinner {
+	const element = h("span", { className: "working-spinner", ariaHidden: "true" }, SPINNER_FRAMES[0]);
+	let frame = 0;
+	let timer = 0;
+	const stop = () => {
+		window.clearInterval(timer);
+		timer = 0;
+	};
+	return {
+		element,
+		start(onTick) {
+			stop();
+			frame = 0;
+			element.textContent = SPINNER_FRAMES[0]!;
+			timer = window.setInterval(() => {
+				frame = (frame + 1) % SPINNER_FRAMES.length;
+				element.textContent = SPINNER_FRAMES[frame]!;
+				onTick?.();
+			}, SPINNER_INTERVAL_MS);
+		},
+		stop,
+	};
+}
+
+/** Elapsed turn time like the TUI's `brandTimer`: `12s`, `3m`, `1h` (capped at 99h). */
+function formatElapsed(ms: number): string {
+	const seconds = Math.floor(ms / 1000);
+	if (seconds < 60) return `${seconds}s`;
+	if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+	return `${Math.min(99, Math.floor(seconds / 3600))}h`;
+}
+
+/** A hover-revealed Copy action under a user bubble; the icon turns into a check after copying. */
+function copyActions(text: string): HTMLElement {
+	const copy = iconButton("copy", "Copy message", () => {
+		void navigator.clipboard.writeText(text).then(() => {
+			copy.replaceChildren(icon("check"));
+			setTimeout(() => copy.replaceChildren(icon("copy")), 1200);
+		});
+	});
+	return h("div", { className: "msg-actions" }, copy);
+}
 
 function contentText(content: string | Array<{ type: string; text?: string }>): string {
 	if (typeof content === "string") return content;
@@ -54,7 +111,7 @@ function bubble(text: string, images: ImageContent[], label?: string): HTMLEleme
 			),
 		);
 	}
-	el.append(body);
+	el.append(body, copyActions(text));
 	return el;
 }
 
@@ -104,15 +161,18 @@ function skillBubble(details: SkillPromptDetails, skillText: string): HTMLElemen
 		h("summary", null, `Skill ${details.name} · ${lines} ${lines === 1 ? "line" : "lines"}`),
 		prompt,
 	);
-	return h("div", { className: "msg user" }, h("div", { className: "bubble" }, text, folded));
+	return h(
+		"div",
+		{ className: "msg user" },
+		h("div", { className: "bubble" }, text, folded),
+		copyActions(details.prompt ?? draft),
+	);
 }
 
 interface Slot {
 	type: string;
 	el: HTMLElement;
 	key: string;
-	/** Thinking block auto-opened while streaming; closes when the message ends. */
-	autoOpened?: boolean;
 }
 
 class AssistantView {
@@ -123,6 +183,8 @@ class AssistantView {
 	constructor(
 		private readonly key: string,
 		private readonly card: (id: string) => ToolCard,
+		/** The composer's "expand all thinking" toggle is on. */
+		private readonly thinkingExpanded: () => boolean,
 	) {
 		this.element.append(this.#footer);
 	}
@@ -134,7 +196,7 @@ class AssistantView {
 			if (this.#slots[index]?.type !== block.type) this.#truncate(index);
 			let slot = this.#slots[index];
 			if (!slot) {
-				slot = this.#createSlot(block.type, streaming);
+				slot = this.#createSlot(block.type);
 				this.#slots.push(slot);
 				this.element.insertBefore(slot.el, this.#footer);
 			}
@@ -149,15 +211,14 @@ class AssistantView {
 				case "thinking": {
 					const details = slot.el as HTMLDetailsElement;
 					const live = streaming && index === content.length - 1;
-					details.querySelector("summary")!.textContent = live ? "Thinking…" : "Thinking";
+					const label = details.querySelector(".thinking-label")!;
+					label.textContent = live ? "Thinking" : "Thought";
+					label.classList.toggle("shimmer", live);
 					details.classList.toggle("live", live);
 					if (slot.key !== block.thinking) {
 						slot.key = block.thinking;
-						details.querySelector(".thinking-body")!.textContent = block.thinking;
-					}
-					if (!streaming && slot.autoOpened) {
-						details.open = false;
-						slot.autoOpened = false;
+						// Models end thinking with blank lines; under `pre-wrap` they would stretch the block (and its rule) past the text.
+						details.querySelector(".thinking-body")!.textContent = block.thinking.trim();
 					}
 					details.hidden = !streaming && block.thinking.trim() === "";
 					break;
@@ -189,7 +250,7 @@ class AssistantView {
 		}
 	}
 
-	#createSlot(type: string, streaming: boolean): Slot {
+	#createSlot(type: string): Slot {
 		switch (type) {
 			case "text":
 				return { type, el: h("div", { className: "markdown" }), key: "\u0000" };
@@ -197,11 +258,18 @@ class AssistantView {
 				const details = h(
 					"details",
 					{ className: "thinking" },
-					h("summary", null, "Thinking"),
+					h(
+						"summary",
+						null,
+						h("span", { className: "thinking-chevron" }, icon("chevronRight")),
+						h("span", { className: "thinking-label" }, "Thinking"),
+					),
 					h("div", { className: "thinking-body" }),
 				);
-				details.open = streaming;
-				return { type, el: details, key: "\u0000", autoOpened: streaming };
+				// Open only when the brain toggle is on, live or not; the shimmering
+				// "Thinking" summary already shows the agent is reasoning.
+				details.open = this.thinkingExpanded();
+				return { type, el: details, key: "\u0000" };
 			}
 			case "image":
 				return { type, el: h("div", { className: "thumbs" }), key: "" };
@@ -220,15 +288,31 @@ export class Transcript {
 	readonly element: HTMLElement;
 	#scroller = h("div", { className: "transcript" });
 	#list = h("div", { className: "messages" });
+	#spinner = brailleSpinner();
+	#elapsed = h("span", { className: "working-time" }, "0s");
+	#busySince = 0;
+	#thinkingExpanded = false;
 	#working = h(
 		"div",
 		{ className: "working", hidden: true },
-		h("span", { className: "spinner" }),
-		h("span", { className: "working-label" }, "Working"),
+		this.#spinner.element,
+		h("span", { className: "working-label shimmer" }, "Working"),
+		this.#elapsed,
 	);
 	#empty: HTMLElement;
-	#pill = h("button", { type: "button", className: "new-messages", hidden: true }, "↓ New messages");
+	#pill = h(
+		"button",
+		{
+			type: "button",
+			className: "new-messages",
+			hidden: true,
+			ariaLabel: "New messages",
+			dataset: { tooltip: "New messages" },
+		},
+		icon("arrowUp"),
+	);
 	#tools = new Map<string, ToolCard>();
+	#planCards = new Map<string, PlanCard>();
 	#live = new Map<string, AssistantView | HTMLElement>();
 	#pendingUpdates = new Map<string, AssistantMessage>();
 	#frame = 0;
@@ -246,8 +330,9 @@ export class Transcript {
 		this.#empty = h(
 			"div",
 			{ className: "empty" },
-			h("div", { className: "empty-title" }, "Ask omp anything about this workspace"),
-			h("div", { className: "empty-hint" }, "Type / for commands. Shift+Enter adds a new line."),
+			h("div", { className: "empty-brand", ariaHidden: "true" }, "π"),
+			h("div", { className: "empty-title" }, "What should omp build?"),
+			h("div", { className: "empty-hint" }, "Type / for commands and skills · Shift+Enter for a new line"),
 			h("div", { className: "examples" }, ...chips),
 		);
 		this.#scroller.append(this.#empty, this.#list, this.#working);
@@ -284,7 +369,11 @@ export class Transcript {
 		this.#list.replaceChildren();
 		for (const message of messages) {
 			if (message.role === "assistant") {
-				const view = new AssistantView(`h${this.#list.childElementCount}`, id => this.#card(id));
+				const view = new AssistantView(
+					`h${this.#list.childElementCount}`,
+					id => this.#card(id),
+					() => this.#thinkingExpanded,
+				);
 				view.update(message, false);
 				this.#list.append(view.element);
 			} else {
@@ -296,14 +385,49 @@ export class Transcript {
 		this.#afterChange();
 	}
 
-	setBusy(busy: boolean): void {
-		this.#working.hidden = !busy;
-		if (!busy) this.#flush();
+	/** Open or fold every thinking block; blocks rendered later follow the same state. */
+	setThinkingExpanded(expanded: boolean): void {
+		this.#thinkingExpanded = expanded;
+		for (const details of this.#list.querySelectorAll<HTMLDetailsElement>("details.thinking")) {
+			details.open = expanded;
+		}
 		this.#afterChange();
 	}
 
+	setBusy(busy: boolean): void {
+		this.#working.hidden = !busy;
+		if (busy) {
+			this.#busySince = Date.now();
+			this.#elapsed.textContent = formatElapsed(0);
+			this.#spinner.start(() => {
+				this.#elapsed.textContent = formatElapsed(Date.now() - this.#busySince);
+			});
+		} else {
+			this.#spinner.stop();
+			this.#flush();
+		}
+		this.#afterChange();
+	}
+
+	/** Show the plan omp asks to approve; a card already shown for `review.id` is replaced. */
+	showPlanReview(review: Extract<ChatUpdate, { type: "planReview" }>): void {
+		const card = new PlanCard(review, this.post);
+		const previous = this.#planCards.get(review.id);
+		if (previous?.element.isConnected) previous.element.replaceWith(card.element);
+		else this.#list.append(card.element);
+		this.#planCards.set(review.id, card);
+		// The decision is the next thing the user must do: bring it into view.
+		this.#pinned = true;
+		this.#afterChange();
+	}
+
+	closePlanReview(id: string): void {
+		this.#planCards.get(id)?.close();
+		this.#planCards.delete(id);
+	}
+
 	appendCommandOutput(text: string): void {
-		this.#list.append(h("div", { className: "msg command-output" }, truncatedPre(text, "tool-pre")));
+		this.#list.append(h("div", { className: "msg command-output" }, truncatedPre(text, "activity-pre")));
 		this.#afterChange();
 	}
 
@@ -412,7 +536,11 @@ export class Transcript {
 		if (message.role === "assistant") {
 			let view = this.#live.get(key);
 			if (!(view instanceof AssistantView)) {
-				view = new AssistantView(key, id => this.#card(id));
+				view = new AssistantView(
+					key,
+					id => this.#card(id),
+					() => this.#thinkingExpanded,
+				);
 				this.#live.set(key, view);
 				this.#list.append(view.element);
 			}
@@ -529,8 +657,8 @@ export class Transcript {
 		if (copy) {
 			const code = copy.closest(".code-block")?.querySelector("code")?.textContent ?? "";
 			void navigator.clipboard.writeText(code).then(() => {
-				copy.textContent = "Copied";
-				setTimeout(() => (copy.textContent = "Copy"), 1200);
+				copy.classList.add("copied");
+				setTimeout(() => copy.classList.remove("copied"), 1200);
 			});
 			return;
 		}

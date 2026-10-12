@@ -45,6 +45,15 @@ export interface ModelChoice {
 	contextWindow: number | null;
 }
 
+/** One row of the chat's history panel (a session file of the workspace). */
+export interface SessionListItem {
+	path: string;
+	label: string;
+	detail?: string;
+	age: string;
+	active: boolean;
+}
+
 /** Lifecycle of the omp process behind a chat view. */
 export type AgentStatus =
 	| { phase: "starting" }
@@ -80,7 +89,16 @@ export type ChatUpdate =
 	| { type: "notice"; level: "info" | "warning" | "error"; message: string }
 	/** Insert text at the composer cursor (Add Selection / Add File) and focus it. */
 	| { type: "insertText"; text: string }
-	| { type: "focusInput" };
+	| { type: "focusInput" }
+	/** Sessions of the workspace, newest first (answer to `listSessions`). */
+	| { type: "sessions"; sessions: SessionListItem[] }
+	/**
+	 * omp asks to approve the plan it proposed: show it in the chat with `options`
+	 * as buttons and answer with `planDecision`. `path` is the plan file on disk.
+	 */
+	| { type: "planReview"; id: string; title: string; content: string; path?: string; options: string[] }
+	/** omp withdrew the plan review (the turn was aborted); disable its buttons. */
+	| { type: "planReviewClosed"; id: string };
 
 /** Chat webview → host. */
 export type ChatRequest =
@@ -90,10 +108,19 @@ export type ChatRequest =
 	| { type: "prompt"; text: string }
 	| { type: "abort" }
 	| { type: "newSession" }
-	/** Open the session picker (QuickPick on the host). */
-	| { type: "showSessions" }
+	/** List the workspace's sessions for the history panel; the host answers with `sessions`. */
+	| { type: "listSessions" }
+	| { type: "openSession"; path: string }
+	/** Pick files with the open dialog and insert them as `@path` mentions. */
+	| { type: "attachFiles" }
 	| { type: "setModel"; provider: string; modelId: string }
 	| { type: "setThinkingLevel"; level: ThinkingLevel }
+	/** Enter or leave omp's plan mode, then send `prompt` if given (`/plan <prompt>`); the host replies with a fresh `state`. */
+	| { type: "setPlanMode"; enabled: boolean; prompt?: string }
+	/** Answer a `planReview` with one of its options. */
+	| { type: "planDecision"; id: string; value: string }
+	/** Open a plan file (absolute path) rendered in an editor tab. */
+	| { type: "openPlan"; path: string }
 	| { type: "openSettings" }
 	| { type: "login" }
 	| { type: "compact" }

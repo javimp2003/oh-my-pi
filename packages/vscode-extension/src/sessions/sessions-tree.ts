@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
-import { type SessionSummary, listSessions, sessionLabel } from "./session-store";
+import { type SessionSummary, listSessions, relativeTime, sessionLabel } from "./session-store";
 
 export class SessionItem extends vscode.TreeItem {
 	constructor(
@@ -109,18 +109,6 @@ export async function pickSession(
 		matchOnDetail: true,
 	});
 	return picked?.session;
-}
-
-export function relativeTime(date: Date): string {
-	const seconds = Math.round((Date.now() - date.getTime()) / 1000);
-	if (seconds < 60) return "just now";
-	const minutes = Math.round(seconds / 60);
-	if (minutes < 60) return `${minutes}m ago`;
-	const hours = Math.round(minutes / 60);
-	if (hours < 24) return `${hours}h ago`;
-	const days = Math.round(hours / 24);
-	if (days < 30) return `${days}d ago`;
-	return date.toLocaleDateString();
 }
 
 function escapeMarkdown(text: string): string {

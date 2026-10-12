@@ -2,7 +2,7 @@
 	"name": "omp-custom-vscode",
 	"displayName": "omp (custom)",
 	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.1.2",
+	"version": "0.2.0",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",
@@ -195,24 +195,9 @@
 		"menus": {
 			"view/title": [
 				{
-					"command": "ompCustom.newSession",
-					"when": "view == ompCustom.chat",
-					"group": "navigation@1"
-				},
-				{
-					"command": "ompCustom.showSessions",
-					"when": "view == ompCustom.chat",
-					"group": "navigation@2"
-				},
-				{
 					"command": "ompCustom.openChatInEditor",
 					"when": "view == ompCustom.chat",
-					"group": "navigation@3"
-				},
-				{
-					"command": "ompCustom.openSettings",
-					"when": "view == ompCustom.chat",
-					"group": "navigation@4"
+					"group": "overflow@0"
 				},
 				{
 					"command": "ompCustom.openInTerminal",
@@ -384,6 +369,7 @@
 		"@oh-my-pi/pi-coding-agent": "catalog:",
 		"@types/bun": "catalog:",
 		"@types/vscode": "1.90.0",
+		"highlight.js": "^11.12.0",
 		"marked": "^15.0.0"
 	}
 }

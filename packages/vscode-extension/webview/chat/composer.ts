@@ -1,14 +1,39 @@
 /**
- * Bottom dock: notice banners, queued-message chips, slash-command popup, and
- * the auto-growing prompt textarea with Send/Stop.
+ * Bottom dock: notice banners, queued-message chips, and the composer card
+ * (slash-command popup, auto-growing textarea, footer with attach, thinking
+ * toggle, model picker, context meter, and Send/Stop).
  */
-import type { AvailableSlashCommand, ChatRequest } from "../../src/protocol";
-import { button, h } from "../dom";
+import type { AvailableSlashCommand, ChatRequest, SessionState, SessionStats } from "../../src/protocol";
+import { button, h, iconButton } from "../dom";
+import { icon } from "../icons";
+import { setTooltip } from "../tooltip";
+import { ContextMeter } from "./context-meter";
+import { ModelPicker } from "./model-picker";
 
 type Post = (request: ChatRequest) => void;
 type NoticeLevel = "info" | "warning" | "error";
 
+/**
+ * A slash command the webview runs itself: TUI commands omp's RPC mode does
+ * not offer (`/new`, `/resume`, `/settings`, `/plan`) mapped onto the chat's own UI.
+ */
+export interface LocalCommand {
+	name: string;
+	description: string;
+	/** `args` is the text after the command name, trimmed. */
+	run(args: string): void;
+}
+
+export interface ComposerOptions {
+	localCommands: LocalCommand[];
+	/** The brain button toggled; `expanded` is the new state. */
+	onToggleThinking(expanded: boolean): void;
+}
+
 const MAX_SUGGESTIONS = 50;
+const PLACEHOLDER = "Ask omp anything. / for commands and skills";
+const PLACEHOLDER_BUSY = "Ask for follow-up changes";
+const PLACEHOLDER_PLAN = "Plan mode: describe what to plan";
 
 export class Composer {
 	readonly element: HTMLElement;
@@ -18,12 +43,24 @@ export class Composer {
 	#input = h("textarea", {
 		className: "input",
 		rows: 1,
-		placeholder: "Ask omp… (/ for commands)",
+		placeholder: PLACEHOLDER,
 		ariaLabel: "Prompt",
 	});
 	#send: HTMLButtonElement;
 	#stop: HTMLButtonElement;
+	#meter: ContextMeter;
+	#thinkingToggle: HTMLButtonElement;
+	#thinkingExpanded = false;
+	#planToggle: HTMLButtonElement;
+	#planCommand: LocalCommand;
+	#planAvailable = false;
+	#planOn = false;
+	readonly picker: ModelPicker;
+	/** Commands omp offers (`available_commands_update`). */
+	#offered: AvailableSlashCommand[] = [];
+	/** `#offered` plus the local commands it does not shadow. */
 	#commands: AvailableSlashCommand[] = [];
+	#local = new Map<string, LocalCommand>();
 	#matches: AvailableSlashCommand[] = [];
 	#selected = 0;
 	/** Draft text for which the user dismissed the popup with Escape. */
@@ -34,10 +71,35 @@ export class Composer {
 		private readonly post: Post,
 		private readonly saveDraft: (draft: string) => void,
 		draft: string,
+		private readonly options: ComposerOptions,
 	) {
-		this.#send = button("Send", "send-button", () => this.#submit());
-		this.#stop = button("Stop", "stop-button", () => this.post({ type: "abort" }));
+		this.#send = h("button", { type: "button", className: "send-button", ariaLabel: "Send" }, icon("arrowUp"));
+		this.#send.addEventListener("click", () => this.#submit());
+		this.#stop = h(
+			"button",
+			{ type: "button", className: "stop-button", ariaLabel: "Stop", dataset: { tooltip: "Stop (Esc)" } },
+			icon("stop"),
+		);
+		this.#stop.addEventListener("click", () => this.post({ type: "abort" }));
 		this.#stop.hidden = true;
+		this.picker = new ModelPicker(post);
+		this.#meter = new ContextMeter(post);
+		this.#thinkingToggle = iconButton("brain", "", () => {
+			this.#thinkingExpanded = !this.#thinkingExpanded;
+			this.#renderThinkingToggle();
+			this.options.onToggleThinking(this.#thinkingExpanded);
+		});
+		this.#thinkingToggle.classList.add("thinking-toggle");
+		this.#renderThinkingToggle();
+		this.#planToggle = iconButton("plan", "", () => this.#setPlanMode(!this.#planOn));
+		this.#planToggle.classList.add("plan-toggle");
+		this.#planCommand = {
+			name: "plan",
+			description: "Toggle plan mode (agent plans before executing)",
+			run: args => this.#setPlanMode(args ? true : !this.#planOn, args || undefined),
+		};
+		this.#renderPlanToggle();
+		this.setCommands([]);
 		this.#input.value = draft;
 		this.#input.addEventListener("input", () => this.#onInput());
 		this.#input.addEventListener("keydown", event => this.#onKeyDown(event));
@@ -54,7 +116,19 @@ export class Composer {
 				{ className: "composer" },
 				this.#popup,
 				this.#input,
-				h("div", { className: "composer-buttons" }, this.#stop, this.#send),
+				h(
+					"div",
+					{ className: "composer-footer" },
+					h(
+						"div",
+						{ className: "composer-footer-left" },
+						iconButton("plus", "Attach files", () => this.post({ type: "attachFiles" })),
+						this.#thinkingToggle,
+						this.#planToggle,
+						this.picker.element,
+					),
+					h("div", { className: "composer-footer-right" }, this.#meter.element, this.#stop, this.#send),
+				),
 			),
 		);
 		this.#refresh();
@@ -62,6 +136,7 @@ export class Composer {
 
 	setBusy(busy: boolean): void {
 		this.#busy = busy;
+		this.#meter.setBusy(busy);
 		this.#refresh();
 	}
 
@@ -70,22 +145,74 @@ export class Composer {
 		this.#refresh();
 	}
 
+	/** Context-window meter (usage, session tokens and cost). */
+	setUsage(state: SessionState, stats: SessionStats | undefined): void {
+		this.#meter.setUsage(state, stats);
+	}
+
 	setCommands(commands: AvailableSlashCommand[]): void {
-		this.#commands = commands;
+		this.#offered = commands;
+		this.#mergeCommands();
+	}
+
+	/** Plan mode button: hidden when omp cannot enter plan mode (setting off, or an omp without RPC plan mode). */
+	setPlanState(state: SessionState): void {
+		this.#planAvailable = state.planModeAvailable === true;
+		this.#planOn = state.planMode?.enabled === true;
+		this.#renderPlanToggle();
+		this.#mergeCommands();
+	}
+
+	/** omp's commands plus the local ones it does not offer itself. */
+	#mergeCommands(): void {
+		const commands = this.#offered;
+		const offered = new Set(commands.flatMap(command => [command.name, ...(command.aliases ?? [])]));
+		const candidates = this.#planAvailable
+			? [...this.options.localCommands, this.#planCommand]
+			: this.options.localCommands;
+		const local = candidates.filter(command => !offered.has(command.name));
+		this.#local = new Map(local.map(command => [command.name, command]));
+		// Local commands join omp's builtins, ahead of skills and custom commands.
+		const builtins = commands.filter(command => command.source === "builtin");
+		this.#commands = [
+			...builtins,
+			...local.map(command => ({
+				name: command.name,
+				description: command.description,
+				source: "builtin" as const,
+			})),
+			...commands.filter(command => command.source !== "builtin"),
+		];
 		this.#updatePopup();
+	}
+
+	/** Toggle plan mode; `prompt` (from `/plan <prompt>`) enters it and then sends the prompt. */
+	#setPlanMode(enabled: boolean, prompt?: string): void {
+		this.#planOn = enabled;
+		this.#renderPlanToggle();
+		this.post(prompt ? { type: "setPlanMode", enabled, prompt } : { type: "setPlanMode", enabled });
+	}
+
+	#renderPlanToggle(): void {
+		this.#planToggle.hidden = !this.#planAvailable;
+		const title = this.#planOn ? "Leave plan mode" : "Plan mode: plan read-only before changing code";
+		setTooltip(this.#planToggle, title);
+		this.#planToggle.ariaLabel = title;
+		this.#input.placeholder = this.#placeholder();
+		this.#planToggle.ariaPressed = String(this.#planOn);
 	}
 
 	setQueue(steering: string[], followUp: string[], liveSteered = 0): void {
 		const chip = (text: string, queue: "steering" | "followUp", removable: boolean) => {
 			const el = h(
 				"div",
-				{ className: `queue-chip ${queue}`, title: text },
+				{ className: `queue-chip ${queue}`, dataset: { tooltip: text } },
 				h("span", { className: "queue-kind" }, queue === "steering" ? "Steer" : "Queued"),
 				h("span", { className: "queue-text" }, text),
 			);
 			if (removable) {
 				const remove = button("×", "chip-remove", () => this.post({ type: "removeQueued", message: text, queue }));
-				remove.title = "Remove from queue";
+				setTooltip(remove, "Remove from queue");
 				el.append(remove);
 			}
 			return el;
@@ -100,7 +227,7 @@ export class Composer {
 	showNotice(level: NoticeLevel, message: string): void {
 		const notice = h("div", { className: `notice ${level}`, role: level === "error" ? "alert" : "status" });
 		const close = button("×", "notice-close", () => notice.remove());
-		close.title = "Dismiss";
+		setTooltip(close, "Dismiss");
 		notice.append(h("span", { className: "notice-text" }, message), close);
 		this.#notices.append(notice);
 	}
@@ -140,15 +267,31 @@ export class Composer {
 		this.#stop.hidden = !this.#busy;
 		this.#send.hidden = this.#busy && !hasText;
 		this.#send.disabled = !hasText || this.#input.disabled;
-		this.#send.title = this.#busy ? "Queue message (Enter)" : "Send (Enter)";
+		setTooltip(this.#send, this.#busy ? "Queue message (Enter)" : "Send (Enter)");
+		this.#input.placeholder = this.#placeholder();
+	}
+
+	#placeholder(): string {
+		if (this.#busy) return PLACEHOLDER_BUSY;
+		return this.#planOn ? PLACEHOLDER_PLAN : PLACEHOLDER;
 	}
 
 	#submit(): void {
 		const text = this.#input.value;
 		if (text.trim() === "" || this.#input.disabled) return;
-		this.post({ type: "prompt", text });
+		const command = /^\s*\/(\S+)\s*([\s\S]*)$/.exec(text);
+		const local = this.#local.get(command?.[1] ?? "");
+		if (local) local.run(command?.[2]?.trim() ?? "");
+		else this.post({ type: "prompt", text });
 		this.#input.value = "";
 		this.#onInput();
+	}
+
+	#renderThinkingToggle(): void {
+		const title = this.#thinkingExpanded ? "Collapse all thinking" : "Expand all thinking";
+		setTooltip(this.#thinkingToggle, title);
+		this.#thinkingToggle.ariaLabel = title;
+		this.#thinkingToggle.ariaPressed = String(this.#thinkingExpanded);
 	}
 
 	#onKeyDown(event: KeyboardEvent): void {

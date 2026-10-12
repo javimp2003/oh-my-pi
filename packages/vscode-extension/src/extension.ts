@@ -14,7 +14,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	const chats: ChatRegistry = new ChatRegistry(context.extensionUri, log, {
 		openSettings: () => SettingsPanel.show(context.extensionUri),
 		login: session => void login(session),
-		showSessions: () => void showSessions(),
+		attachFiles: session => void attachFiles(session),
 	});
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 	statusBar.command = "ompCustom.focusChat";
@@ -42,6 +42,16 @@ export function activate(context: vscode.ExtensionContext): void {
 		await tree.getChildren();
 		const picked = await pickSession(tree.sessions, session.state?.sessionFile);
 		if (picked) await session.switchSession(picked.path);
+	};
+
+	const attachFiles = async (session: ChatSession) => {
+		const picked = await vscode.window.showOpenDialog({
+			canSelectMany: true,
+			defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+			openLabel: "Attach",
+		});
+		if (!picked?.length) return;
+		session.insertText(`${picked.map(file => mention(vscode.workspace.asRelativePath(file, false))).join(" ")} `);
 	};
 
 	const login = async (session?: ChatSession) => {

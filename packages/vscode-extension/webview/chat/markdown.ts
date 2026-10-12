@@ -5,6 +5,7 @@
  * copy button.
  */
 import { Marked, type Tokens } from "marked";
+import { highlightCode } from "./highlight";
 
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
@@ -25,10 +26,12 @@ export function looksLikeFilePath(text: string): boolean {
 
 function codeBlock(text: string, lang: string | undefined): string {
 	const language = (lang ?? "").trim().split(/\s+/)[0] ?? "";
+	const source = text.replace(/\n$/, "");
+	const code = highlightCode(source, language.toLowerCase()) ?? escapeHtml(source);
 	return (
 		`<div class="code-block"><div class="code-header"><span class="code-lang">${escapeHtml(language)}</span>` +
-		`<button type="button" class="copy-btn">Copy</button></div>` +
-		`<pre><code>${escapeHtml(text.replace(/\n$/, ""))}</code></pre></div>`
+		`<button type="button" class="copy-btn" data-tooltip="Copy" aria-label="Copy"></button></div>` +
+		`<pre><code class="hljs">${code}</code></pre></div>`
 	);
 }
 
@@ -50,11 +53,10 @@ const marked = new Marked({
 		},
 		link({ href, title, tokens }: Tokens.Link): string {
 			const label = this.parser.parseInline(tokens);
-			const titleAttr = title ? ` title="${escapeHtml(title)}"` : ` title="${escapeHtml(href)}"`;
-			return `<a data-href="${escapeHtml(href)}" tabindex="0"${titleAttr}>${label}</a>`;
+			return `<a data-href="${escapeHtml(href)}" tabindex="0" data-tooltip="${escapeHtml(title || href)}">${label}</a>`;
 		},
 		image({ href, text }: Tokens.Image): string {
-			return `<a data-href="${escapeHtml(href)}" tabindex="0" title="${escapeHtml(href)}">${escapeHtml(text || href)}</a>`;
+			return `<a data-href="${escapeHtml(href)}" tabindex="0" data-tooltip="${escapeHtml(href)}">${escapeHtml(text || href)}</a>`;
 		},
 	},
 });

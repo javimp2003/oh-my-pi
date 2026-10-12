@@ -1,4 +1,5 @@
 /** DOM construction helpers shared by the chat and settings webviews. */
+import { type IconName, icon } from "./icons";
 
 type Child = Node | string | null | undefined | false;
 
@@ -36,6 +37,17 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 /** A `<button type="button">` wired to `onClick`. */
 export function button(label: string, className: string, onClick: (event: MouseEvent) => void): HTMLButtonElement {
 	const element = h("button", { type: "button", className, textContent: label });
+	element.addEventListener("click", onClick);
+	return element;
+}
+
+/** A square `<button>` showing only `icon(name)`; `title` is its hover tooltip and accessible name. */
+export function iconButton(name: IconName, title: string, onClick: (event: MouseEvent) => void): HTMLButtonElement {
+	const element = h(
+		"button",
+		{ type: "button", className: "icon-button", ariaLabel: title, dataset: title ? { tooltip: title } : undefined },
+		icon(name),
+	);
 	element.addEventListener("click", onClick);
 	return element;
 }

@@ -18,9 +18,25 @@ export interface DialogHost {
 	/** Replace the composer draft (`set_editor_text`). */
 	setEditorText(text: string): void;
 	log(line: string): void;
+	/**
+	 * Show omp's plan-approval `select` with the plan itself (the chat's plan card);
+	 * resolves to the chosen option, or undefined when dismissed or `token` is cancelled.
+	 */
+	reviewPlan(request: SelectRequest, token: vscode.CancellationToken): Promise<string | undefined>;
 }
 
 const CUSTOM_ANSWER = "$(edit) Other (type your own)…";
+/** Selects with a multi-line title and at most this many options render as a modal with buttons. */
+const MAX_MODAL_OPTIONS = 3;
+/** omp's plan-approval options (`packages/coding-agent/src/modes/rpc/rpc-plan.ts`). */
+const PLAN_APPROVE_OPTION = "Approve and execute";
+const PLAN_REFINE_OPTION = "Refine plan";
+
+export type SelectRequest = Extract<ExtensionUiRequest, { method: "select" }>;
+
+function isPlanApproval(options: readonly string[]): boolean {
+	return options.length === 2 && options[0] === PLAN_APPROVE_OPTION && options[1] === PLAN_REFINE_OPTION;
+}
 
 /** Open dialogs by request id, so a `cancel` can close them. */
 export class DialogBridge {
@@ -96,6 +112,21 @@ export class DialogBridge {
 		const id = request.id;
 		switch (request.method) {
 			case "select": {
+				if (isPlanApproval(request.options)) {
+					const value = await this.host.reviewPlan(request, token);
+					return value === undefined ? undefined : { type: "extension_ui_response", id, value };
+				}
+				// A multi-line title does not fit a QuickPick title; a modal shows it in full
+				// with the options as buttons.
+				const [heading = "", ...body] = request.title.split("\n");
+				if (body.length > 0 && request.options.length <= MAX_MODAL_OPTIONS) {
+					const picked = await vscode.window.showInformationMessage(
+						heading,
+						{ modal: true, detail: body.join("\n").trim() },
+						...request.options,
+					);
+					return picked === undefined ? undefined : { type: "extension_ui_response", id, value: picked };
+				}
 				const items = request.options.map((label, index) => ({
 					label,
 					detail: request.optionDetails?.[index]?.description,
