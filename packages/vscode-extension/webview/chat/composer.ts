@@ -183,24 +183,39 @@ export class Composer {
 		}
 	}
 
-	/** The `/command` token before the cursor, or undefined when the popup should not show. */
-	#slashQuery(): string | undefined {
+	/**
+	 * The `/token` ending at the cursor, or undefined when the popup should not
+	 * show. At the start of the draft every command applies; mid-prompt (after
+	 * whitespace) only skills do, since omp runs builtin commands only as the
+	 * first word but expands `/skill:name` anywhere.
+	 */
+	#slashToken(): { start: number; query: string; skillsOnly: boolean } | undefined {
 		const value = this.#input.value;
-		if (!value.startsWith("/") || this.#dismissedFor === value) return undefined;
-		return /^\/(\S*)$/.exec(value.slice(0, this.#input.selectionEnd))?.[1];
+		if (this.#dismissedFor === value) return undefined;
+		const match = /(^|\s)\/(\S*)$/.exec(value.slice(0, this.#input.selectionEnd));
+		if (!match) return undefined;
+		const start = match.index + match[1]!.length;
+		return { start, query: match[2]!, skillsOnly: start > 0 };
 	}
 
 	#updatePopup(): void {
-		const query = this.#slashQuery();
-		if (query === undefined || this.#input.disabled) {
+		const token = this.#slashToken();
+		if (token === undefined || this.#input.disabled) {
 			this.#closePopup();
 			return;
 		}
-		const needle = query.toLowerCase();
+		const needle = token.query.toLowerCase();
+		const candidates = token.skillsOnly
+			? this.#commands.filter(command => command.source === "skill")
+			: this.#commands;
+		// Skills match by their bare name too: `/sem` finds `skill:semantic-compression`.
 		const names = (command: AvailableSlashCommand) =>
-			[command.name, ...(command.aliases ?? [])].map(n => n.toLowerCase());
-		const prefix = this.#commands.filter(command => names(command).some(n => n.startsWith(needle)));
-		const rest = this.#commands.filter(
+			[command.name, ...(command.aliases ?? [])].flatMap(n => {
+				const lower = n.toLowerCase();
+				return lower.startsWith("skill:") ? [lower, lower.slice("skill:".length)] : [lower];
+			});
+		const prefix = candidates.filter(command => names(command).some(n => n.startsWith(needle)));
+		const rest = candidates.filter(
 			command => !prefix.includes(command) && names(command).some(n => n.includes(needle)),
 		);
 		this.#matches = [...prefix, ...rest].slice(0, MAX_SUGGESTIONS);
@@ -230,12 +245,17 @@ export class Composer {
 		this.#popup.children[this.#selected]?.scrollIntoView({ block: "nearest" });
 	}
 
+	/** Replace the `/token` at the cursor with the chosen command, keeping the text around it. */
 	#complete(command: AvailableSlashCommand): void {
+		const token = this.#slashToken();
+		if (!token) return;
 		const value = this.#input.value;
-		const tokenEnd = /^\/\S*/.exec(value)?.[0].length ?? 0;
-		const rest = value.slice(tokenEnd).replace(/^\s*/, "");
-		this.#input.value = `/${command.name} ${rest}`;
-		const cursor = command.name.length + 2;
+		const tokenEnd = token.start + (/^\/\S*/.exec(value.slice(token.start))?.[0].length ?? 0);
+		const before = value.slice(0, token.start);
+		const after = value.slice(tokenEnd).replace(/^\s*/, "");
+		const inserted = `/${command.name} `;
+		this.#input.value = `${before}${inserted}${after}`;
+		const cursor = before.length + inserted.length;
 		this.#input.setSelectionRange(cursor, cursor);
 		this.#closePopup();
 		this.saveDraft(this.#input.value);
