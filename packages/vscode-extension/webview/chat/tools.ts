@@ -16,7 +16,7 @@ import {
 	diffStats,
 	str,
 } from "./activity";
-import { fileLink, imageSrc } from "./content";
+import { fileLink, thumbnail } from "./content";
 
 const MAX_LINES = 200;
 const FAMILY_ICONS: Record<ToolFamily, IconName> = {
@@ -165,7 +165,7 @@ export class ToolCard {
 		const children: Node[] = [];
 		if (parts.diff) children.push(truncatedPre(parts.diff, "activity-pre diff", diffLineClass));
 		if (parts.text) children.push(truncatedPre(parts.text, "activity-pre"));
-		for (const image of parts.images) children.push(h("img", { className: "thumb", src: imageSrc(image), alt: "" }));
+		for (const image of parts.images) children.push(thumbnail(image));
 		this.#result.replaceChildren(...children);
 		this.#renderRow();
 	}

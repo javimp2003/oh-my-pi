@@ -8,6 +8,7 @@ import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
 import { ContextMeter } from "./context-meter";
+import { openLightbox } from "./lightbox";
 import { ModelPicker } from "./model-picker";
 
 type Post = (request: ChatRequest) => void;
@@ -348,12 +349,19 @@ export class Composer {
 					this.focus();
 				});
 				remove.classList.add("attachment-remove");
-				return h(
-					"div",
-					{ className: "attachment" },
-					h("img", { src: `data:${image.mimeType};base64,${image.data}`, alt: "Pasted image" }),
-					remove,
+				const src = `data:${image.mimeType};base64,${image.data}`;
+				const preview = h(
+					"button",
+					{
+						type: "button",
+						className: "attachment-open",
+						ariaLabel: "Preview image",
+						dataset: { tooltip: "Preview image" },
+					},
+					h("img", { src, alt: "Pasted image" }),
 				);
+				preview.addEventListener("click", () => openLightbox(src, "Pasted image"));
+				return h("div", { className: "attachment" }, preview, remove);
 			}),
 		);
 		this.#attachments.hidden = this.#images.length === 0;

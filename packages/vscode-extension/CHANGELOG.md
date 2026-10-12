@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.3]
+
+### Added
+
+- Clicking an image (a pasted attachment in the composer, or an image in the conversation) opens it enlarged over the chat on a dimmed backdrop; Escape, the close button, or a click outside the image closes it. Thumbnails are also reachable with Tab and open with Enter
+
 ## [0.2.2]
 
 ### Added

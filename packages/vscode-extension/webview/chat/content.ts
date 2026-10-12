@@ -26,3 +26,14 @@ export function parseFileRef(raw: string): FileRef {
 export function fileLink(path: string, label = path): HTMLAnchorElement {
 	return h("a", { className: "file-link", dataset: { file: path, tooltip: `Open ${path}` }, tabIndex: 0 }, label);
 }
+
+/** Image thumbnail in the transcript; the transcript's delegated click handler opens it in the lightbox. */
+export function thumbnail(image: { data: string; mimeType: string }): HTMLImageElement {
+	return h("img", {
+		className: "thumb",
+		src: imageSrc(image),
+		alt: "Image",
+		tabIndex: 0,
+		dataset: { tooltip: "Preview image" },
+	});
+}

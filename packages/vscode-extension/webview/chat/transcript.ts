@@ -15,7 +15,8 @@ import type {
 } from "../../src/protocol";
 import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
-import { fileLink, imageSrc, parseFileRef } from "./content";
+import { fileLink, parseFileRef, thumbnail } from "./content";
+import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./markdown";
 import { PlanCard } from "./plan-card";
 import { ToolCard, truncatedPre } from "./tools";
@@ -103,13 +104,7 @@ function bubble(text: string, images: ImageContent[], label?: string): HTMLEleme
 	if (label) body.append(h("div", { className: "bubble-label" }, label));
 	if (text) body.append(h("div", { className: "bubble-text" }, text));
 	if (images.length > 0) {
-		body.append(
-			h(
-				"div",
-				{ className: "thumbs" },
-				...images.map(image => h("img", { className: "thumb", src: imageSrc(image), alt: "" })),
-			),
-		);
+		body.append(h("div", { className: "thumbs" }, ...images.map(image => thumbnail(image))));
 	}
 	el.append(body, copyActions(text));
 	return el;
@@ -235,7 +230,7 @@ class AssistantView {
 				case "image":
 					if (slot.key === "") {
 						slot.key = "image";
-						slot.el.append(h("img", { className: "thumb", src: imageSrc(block), alt: "" }));
+						slot.el.append(thumbnail(block));
 					}
 					break;
 			}
@@ -350,7 +345,7 @@ export class Transcript {
 		this.#scroller.addEventListener("click", event => this.#onClick(event));
 		this.#scroller.addEventListener("keydown", event => {
 			const target = event.target as HTMLElement;
-			if (event.key === "Enter" && target.matches("[data-file], [data-href]")) {
+			if (event.key === "Enter" && target.matches("[data-file], [data-href], img.thumb")) {
 				event.preventDefault();
 				target.click();
 			}
@@ -653,6 +648,13 @@ export class Transcript {
 
 	#onClick(event: MouseEvent): void {
 		const target = event.target as Element;
+		const thumb = target.closest<HTMLImageElement>("img.thumb");
+		if (thumb) {
+			// In a tool card's summary row the click would also toggle the card.
+			event.preventDefault();
+			openLightbox(thumb.src);
+			return;
+		}
 		const copy = target.closest<HTMLButtonElement>(".copy-btn");
 		if (copy) {
 			const code = copy.closest(".code-block")?.querySelector("code")?.textContent ?? "";
