@@ -23,6 +23,7 @@ import type { LivePhase } from "@oh-my-pi/pi-tui/apps/live-visualizer";
 import type { RpcMessagesPage } from "./rpc-messages";
 import type { GoalModeState } from "../../goals/state";
 import type { RpcGoalOp, RpcGoalResult } from "./rpc-goal";
+import type { RpcPlanModeState } from "./rpc-plan";
 import type { BtwHistoryRecord } from "../../session/btw-history";
 
 // ============================================================================
@@ -59,6 +60,7 @@ export type RpcCommand =
 			objective?: string;
 			token_budget?: number;
 	  }
+	| { id?: string; type: "set_plan_mode"; enabled: boolean }
 	| { id?: string; type: "set_ask_dialog"; enabled: boolean }
 	| { id?: string; type: "get_available_commands" }
 	| { id?: string; type: "get_entries"; since?: string }
@@ -194,6 +196,10 @@ export interface RpcSessionState {
 	contextUsage?: ContextUsage;
 	/** Current goal-mode state; `null` when the session has no goal. */
 	goal: GoalModeState | null;
+	/** Current plan mode; `null` when plan mode is off. */
+	planMode: RpcPlanModeState | null;
+	/** Plan mode can be entered (`plan.enabled`). */
+	planModeAvailable: boolean;
 }
 
 export interface RpcAvailableSlashCommand {
@@ -413,6 +419,13 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: "response"; command: "set_slow_mode"; success: true; data: { enabled: boolean } }
 	| { id?: string; type: "response"; command: "goal"; success: true; data: RpcGoalResult }
+	| {
+			id?: string;
+			type: "response";
+			command: "set_plan_mode";
+			success: true;
+			data: { planMode: RpcPlanModeState | null };
+	  }
 	| { id?: string; type: "response"; command: "set_ask_dialog"; success: true; data: { enabled: boolean } }
 	| {
 			id?: string;

@@ -146,6 +146,7 @@ Important edge behavior from runtime:
 - `{ id?, type: "set_fast_mode", enabled: boolean }`
 - `{ id?, type: "set_slow_mode", enabled: boolean }`
 - `{ id?, type: "goal", op: "get" | "create" | "resume" | "pause" | "drop", objective?: string, token_budget?: number }`
+- `{ id?, type: "set_plan_mode", enabled: boolean }`
 - `{ id?, type: "set_ask_dialog", enabled: boolean }`
 - `{ id?, type: "get_available_commands" }`
 - `{ id?, type: "get_entries", since?: string }`
@@ -515,7 +516,9 @@ field is absent outside both stages. No event carries it, so re-read
     "contextWindow": 200000,
     "percent": 0.55
   },
-  "goal": null
+  "goal": null,
+  "planMode": null,
+  "planModeAvailable": true
 }
 ```
 
@@ -576,6 +579,31 @@ turn, sent as a hidden `goal-continuation` message.
 
 When the agent completes the goal, the goal tool is removed again and
 `get_state.goal` becomes `null`.
+
+### `set_plan_mode` payload
+
+`set_plan_mode` enters (`enabled: true`) or leaves (`enabled: false`) plan mode and
+answers `{ planMode: PlanModeState | null }`, where `PlanModeState` is
+`{ enabled: true, planFilePath: string, planFile?: string }`: `planFilePath` is the
+plan's URL (e.g. `local://PLAN.md`) and `planFile` its path on disk, absent when no
+local file backs it. `get_state.planMode` carries the same state, and
+`get_state.planModeAvailable` reports `plan.enabled`. While the approval dialog
+below is open, `planFilePath`/`planFile` name the plan under review, so a host can
+read `planFile` to show the whole plan next to the dialog.
+
+- Entering needs `plan.enabled` and no active goal or vibe mode; it is a no-op when
+  plan mode is already on. The agent then plans read-only into `planFilePath`
+  (default `local://PLAN.md`) and submits the plan with a `write` to `xd://propose`.
+- The proposal asks the host with an `extension_ui_request` `select` whose options
+  are `Approve and execute` and `Refine plan`; its title includes the start of the
+  plan. Only `Approve and execute` approves: plan mode exits, the active tools from
+  before plan mode are restored, and the next turn reads the approved plan. Refining
+  or dismissing the dialog keeps plan mode for another planning round. Under
+  `--mode rpc --no-ui` the proposal is approved without asking.
+- Leaving while a turn is streaming aborts that turn first.
+- `new_session`, `switch_session` and an `open_session` that changes the session
+  leave plan mode. Unlike the TUI, RPC plan mode does not switch to the `plan` role
+  model and is not restored when a session is reopened.
 
 ### `set_slow_mode` payload
 

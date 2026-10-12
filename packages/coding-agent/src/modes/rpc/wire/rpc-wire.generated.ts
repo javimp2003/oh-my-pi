@@ -455,6 +455,15 @@ export interface GoalResult {
 	state: GoalModeState | null;
 }
 
+/** Session plan mode: read-only planning toward a plan the host approves. While the host is asked to approve, `planFilePath` is the plan under review. */
+export interface PlanModeState {
+	enabled: boolean;
+	/** Plan file the agent drafts, e.g. `local://PLAN.md`. */
+	planFilePath: string;
+	/** On-disk path of `planFilePath`, for hosts that show or open the plan. */
+	planFile?: string;
+}
+
 /** Where `/slow` lives: persisted config shared by every session, or this session's flex tier. */
 export type SlowModeScope = "session" | "global";
 
@@ -516,6 +525,10 @@ export interface SessionState {
 	contextUsage?: ContextUsage;
 	/** Current goal mode; null when the session has no goal. */
 	goal?: GoalModeState | null;
+	/** Current plan mode; null when plan mode is off. */
+	planMode?: PlanModeState | null;
+	/** Plan mode can be entered (`plan.enabled`). */
+	planModeAvailable?: boolean;
 }
 
 export interface BashResult {
@@ -1519,6 +1532,14 @@ export interface GoalParams {
 	token_budget?: number;
 }
 
+export interface SetPlanModeParams {
+	enabled: boolean;
+}
+
+export interface SetPlanModeResult {
+	planMode: PlanModeState | null;
+}
+
 export interface SetAskDialogParams {
 	enabled: boolean;
 }
@@ -1800,6 +1821,7 @@ export interface RpcWireCommands {
 	set_fast_mode: { params: SetFastModeParams; result: FastModeResult };
 	set_slow_mode: { params: SetSlowModeParams; result: SetSlowModeResult };
 	goal: { params: GoalParams; result: GoalResult };
+	set_plan_mode: { params: SetPlanModeParams; result: SetPlanModeResult };
 	set_ask_dialog: { params: SetAskDialogParams; result: SetAskDialogResult };
 	get_available_commands: { params: undefined; result: GetAvailableCommandsResult };
 	get_entries: { params: GetEntriesParams; result: SessionEntries };

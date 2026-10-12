@@ -616,6 +616,16 @@ class GoalResult:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class PlanModeState:
+    """Session plan mode: read-only planning toward a plan the host approves. While the host is asked to approve, `planFilePath` is the plan under review."""
+    enabled: bool
+    plan_file_path: str
+    """Plan file the agent drafts, e.g. `local://PLAN.md`."""
+    plan_file: str | None = None
+    """On-disk path of `planFilePath`, for hosts that show or open the plan."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class UsageLimitLowPriority:
     """Requests are served on the provider's low-priority (slow) lane."""
     stage: Literal["low_priority"] = "low_priority"
@@ -673,6 +683,10 @@ class SessionState:
     context_usage: ContextUsage | None = None
     goal: GoalModeState | None = None
     """Current goal mode; null when the session has no goal."""
+    plan_mode: PlanModeState | None = None
+    """Current plan mode; null when plan mode is off."""
+    plan_mode_available: bool = False
+    """Plan mode can be entered (`plan.enabled`)."""
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -1578,6 +1592,11 @@ class NegotiateProtocolResult:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class SetPlanModeResult:
+    plan_mode: PlanModeState | None
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class LogoutResult:
     remaining_source: str | None = None
 
@@ -1896,6 +1915,15 @@ def parse_goal_result(value: object, path: str = "GoalResult") -> GoalResult:
     )
 
 
+def parse_plan_mode_state(value: object, path: str = "PlanModeState") -> PlanModeState:
+    payload = expect_object(value, path)
+    return PlanModeState(
+        enabled=required(payload, "enabled", decode_bool, path),
+        plan_file_path=required(payload, "planFilePath", decode_str, path),
+        plan_file=optional(payload, "planFile", decode_str, path),
+    )
+
+
 def parse_usage_limit_low_priority(value: object, path: str = "UsageLimitLowPriority") -> UsageLimitLowPriority:
     payload = expect_object(value, path)
     required(payload, "stage", cast('Decoder[Literal["low_priority"]]', literal(frozenset({"low_priority"}))), path)
@@ -1945,6 +1973,8 @@ def parse_session_state(value: object, path: str = "SessionState") -> SessionSta
         dump_tools=defaulted(payload, "dumpTools", array(parse_tool_descriptor), path, ()),
         context_usage=optional(payload, "contextUsage", parse_context_usage, path),
         goal=defaulted(payload, "goal", nullable(parse_goal_mode_state), path, None),
+        plan_mode=defaulted(payload, "planMode", nullable(parse_plan_mode_state), path, None),
+        plan_mode_available=defaulted(payload, "planModeAvailable", decode_bool, path, False),
     )
 
 
@@ -2987,6 +3017,13 @@ def parse_negotiate_protocol_result(value: object, path: str = "NegotiateProtoco
     )
 
 
+def parse_set_plan_mode_result(value: object, path: str = "SetPlanModeResult") -> SetPlanModeResult:
+    payload = expect_object(value, path)
+    return SetPlanModeResult(
+        plan_mode=required(payload, "planMode", nullable(parse_plan_mode_state), path),
+    )
+
+
 def parse_logout_result(value: object, path: str = "LogoutResult") -> LogoutResult:
     payload = expect_object(value, path)
     return LogoutResult(
@@ -3199,6 +3236,12 @@ class WireClient:
         if token_budget is not None:
             params["token_budget"] = token_budget
         return parse_goal_result(self._command("goal", params), "goal")
+
+    def set_plan_mode(self, enabled: bool) -> SetPlanModeResult:
+        """Enter or leave plan mode (read-only planning that ends in a plan the host approves through a `select` dialog). Leaving mid-turn aborts the turn. Returns the resulting plan mode."""
+        params: dict[str, object] = {}
+        params["enabled"] = enabled
+        return parse_set_plan_mode_result(self._command("set_plan_mode", params), "set_plan_mode")
 
     def set_ask_dialog(self, enabled: bool) -> bool:
         """Opt in to `ask` UI requests; returns the applied setting."""
@@ -3821,6 +3864,7 @@ __all__ = [
     "NotifyUiRequest",
     "OpenSessionResult",
     "OpenUrlUiRequest",
+    "PlanModeState",
     "PromoteQueuedMessageResult",
     "PromptAck",
     "PromptError",
@@ -3850,6 +3894,7 @@ __all__ = [
     "SessionStats",
     "SessionTree",
     "SetEditorTextUiRequest",
+    "SetPlanModeResult",
     "SetStatusUiRequest",
     "SetTitleUiRequest",
     "SetWidgetUiRequest",
@@ -3995,6 +4040,7 @@ __all__ = [
     "parse_notify_ui_request",
     "parse_open_session_result",
     "parse_open_url_ui_request",
+    "parse_plan_mode_state",
     "parse_promote_queued_message_result",
     "parse_prompt_ack",
     "parse_prompt_error",
@@ -4020,6 +4066,7 @@ __all__ = [
     "parse_session_stats",
     "parse_session_tree",
     "parse_set_editor_text_ui_request",
+    "parse_set_plan_mode_result",
     "parse_set_status_ui_request",
     "parse_set_title_ui_request",
     "parse_set_widget_ui_request",

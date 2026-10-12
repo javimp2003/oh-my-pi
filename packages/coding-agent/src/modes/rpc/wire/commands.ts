@@ -105,6 +105,12 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		result: "GoalResult",
 	},
 	{
+		name: "set_plan_mode",
+		doc: "Enter or leave plan mode (read-only planning that ends in a plan the host approves through a `select` dialog). Leaving mid-turn aborts the turn. Returns the resulting plan mode.",
+		params: { enabled: "boolean" },
+		result: { planMode: "PlanModeState | null" },
+	},
+	{
 		name: "set_ask_dialog",
 		doc: "Opt in to `ask` UI requests; returns the applied setting.",
 		params: { enabled: "boolean" },

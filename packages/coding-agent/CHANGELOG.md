@@ -12,6 +12,7 @@
 - Added a VS Code extension (`packages/vscode-extension`, "omp (custom)"): a chat in the Secondary Side Bar or editor tabs driving `omp --mode rpc-ui`, a sessions list, model and thinking pickers, a settings editor backed by `omp config`, Add Selection/File to Chat, and native dialogs for omp's `ask`, confirmations, and sign-in
 - Added schema metadata to `omp config list --json`: each entry now also carries `default` (omitted for credentials), `values` for enums, and `ui` (`tab`, `group`, `label`, `warning`, `options`) for settings shown in the settings panel
 - Added `PI_RPC_AUTO_TITLE`: RPC/ACP hosts that list sessions by title can keep automatic session titles, which protocol modes otherwise skip
+- Added plan mode to RPC: `set_plan_mode` enters or leaves it, `get_state` reports `planMode` and `planModeAvailable`, and the agent's plan proposal asks the host to approve or refine through a `select` dialog
 
 ### Changed
 

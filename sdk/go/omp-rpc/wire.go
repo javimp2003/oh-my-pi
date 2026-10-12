@@ -2372,6 +2372,32 @@ func (v *GoalResult) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
+// Session plan mode: read-only planning toward a plan the host approves. While the host is asked to approve, `planFilePath` is the plan under review.
+type PlanModeState struct {
+	Enabled bool `json:"enabled"`
+	// Plan file the agent drafts, e.g. `local://PLAN.md`.
+	PlanFilePath string `json:"planFilePath"`
+	// On-disk path of `planFilePath`, for hosts that show or open the plan.
+	PlanFile *string `json:"planFile,omitempty"`
+}
+
+func (v *PlanModeState) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "PlanModeState", v.decodeFrom)
+}
+
+func (v *PlanModeState) decodeFrom(raw map[string]json.RawMessage) error {
+	var out PlanModeState
+	d := fieldDecoder{raw: raw, owner: "PlanModeState"}
+	d.required("enabled", &out.Enabled)
+	d.required("planFilePath", &out.PlanFilePath)
+	d.optional("planFile", &out.PlanFile)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 // Where `/slow` lives: persisted config shared by every session, or this session's flex tier.
 type SlowModeScope string
 
@@ -2533,6 +2559,10 @@ type SessionState struct {
 	ContextUsage *ContextUsage    `json:"contextUsage,omitempty"`
 	// Current goal mode; null when the session has no goal.
 	Goal *GoalModeState `json:"goal"`
+	// Current plan mode; null when plan mode is off.
+	PlanMode *PlanModeState `json:"planMode"`
+	// Plan mode can be entered (`plan.enabled`).
+	PlanModeAvailable bool `json:"planModeAvailable"`
 }
 
 func (v *SessionState) UnmarshalJSON(data []byte) error {
@@ -2571,6 +2601,8 @@ func (v *SessionState) decodeFrom(raw map[string]json.RawMessage) error {
 	d.defaulted("dumpTools", &out.DumpTools, `[]`)
 	d.optional("contextUsage", &out.ContextUsage)
 	d.defaulted("goal", &out.Goal, `null`)
+	d.defaulted("planMode", &out.PlanMode, `null`)
+	d.defaulted("planModeAvailable", &out.PlanModeAvailable, `false`)
 	if d.err != nil {
 		return d.err
 	}
@@ -6841,6 +6873,25 @@ func (v *SetSlowModeResult) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
+type SetPlanModeResult struct {
+	PlanMode *PlanModeState `json:"planMode"`
+}
+
+func (v *SetPlanModeResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SetPlanModeResult", v.decodeFrom)
+}
+
+func (v *SetPlanModeResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SetPlanModeResult
+	d := fieldDecoder{raw: raw, owner: "SetPlanModeResult"}
+	d.nullable("planMode", &out.PlanMode)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 type SetAskDialogResult struct {
 	Enabled bool `json:"enabled"`
 }
@@ -7507,6 +7558,18 @@ type GoalCommand struct {
 func (c Commands) Goal(ctx context.Context, p GoalCommand) (GoalResult, error) {
 	var out GoalResult
 	err := c.call(ctx, "goal", p, 0, &out)
+	return out, err
+}
+
+// SetPlanModeCommand holds the parameters of "set_plan_mode".
+type SetPlanModeCommand struct {
+	Enabled bool `json:"enabled"`
+}
+
+// SetPlanMode sends "set_plan_mode": Enter or leave plan mode (read-only planning that ends in a plan the host approves through a `select` dialog). Leaving mid-turn aborts the turn. Returns the resulting plan mode.
+func (c Commands) SetPlanMode(ctx context.Context, p SetPlanModeCommand) (SetPlanModeResult, error) {
+	var out SetPlanModeResult
+	err := c.call(ctx, "set_plan_mode", p, 0, &out)
 	return out, err
 }
 

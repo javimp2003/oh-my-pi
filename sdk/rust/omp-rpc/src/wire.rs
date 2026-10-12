@@ -2958,6 +2958,18 @@ pub struct GoalResult {
 	pub state: Option<GoalModeState>,
 }
 
+/// Session plan mode: read-only planning toward a plan the host approves. While the host is asked to approve, `planFilePath` is the plan under review.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlanModeState {
+	pub enabled: bool,
+	/// Plan file the agent drafts, e.g. `local://PLAN.md`.
+	#[serde(rename = "planFilePath")]
+	pub plan_file_path: String,
+	/// On-disk path of `planFilePath`, for hosts that show or open the plan.
+	#[serde(rename = "planFile", default, skip_serializing_if = "Option::is_none")]
+	pub plan_file: Option<String>,
+}
+
 /// Where `/slow` lives: persisted config shared by every session, or this session's flex tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SlowModeScope {
@@ -3103,6 +3115,12 @@ pub struct SessionState {
 	/// Current goal mode; null when the session has no goal.
 	#[serde(default = "default_session_state_goal")]
 	pub goal: Option<GoalModeState>,
+	/// Current plan mode; null when plan mode is off.
+	#[serde(rename = "planMode", default = "default_session_state_plan_mode")]
+	pub plan_mode: Option<PlanModeState>,
+	/// Plan mode can be entered (`plan.enabled`).
+	#[serde(rename = "planModeAvailable", default = "default_session_state_plan_mode_available")]
+	pub plan_mode_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5119,6 +5137,17 @@ pub struct GoalParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetPlanModeParams {
+	pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetPlanModeResult {
+	#[serde(rename = "planMode", deserialize_with = "Deserialize::deserialize")]
+	pub plan_mode: Option<PlanModeState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetAskDialogParams {
 	pub enabled: bool,
 }
@@ -5849,6 +5878,14 @@ fn default_session_state_goal() -> Option<GoalModeState> {
 	serde_json::from_str("null").expect("valid wire default")
 }
 
+fn default_session_state_plan_mode() -> Option<PlanModeState> {
+	serde_json::from_str("null").expect("valid wire default")
+}
+
+fn default_session_state_plan_mode_available() -> bool {
+	serde_json::from_str("false").expect("valid wire default")
+}
+
 fn default_token_usage_reasoning() -> i64 {
 	serde_json::from_str("0").expect("valid wire default")
 }
@@ -6132,6 +6169,22 @@ impl Command for GoalCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<GoalResult>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Enter or leave plan mode (read-only planning that ends in a plan the host approves through a `select` dialog). Leaving mid-turn aborts the turn. Returns the resulting plan mode.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetPlanModeCommand {
+	pub enabled: bool,
+}
+
+impl Command for SetPlanModeCommand {
+	const NAME: &'static str = "set_plan_mode";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = SetPlanModeResult;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SetPlanModeResult>(data.unwrap_or_else(|| Value::Object(Map::new())))
 	}
 }
 

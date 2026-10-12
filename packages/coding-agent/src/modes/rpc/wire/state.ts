@@ -75,6 +75,14 @@ export const stateDefs = {
 		{ goal: "Goal | null", state: "GoalModeState | null" },
 		"Outcome of every `goal` op; both fields are null when the session has no goal.",
 	),
+	PlanModeState: doc(
+		{
+			enabled: "boolean",
+			planFilePath: doc("string", "Plan file the agent drafts, e.g. `local://PLAN.md`."),
+			"planFile?": doc("string", "On-disk path of `planFilePath`, for hosts that show or open the plan."),
+		},
+		"Session plan mode: read-only planning toward a plan the host approves. While the host is asked to approve, `planFilePath` is the plan under review.",
+	),
 	SlowModeScope: doc(
 		"'session' | 'global'",
 		"Where `/slow` lives: persisted config shared by every session, or this session's flex tier.",
@@ -143,6 +151,8 @@ export const stateDefs = {
 		dumpTools: absentAs("ToolDescriptor[]", []),
 		"contextUsage?": "ContextUsage",
 		goal: absentAs(doc("GoalModeState | null", "Current goal mode; null when the session has no goal."), null),
+		planMode: absentAs(doc("PlanModeState | null", "Current plan mode; null when plan mode is off."), null),
+		planModeAvailable: absentAs(doc("boolean", "Plan mode can be entered (`plan.enabled`)."), false),
 	},
 
 	BashResult: {

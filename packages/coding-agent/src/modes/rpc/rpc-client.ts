@@ -18,6 +18,7 @@ import type { CacheWarmingMode } from "../../session/cache-warmer";
 import type { SessionEntry, SessionTreeNode } from "../../session/session-entries";
 import { MAX_RPC_FRAME_BYTES, MAX_RPC_REASSEMBLED_BYTES, RpcFrameDecoder, type RpcProtocolVersion } from "./rpc-frame";
 import type { RpcGoalOp, RpcGoalResult } from "./rpc-goal";
+import type { RpcPlanModeState } from "./rpc-plan";
 import {
 	RPC_MESSAGES_PAGE_BUSY_ERROR,
 	RPC_MESSAGES_PAGE_STALE_ERROR,
@@ -837,6 +838,15 @@ export class RpcClient {
 			token_budget: options?.tokenBudget,
 		});
 		return this.#getData(response);
+	}
+
+	/**
+	 * Enter or leave plan mode; resolves to the resulting state (null when off).
+	 * The agent's plan proposal arrives as an `extension_ui_request` `select`.
+	 */
+	async setPlanMode(enabled: boolean): Promise<RpcPlanModeState | null> {
+		const response = await this.#send({ type: "set_plan_mode", enabled });
+		return this.#getData<{ planMode: RpcPlanModeState | null }>(response).planMode;
 	}
 
 	/**

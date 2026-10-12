@@ -67,6 +67,7 @@ import {
 } from "../persistence-failure";
 import { initializeExtensions } from "../runtime-init";
 import { cfgSpellingAutocomplete } from "../settings";
+import { cfgPlanEnabled } from "../../plan-mode/settings";
 import { isRpcHostToolResult, isRpcHostToolUpdate, RpcHostToolBridge } from "./host-tools";
 import { isRpcHostUriResult, RpcHostUriBridge } from "./host-uris";
 import { MAX_RPC_FRAME_BYTES, MAX_RPC_REASSEMBLED_BYTES, RpcFrameEncoder } from "./rpc-frame";
@@ -74,6 +75,7 @@ import { claimRpcInput, readRpcInputFrames } from "./rpc-input";
 import { pageRpcMessages, RPC_MESSAGES_PAGE_BUSY_ERROR, RpcMessagesPageError } from "./rpc-messages";
 import { RpcBtwController } from "./rpc-btw";
 import { RpcGoalController } from "./rpc-goal";
+import { RpcPlanController } from "./rpc-plan";
 import { RpcLiveBridge, type RpcLiveSessionFactory } from "./rpc-live";
 import { RpcOutputWriter } from "./rpc-output";
 import {
@@ -1613,6 +1615,8 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	// A single shared instance routes all responses received on stdin to the
 	// correct waiting promise regardless of which code path created the request.
 	const rpcUiContext = new RpcExtensionUIContext(pendingExtensionRequests, output);
+	// Plan approval is tool UI: `rpc-ui` always routes it; plain `rpc` unless `--no-ui` (then it auto-approves).
+	const planController = new RpcPlanController(session, setToolUIContext || !headless ? rpcUiContext : undefined);
 	setToolUIContext?.(rpcUiContext, true);
 	const onPromptError = (id: string | undefined, command: string) => (promptError: Error) =>
 		output(error(id, command, promptError.message));
@@ -1636,6 +1640,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				// A change that throws may already have detached the run: count it as detached.
 				await goalController.endSessionChange({ detachedRun: detachesRun && result?.cancelled !== true });
 				if (result && !result.cancelled) {
+					if (detachesRun) await planController.resetAfterSessionChange();
 					// As for the host's new/switch commands: a detached run never yields, so
 					// close the prompts it was answering. Branch and navigation leave a live
 					// run streaming to its normal yield.
@@ -1983,6 +1988,9 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				}
 				if (!result.data.cancelled) {
 					inputGate.commitSessionChange(command);
+					if (command.type === "new_session" || command.type === "switch_session") {
+						await planController.resetAfterSessionChange();
+					}
 					// `branch` leaves a live run streaming to its normal yield; new/switch detach it.
 					if (command.type !== "branch" && command.type !== "fork") promptResults.abortOpen();
 					// The detached run publishes no terminal agent_end to settle on.
@@ -2008,6 +2016,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				}
 				if (!result.cancelled) {
 					inputGate.commitSessionChange(command);
+					if (session.sessionFile !== fileBeforeOpen) await planController.resetAfterSessionChange();
 					// Opening the session that is already open switches nothing and leaves a live run
 					// going. Any real open (switch or new) changes the file, even when an aliased path
 					// reopens a transcript with the same id.
@@ -2065,6 +2074,8 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 					})),
 					contextUsage: session.getContextUsage(),
 					goal: session.getGoalModeState() ?? null,
+					planMode: planController.state,
+					planModeAvailable: cfgPlanEnabled.get(session.settings),
 				};
 				return success(id, "get_state", state);
 			}
@@ -2097,6 +2108,17 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 					return success(id, "goal", await goalController.handle(command));
 				} catch (goalError) {
 					return error(id, "goal", goalError instanceof Error ? goalError.message : String(goalError));
+				}
+			}
+
+			case "set_plan_mode": {
+				if (typeof command.enabled !== "boolean") {
+					return error(id, "set_plan_mode", "set_plan_mode requires boolean enabled");
+				}
+				try {
+					return success(id, "set_plan_mode", { planMode: await planController.set(command.enabled) });
+				} catch (planError) {
+					return error(id, "set_plan_mode", planError instanceof Error ? planError.message : String(planError));
 				}
 			}
 
