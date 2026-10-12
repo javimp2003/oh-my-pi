@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4]
+
+### Fixed
+
+- The context ring and its popover update right after Clean up, Compact, Handoff or any other local slash command, instead of only after the next reply: the chat now re-reads the session when omp reports command output
+- The popover's session numbers read as what they are: "Session totals · N requests" with "Input sent", "Output", "Cache read" and "Cache write", summed over every model request (each request sends the whole conversation again, so they grow far past the context window); a tooltip explains it
+
 ## [0.2.3]
 
 ### Added

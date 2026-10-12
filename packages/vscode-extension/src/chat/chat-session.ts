@@ -44,7 +44,7 @@ const NON_EVENT_FRAMES: Record<string, true> = {
 	rpc_frame_error: true,
 };
 
-/** Events after which the session snapshot (state, stats, title) is re-read. */
+/** Frames after which the session snapshot (state, stats, title) is re-read. */
 const STATE_CHANGING_EVENTS: Record<string, true> = {
 	agent_end: true,
 	model_changed: true,
@@ -53,6 +53,10 @@ const STATE_CHANGING_EVENTS: Record<string, true> = {
 	session_settled: true,
 	session_info_update: true,
 	config_update: true,
+	// Local slash commands (`/shake`, `/compact`, `/handoff`…) run no agent turn: their
+	// output is the only frame telling the host the context changed.
+	command_output: true,
+	prompt_result: true,
 };
 
 export interface ChatSurface {

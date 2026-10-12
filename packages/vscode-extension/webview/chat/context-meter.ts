@@ -129,12 +129,27 @@ export class ContextMeter {
 				h("span", { className: "context-value" }, value),
 			);
 		if (stats) {
+			// Token counts are summed over every model request of the session; each request sends
+			// the whole context again, so they grow far past the context window (2.3M input for a
+			// 33k context after ~70 requests is expected).
+			const requests = stats.assistantMessages;
 			rows.push(
-				h("div", { className: "context-section" }, "Session"),
-				row("Input", formatTokens(stats.tokens.input)),
+				h(
+					"div",
+					{
+						className: "context-section",
+						dataset: {
+							tooltip:
+								"Totals over every model request of this session. Each request sends the whole conversation again, so these grow much faster than the context window above.",
+						},
+					},
+					`Session totals · ${requests} ${requests === 1 ? "request" : "requests"}`,
+				),
+				row("Input sent", formatTokens(stats.tokens.input)),
 				row("Output", formatTokens(stats.tokens.output)),
 			);
 			if (stats.tokens.cacheRead > 0) rows.push(row("Cache read", formatTokens(stats.tokens.cacheRead)));
+			if (stats.tokens.cacheWrite > 0) rows.push(row("Cache write", formatTokens(stats.tokens.cacheWrite)));
 			rows.push(row("Cost", formatCost(stats.cost)));
 		}
 		this.#popover.replaceChildren(
