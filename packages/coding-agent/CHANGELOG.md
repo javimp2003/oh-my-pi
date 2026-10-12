@@ -9,11 +9,15 @@
 - Added the `tui.stickyPrompt` setting (on by default; Settings → Appearance → Sticky Prompt): with Pinned Input on, the prompt the visible conversation answers stays on the top row in its bubble style, switching to the earlier prompt as you scroll past a later one and hiding while the prompt itself is on screen
 - Added the opt-in `display.compactToolOutput` setting (Settings → Appearance → Compact Tool Output): finished tool calls show one row led by a per-tool emoji (📄 Read, 🔍 Grep, 🌐 Web Search, 💻 Bash, …) so tool names line up in one column, naming the file read, the pattern searched, the query or URL fetched, or the command run, without their output. A bash row is titled with the call's intent, with the command indented beneath it. Running calls keep their live preview, failures keep their error, and the expand-tools key (`app.tools.expand`) shows full output
 - Added the opt-in `display.answerDivider` setting (Settings → Appearance → Answer Divider): a centered horizontal rule separates a turn's internal work (thinking, tool calls) from its final answer, shown as soon as the answer text starts streaming; text that turns out to precede a tool call drops it again
+- Added a VS Code extension (`packages/vscode-extension`, "omp (custom)"): a chat in the Secondary Side Bar or editor tabs driving `omp --mode rpc-ui`, a sessions list, model and thinking pickers, a settings editor backed by `omp config`, Add Selection/File to Chat, and native dialogs for omp's `ask`, confirmations, and sign-in
+- Added schema metadata to `omp config list --json`: each entry now also carries `default` (omitted for credentials), `values` for enums, and `ui` (`tab`, `group`, `label`, `warning`, `options`) for settings shown in the settings panel
+- Added `PI_RPC_AUTO_TITLE`: RPC/ACP hosts that list sessions by title can keep automatic session titles, which protocol modes otherwise skip
 
 ### Changed
 
 - Reduced interactive startup memory usage for new sessions by initializing syntax highlighting only when needed; resumed sessions still prepare highlighting in the background so the restored transcript paints without delay ([#15299](https://github.com/can1357/oh-my-pi/pull/15299) by [@iliaal](https://github.com/iliaal))
 - Compacted Read directory listings by replacing alignment padding with single-space separators while retaining file sizes and relative modification times ([#9062](https://github.com/can1357/oh-my-pi/pull/9062) by [@MikeeI](https://github.com/MikeeI), [#15352](https://github.com/can1357/oh-my-pi/pull/15352) by [@iliaal](https://github.com/iliaal)).
+- RPC mode now emits `session_info_update` whenever the session title changes (auto-titling, `set_session_name`), not only after builtin slash commands
 ### Fixed
 
 - Improved responsiveness when placing assistant text after tool calls in long transcripts ([#12178](https://github.com/can1357/oh-my-pi/issues/12178), [#14344](https://github.com/can1357/oh-my-pi/pull/14344) by [@F0Rextasy](https://github.com/F0Rextasy), [#15353](https://github.com/can1357/oh-my-pi/pull/15353) by [@iliaal](https://github.com/iliaal)).

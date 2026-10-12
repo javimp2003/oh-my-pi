@@ -1903,12 +1903,9 @@ export async function runRootCommand(
 		if (parsedArgs.noPty || parsedArgs.mode === "rpc-ui") {
 			Bun.env.PI_NO_PTY = "1";
 		}
-		if (
-			parsedArgs.noTitle ||
-			parsedArgs.mode === "rpc" ||
-			parsedArgs.mode === "rpc-ui" ||
-			parsedArgs.mode === "acp"
-		) {
+		// Protocol hosts skip the extra title-model call unless they display titles (PI_RPC_AUTO_TITLE=1).
+		const protocolMode = parsedArgs.mode === "rpc" || parsedArgs.mode === "rpc-ui" || parsedArgs.mode === "acp";
+		if (parsedArgs.noTitle || (protocolMode && !$env.PI_RPC_AUTO_TITLE)) {
 			Bun.env.PI_NO_TITLE = "1";
 		}
 
@@ -2218,7 +2215,8 @@ export async function runRootCommand(
 		sessionOptions.allowSessionModelFallback = isInteractive;
 		sessionOptions.settingsApproval = isInteractive;
 		sessionOptions.tuiTranscript = isInteractive;
-		sessionOptions.autoTitle = isInteractive;
+		sessionOptions.autoTitle =
+			isInteractive || (Boolean($env.PI_RPC_AUTO_TITLE) && (mode === "rpc" || mode === "rpc-ui" || mode === "acp"));
 		sessionOptions.settings = settingsInstance;
 		sessionOptions.onPrewalkWarning = warning => {
 			if (isInteractive) notifs.push({ kind: "warn", message: warning });

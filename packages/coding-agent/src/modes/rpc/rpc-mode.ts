@@ -1681,6 +1681,10 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			persistenceFailure = error;
 		},
 	);
+	// Titles also change outside slash commands (auto-titling, `set_session_name`); hosts listing sessions follow them.
+	session.sessionManager.onSessionNameChanged(() => {
+		output({ type: "session_info_update", title: session.sessionName, sessionId: session.sessionId });
+	});
 
 	/**
 	 * Dispose the session, then end the process. A store failure still latched

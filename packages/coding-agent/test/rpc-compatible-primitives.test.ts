@@ -120,7 +120,12 @@ describe("RPC durable history (persisted SessionManager)", () => {
 type RpcFrame = Record<string, unknown>;
 
 async function withRpcServer<T>(
-	run: (send: (frame: object) => void, next: () => Promise<RpcFrame>, sendRaw: (line: string) => void) => Promise<T>,
+	run: (
+		send: (frame: object) => void,
+		next: () => Promise<RpcFrame>,
+		sendRaw: (line: string) => void,
+		nextNotification: (type: string) => Promise<RpcFrame>,
+	) => Promise<T>,
 ): Promise<T> {
 	const child = Bun.spawn(
 		[
@@ -149,16 +154,22 @@ async function withRpcServer<T>(
 	const queue: RpcFrame[] = [];
 	let readerDone = false;
 	let readerError: unknown;
+	// Settles whenever the pump queues a frame or the stream ends.
+	let arrived = Promise.withResolvers<void>();
 	const lines = readJsonl<unknown>(child.stdout as ReadableStream<Uint8Array>);
 	const pump = (async () => {
 		try {
 			for await (const line of lines) {
-				if (isRecord(line)) queue.push(line);
+				if (!isRecord(line)) continue;
+				queue.push(line);
+				arrived.resolve();
+				arrived = Promise.withResolvers<void>();
 			}
 		} catch (error) {
 			readerError = error;
 		} finally {
 			readerDone = true;
+			arrived.resolve();
 		}
 	})();
 	const send = (frame: object): void => {
@@ -181,9 +192,18 @@ async function withRpcServer<T>(
 		}
 		throw new Error("Timed out waiting for RPC frame");
 	};
+	/** The next unsolicited frame of `type`, leaving every other queued frame in place. */
+	const nextNotification = async (type: string): Promise<RpcFrame> => {
+		for (;;) {
+			const index = queue.findIndex(frame => frame.type === type);
+			if (index !== -1) return queue.splice(index, 1)[0]!;
+			if (readerDone) throw new Error(`RPC stream ended before ${type}: ${await stderrPromise}`);
+			await arrived.promise;
+		}
+	};
 	try {
 		await child.stdin.flush?.();
-		return await run(send, next, sendRaw);
+		return await run(send, next, sendRaw, nextNotification);
 	} finally {
 		try {
 			child.stdin.end();
@@ -373,6 +393,15 @@ describe("RPC Pi-compatible primitives (live server)", () => {
 			const ok = await next();
 			expect(ok.id).toBe("after-malformed");
 			expect(ok.success).toBe(true);
+		});
+	}, 60000);
+
+	test("a title change outside slash commands still reaches the host as session_info_update", async () => {
+		await withRpcServer(async (send, next, _sendRaw, nextNotification) => {
+			send({ type: "set_session_name", id: "rename", name: "Renamed by host" });
+			const update = await nextNotification("session_info_update");
+			expect(update).toMatchObject({ type: "session_info_update", title: "Renamed by host" });
+			expect(await next()).toMatchObject({ id: "rename", command: "set_session_name", success: true });
 		});
 	}, 60000);
 

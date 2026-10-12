@@ -1,0 +1,439 @@
+:root {
+	--gap: 12px;
+	--nav-width: 180px;
+	--warning: var(--vscode-editorWarning-foreground, var(--vscode-notificationsWarningIcon-foreground, #cca700));
+	--modified: var(--vscode-settings-modifiedItemIndicator, var(--vscode-focusBorder));
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	color: var(--vscode-foreground);
+	background: var(--vscode-editor-background);
+	font-family: var(--vscode-font-family);
+	font-size: var(--vscode-font-size);
+	line-height: 1.4;
+}
+
+#root,
+.app {
+	height: 100%;
+}
+
+.app {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px var(--gap);
+	padding: var(--gap) calc(var(--gap) * 1.5) 8px;
+}
+
+.title {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	flex: 1 1 240px;
+}
+
+h1 {
+	margin: 0;
+	font-size: 1.6em;
+	font-weight: 600;
+}
+
+.config-path {
+	overflow: hidden;
+	color: var(--vscode-descriptionForeground);
+	font-family: var(--vscode-editor-font-family);
+	font-size: 0.9em;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.actions {
+	display: flex;
+	gap: 6px;
+}
+
+button {
+	padding: 4px 12px;
+	border: 1px solid var(--vscode-button-border, transparent);
+	border-radius: 2px;
+	color: var(--vscode-button-foreground);
+	background: var(--vscode-button-background);
+	font: inherit;
+	cursor: pointer;
+}
+
+button:hover {
+	background: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+}
+
+button.secondary {
+	color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+	background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+}
+
+button.secondary:hover {
+	background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground));
+}
+
+button.link,
+button.icon {
+	padding: 0;
+	border: none;
+	color: var(--vscode-textLink-foreground);
+	background: none;
+}
+
+button.link:hover {
+	color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+	text-decoration: underline;
+}
+
+button.icon {
+	color: inherit;
+	font-size: 1.3em;
+	line-height: 1;
+}
+
+button:focus-visible,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+/* ── Banner + toolbar ───────────────────────────────────────────────────── */
+
+.banner {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--gap);
+	margin: 0 calc(var(--gap) * 1.5) 8px;
+	padding: 6px 10px;
+	border: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+	background: var(--vscode-inputValidation-errorBackground, transparent);
+	white-space: pre-wrap;
+}
+
+.banner[hidden] {
+	display: none;
+}
+
+.toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px var(--gap);
+	padding: 0 calc(var(--gap) * 1.5) var(--gap);
+	border-bottom: 1px solid var(--vscode-settings-headerBorder, var(--vscode-panel-border, transparent));
+}
+
+input,
+select,
+textarea {
+	min-width: 0;
+	padding: 4px 6px;
+	border: 1px solid var(--vscode-input-border, var(--vscode-dropdown-border, transparent));
+	border-radius: 2px;
+	color: var(--vscode-input-foreground, var(--vscode-foreground));
+	background: var(--vscode-input-background);
+	font: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+	color: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+}
+
+select {
+	color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+	background: var(--vscode-dropdown-background, var(--vscode-input-background));
+}
+
+.search {
+	flex: 1 1 260px;
+	padding: 6px 8px;
+	font-size: 1.05em;
+}
+
+.tab-select {
+	display: none;
+	flex: 1 1 160px;
+}
+
+.advanced-toggle {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--vscode-descriptionForeground);
+	cursor: pointer;
+	user-select: none;
+}
+
+input[type="checkbox"] {
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	flex: none;
+	accent-color: var(--vscode-checkbox-background, var(--vscode-button-background));
+	cursor: pointer;
+}
+
+/* ── Body: nav + content ────────────────────────────────────────────────── */
+
+.body {
+	display: flex;
+	flex: 1;
+	min-height: 0;
+}
+
+.nav {
+	display: flex;
+	flex-direction: column;
+	flex: none;
+	width: var(--nav-width);
+	padding: var(--gap) 0;
+	overflow-y: auto;
+}
+
+.nav-item {
+	padding: 4px calc(var(--gap) * 1.5);
+	border: none;
+	border-left: 2px solid transparent;
+	border-radius: 0;
+	color: var(--vscode-foreground);
+	background: none;
+	text-align: left;
+	opacity: 0.85;
+}
+
+.nav-item:hover {
+	background: var(--vscode-list-hoverBackground);
+	opacity: 1;
+}
+
+.nav-item.active {
+	border-left-color: var(--vscode-focusBorder);
+	color: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+	background: var(--vscode-list-inactiveSelectionBackground, transparent);
+	font-weight: 600;
+	opacity: 1;
+}
+
+.content {
+	flex: 1;
+	min-width: 0;
+	padding: 0 calc(var(--gap) * 1.5) calc(var(--gap) * 3);
+	overflow-y: auto;
+}
+
+.content > * {
+	max-width: 860px;
+}
+
+h2 {
+	margin: var(--gap) 0 4px;
+	font-size: 1.35em;
+	font-weight: 600;
+}
+
+h3 {
+	margin: calc(var(--gap) * 1.5) 0 2px;
+	padding-bottom: 4px;
+	border-bottom: 1px solid var(--vscode-settings-headerBorder, var(--vscode-panel-border, transparent));
+	font-size: 1.1em;
+	font-weight: 600;
+}
+
+.empty,
+.search-summary {
+	color: var(--vscode-descriptionForeground);
+}
+
+.search-summary {
+	margin: var(--gap) 0 4px;
+}
+
+/* ── Setting rows ───────────────────────────────────────────────────────── */
+
+.setting {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 0 calc(var(--gap) * -1);
+	padding: 10px var(--gap) 10px calc(var(--gap) - 2px);
+	border-left: 2px solid transparent;
+}
+
+.setting:hover {
+	background: var(--vscode-settings-rowHoverBackground, transparent);
+}
+
+.setting:focus-within {
+	background: var(--vscode-settings-focusedRowBackground, transparent);
+}
+
+.setting.modified {
+	border-left-color: var(--modified);
+}
+
+.location {
+	color: var(--vscode-descriptionForeground);
+	font-size: 0.85em;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.setting-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 2px 8px;
+}
+
+.label {
+	font-weight: 600;
+}
+
+.key {
+	color: var(--vscode-descriptionForeground);
+	font-family: var(--vscode-editor-font-family);
+	font-size: 0.85em;
+	overflow-wrap: anywhere;
+}
+
+.modified-marker {
+	padding: 0 6px;
+	border-radius: 8px;
+	color: var(--vscode-badge-foreground);
+	background: var(--vscode-badge-background);
+	font-size: 0.8em;
+}
+
+.saved-tick {
+	color: var(--vscode-testing-iconPassed, var(--vscode-charts-green, var(--vscode-descriptionForeground)));
+	font-size: 0.9em;
+}
+
+[hidden] {
+	display: none !important;
+}
+
+.description,
+.hint {
+	color: var(--vscode-descriptionForeground);
+	overflow-wrap: anywhere;
+}
+
+.hint {
+	font-size: 0.9em;
+}
+
+.hint code {
+	font-family: var(--vscode-editor-font-family);
+}
+
+.checkbox-row {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+	margin-top: 1px;
+}
+
+.warning {
+	color: var(--warning);
+}
+
+.error {
+	color: var(--vscode-errorForeground);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.editor {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 2px;
+}
+
+.editor input,
+.editor select {
+	width: 100%;
+	max-width: 420px;
+}
+
+.editor textarea.json {
+	width: 100%;
+	font-family: var(--vscode-editor-font-family);
+	font-size: var(--vscode-editor-font-size, 0.95em);
+	line-height: 1.35;
+	tab-size: 2;
+	resize: vertical;
+}
+
+.editor textarea.invalid {
+	border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+/* ── Narrow (sidebar-width) layout: nav collapses into the select ──────── */
+
+@media (max-width: 640px) {
+	:root {
+		--gap: 10px;
+	}
+
+	.nav {
+		display: none;
+	}
+
+	.tab-select {
+		display: block;
+	}
+
+	.header {
+		padding-left: var(--gap);
+		padding-right: var(--gap);
+	}
+
+	.banner {
+		margin-left: var(--gap);
+		margin-right: var(--gap);
+	}
+
+	.toolbar,
+	.content {
+		padding-left: var(--gap);
+		padding-right: var(--gap);
+	}
+
+	h1 {
+		font-size: 1.35em;
+	}
+}

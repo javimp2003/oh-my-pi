@@ -59,6 +59,44 @@ function findSettingDef(path: string): CliSettingDef | undefined {
 	return setting ? toSettingDef(setting) : undefined;
 }
 
+/** One `config list --json` entry: the value plus the schema a settings UI needs to edit it. */
+interface CliSettingJson {
+	value?: unknown;
+	redacted?: true;
+	type: string;
+	description: string;
+	default?: unknown;
+	/** Allowed values of an enum setting. */
+	values?: readonly string[];
+	/** Settings-panel placement and labels; absent for config-file-only settings. */
+	ui?: {
+		tab: string;
+		group?: string;
+		label: string;
+		warning?: string;
+		options?: readonly { value: string; label: string; description?: string }[];
+	};
+}
+
+function settingSchemaJson(setting: AnySetting): Pick<CliSettingJson, "default" | "values" | "ui"> {
+	const ui = setting.ui;
+	return {
+		...(setting.isCredential ? {} : { default: setting.default }),
+		...(setting.enumValues ? { values: setting.enumValues } : {}),
+		...(ui
+			? {
+					ui: {
+						tab: ui.tab,
+						...(ui.group ? { group: ui.group } : {}),
+						label: ui.label,
+						...(ui.warning ? { warning: ui.warning } : {}),
+						...(Array.isArray(ui.options) ? { options: ui.options } : {}),
+					},
+				}
+			: {}),
+	};
+}
+
 // =============================================================================
 // Argument Parser
 // =============================================================================
@@ -210,13 +248,15 @@ async function handleList(flags: { json?: boolean }): Promise<void> {
 		// one configured, which leaks the opposite of what redaction is for. A
 		// configured "" renders as unset, like in the settings panel (credentials
 		// are all strings).
-		const result: Record<string, { value?: unknown; redacted?: true; type: string; description: string }> = {};
+		const result: Record<string, CliSettingJson> = {};
 		for (const def of defs) {
 			const value = def.setting.get(settings);
-			result[def.path] =
-				def.setting.isCredential && value
-					? { redacted: true, type: def.type, description: def.description }
-					: { value, type: def.type, description: def.description };
+			result[def.path] = {
+				...(def.setting.isCredential && value ? { redacted: true } : { value }),
+				type: def.type,
+				description: def.description,
+				...settingSchemaJson(def.setting),
+			};
 		}
 		await writeStdout(`${JSON.stringify(result, null, 2)}\n`);
 		return;

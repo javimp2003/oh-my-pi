@@ -218,6 +218,30 @@ describe("config CLI schema coverage", () => {
 		const parsed: unknown = JSON.parse(output);
 		expect(parsed).toMatchObject({ modelRoles: { type: "record" } });
 	});
+	it("lists the schema a settings editor needs: enum values, panel labels, and defaults", async () => {
+		if (!testAgentDir) throw new Error("Test agent directory was not initialized");
+		const { exitCode, output } = await runCliProcess(["config", "list", "--json"], {
+			PI_CODING_AGENT_DIR: testAgentDir.path(),
+		});
+		expect(exitCode).toBe(0);
+		const parsed = JSON.parse(output) as Record<string, Record<string, unknown>>;
+		expect(parsed["display.shimmer"]).toMatchObject({
+			type: "enum",
+			value: "classic",
+			default: "classic",
+			values: ["classic", "kitt", "disabled"],
+			ui: {
+				tab: "appearance",
+				group: "Display",
+				label: "Shimmer",
+				options: [{ value: "classic" }, { value: "kitt" }, { value: "disabled" }],
+			},
+		});
+		// Config-file-only settings carry no panel metadata.
+		expect(parsed.modelRoles).not.toHaveProperty("ui");
+		// A credential's default is never echoed next to its redaction.
+		expect(parsed["auth.broker.token"]).not.toHaveProperty("default");
+	});
 	it("reports the value written to config.yml and the layer that still overrides it", async () => {
 		if (!testAgentDir) throw new Error("Test agent directory was not initialized");
 		const overlayPath = path.join(testAgentDir.path(), "overlay.yml");

@@ -1,0 +1,8 @@
+src/**
+webview/**
+scripts/**
+test/**
+tsconfig.json
+**/*.ts
+!dist/**
+.gitignore

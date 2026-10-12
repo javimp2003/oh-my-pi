@@ -1,0 +1,389 @@
+{
+	"name": "omp-custom-vscode",
+	"displayName": "omp (custom)",
+	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
+	"version": "0.1.0",
+	"private": true,
+	"publisher": "javimp2003",
+	"license": "MIT",
+	"icon": "media/icon.png",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/javimp2003/oh-my-pi.git",
+		"directory": "packages/vscode-extension"
+	},
+	"engines": {
+		"vscode": "^1.101.0"
+	},
+	"categories": [
+		"AI",
+		"Chat",
+		"Programming Languages"
+	],
+	"keywords": [
+		"omp",
+		"oh-my-pi",
+		"agent",
+		"ai",
+		"chat"
+	],
+	"main": "./dist/extension.js",
+	"capabilities": {
+		"untrustedWorkspaces": {
+			"supported": false,
+			"description": "omp runs the agent program and tools configured for this workspace."
+		}
+	},
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"contributes": {
+		"viewsContainers": {
+			"activitybar": [
+				{
+					"id": "ompCustom",
+					"title": "omp",
+					"icon": "media/activity.svg"
+				}
+			],
+			"secondarySidebar": [
+				{
+					"id": "ompCustomChat",
+					"title": "omp",
+					"icon": "media/activity.svg"
+				}
+			]
+		},
+		"views": {
+			"ompCustomChat": [
+				{
+					"type": "webview",
+					"id": "ompCustom.chat",
+					"name": "omp",
+					"icon": "media/activity.svg"
+				}
+			],
+			"ompCustom": [
+				{
+					"id": "ompCustom.sessions",
+					"name": "Sessions",
+					"icon": "media/activity.svg"
+				}
+			]
+		},
+		"commands": [
+			{
+				"command": "ompCustom.focusChat",
+				"title": "Open Chat",
+				"category": "omp",
+				"icon": "$(comment-discussion)"
+			},
+			{
+				"command": "ompCustom.openChatInEditor",
+				"title": "Open Chat in Editor",
+				"category": "omp",
+				"icon": "$(link-external)"
+			},
+			{
+				"command": "ompCustom.newSession",
+				"title": "New Session",
+				"category": "omp",
+				"icon": "$(add)"
+			},
+			{
+				"command": "ompCustom.showSessions",
+				"title": "Switch Session…",
+				"category": "omp",
+				"icon": "$(history)"
+			},
+			{
+				"command": "ompCustom.refreshSessions",
+				"title": "Refresh Sessions",
+				"category": "omp",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "ompCustom.openSession",
+				"title": "Open Session",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.renameSession",
+				"title": "Rename Session",
+				"category": "omp",
+				"icon": "$(edit)"
+			},
+			{
+				"command": "ompCustom.deleteSession",
+				"title": "Delete Session",
+				"category": "omp",
+				"icon": "$(trash)"
+			},
+			{
+				"command": "ompCustom.revealSessionFile",
+				"title": "Reveal Session File",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.selectModel",
+				"title": "Select Model…",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.selectThinkingLevel",
+				"title": "Select Thinking Level…",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.addSelectionToChat",
+				"title": "Add Selection to Chat",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.addFileToChat",
+				"title": "Add File to Chat",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.openSettings",
+				"title": "Settings",
+				"category": "omp",
+				"icon": "$(gear)"
+			},
+			{
+				"command": "ompCustom.openConfigFile",
+				"title": "Open config.yml",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.login",
+				"title": "Log In to a Provider…",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.logout",
+				"title": "Log Out of a Provider…",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.compact",
+				"title": "Compact Context",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.abort",
+				"title": "Stop Response",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.restartAgent",
+				"title": "Restart Agent Process",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.openInTerminal",
+				"title": "Open omp in Terminal",
+				"category": "omp",
+				"icon": "$(terminal)"
+			},
+			{
+				"command": "ompCustom.showLog",
+				"title": "Show Log",
+				"category": "omp"
+			}
+		],
+		"menus": {
+			"view/title": [
+				{
+					"command": "ompCustom.newSession",
+					"when": "view == ompCustom.chat",
+					"group": "navigation@1"
+				},
+				{
+					"command": "ompCustom.showSessions",
+					"when": "view == ompCustom.chat",
+					"group": "navigation@2"
+				},
+				{
+					"command": "ompCustom.openChatInEditor",
+					"when": "view == ompCustom.chat",
+					"group": "navigation@3"
+				},
+				{
+					"command": "ompCustom.openSettings",
+					"when": "view == ompCustom.chat",
+					"group": "navigation@4"
+				},
+				{
+					"command": "ompCustom.openInTerminal",
+					"when": "view == ompCustom.chat",
+					"group": "overflow@1"
+				},
+				{
+					"command": "ompCustom.restartAgent",
+					"when": "view == ompCustom.chat",
+					"group": "overflow@2"
+				},
+				{
+					"command": "ompCustom.newSession",
+					"when": "view == ompCustom.sessions",
+					"group": "navigation@1"
+				},
+				{
+					"command": "ompCustom.refreshSessions",
+					"when": "view == ompCustom.sessions",
+					"group": "navigation@2"
+				},
+				{
+					"command": "ompCustom.focusChat",
+					"when": "view == ompCustom.sessions",
+					"group": "navigation@0"
+				}
+			],
+			"view/item/context": [
+				{
+					"command": "ompCustom.renameSession",
+					"when": "view == ompCustom.sessions && viewItem =~ /^session/",
+					"group": "inline@1"
+				},
+				{
+					"command": "ompCustom.deleteSession",
+					"when": "view == ompCustom.sessions && viewItem =~ /^session/",
+					"group": "inline@2"
+				},
+				{
+					"command": "ompCustom.openSession",
+					"when": "view == ompCustom.sessions && viewItem =~ /^session/",
+					"group": "1_open@1"
+				},
+				{
+					"command": "ompCustom.renameSession",
+					"when": "view == ompCustom.sessions && viewItem =~ /^session/",
+					"group": "2_edit@1"
+				},
+				{
+					"command": "ompCustom.revealSessionFile",
+					"when": "view == ompCustom.sessions && viewItem =~ /^session/",
+					"group": "2_edit@2"
+				},
+				{
+					"command": "ompCustom.deleteSession",
+					"when": "view == ompCustom.sessions && viewItem =~ /^session/",
+					"group": "3_delete@1"
+				}
+			],
+			"editor/context": [
+				{
+					"command": "ompCustom.addSelectionToChat",
+					"when": "editorHasSelection",
+					"group": "ompCustom@1"
+				}
+			],
+			"explorer/context": [
+				{
+					"command": "ompCustom.addFileToChat",
+					"when": "!explorerResourceIsFolder",
+					"group": "ompCustom@1"
+				}
+			],
+			"commandPalette": [
+				{
+					"command": "ompCustom.openSession",
+					"when": "false"
+				},
+				{
+					"command": "ompCustom.renameSession",
+					"when": "false"
+				},
+				{
+					"command": "ompCustom.deleteSession",
+					"when": "false"
+				},
+				{
+					"command": "ompCustom.revealSessionFile",
+					"when": "false"
+				}
+			]
+		},
+		"keybindings": [
+			{
+				"command": "ompCustom.addSelectionToChat",
+				"key": "ctrl+alt+k",
+				"mac": "cmd+alt+k",
+				"when": "editorTextFocus && editorHasSelection"
+			},
+			{
+				"command": "ompCustom.focusChat",
+				"key": "ctrl+alt+o",
+				"mac": "cmd+alt+o"
+			}
+		],
+		"configuration": {
+			"title": "omp (custom)",
+			"properties": {
+				"ompCustom.executable": {
+					"type": "string",
+					"default": "omp",
+					"markdownDescription": "Program that runs omp. `omp` uses the binary on your `PATH` (`omp.exe` on Windows). To run a source checkout, set this to `bun` and put the path to `packages/coding-agent/src/cli.ts` in `#ompCustom.args#`."
+				},
+				"ompCustom.args": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [],
+					"description": "Arguments placed before omp's own flags (for example the path to cli.ts when the executable is bun)."
+				},
+				"ompCustom.extraArgs": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [],
+					"markdownDescription": "Extra omp flags for the chat agent, such as `--model` or `--profile`."
+				},
+				"ompCustom.env": {
+					"type": "object",
+					"additionalProperties": {
+						"type": "string"
+					},
+					"default": {},
+					"description": "Extra environment variables for the omp process (proxy, certificates, API keys)."
+				},
+				"ompCustom.resumeLastSession": {
+					"type": "boolean",
+					"default": true,
+					"description": "When the chat opens, continue the most recent session of the workspace instead of starting a new one."
+				},
+				"ompCustom.sendWhileBusy": {
+					"type": "string",
+					"enum": [
+						"steer",
+						"followUp"
+					],
+					"enumDescriptions": [
+						"Deliver the message to the agent as soon as possible, mid-turn",
+						"Queue the message until the current turn finishes"
+					],
+					"default": "steer",
+					"description": "What sending a message does while the agent is still working."
+				}
+			}
+		}
+	},
+	"scripts": {
+		"build": "bun scripts/build.ts",
+		"package": "bun scripts/build.ts && bunx @vscode/vsce package --no-dependencies --allow-missing-repository --out dist/omp-custom.vsix",
+		"check": "oxlint . && oxfmt --check --no-error-on-unmatched-pattern 'src/**/*.ts' 'webview/**/*.ts' 'scripts/**/*.ts' && bun run check:types",
+		"check:types": "tsgo -p tsconfig.json --noEmit && tsgo -p webview/tsconfig.json --noEmit",
+		"test": "bun test",
+		"lint": "oxlint .",
+		"fmt": "oxfmt --no-error-on-unmatched-pattern 'src/**/*.ts' 'webview/**/*.ts' 'scripts/**/*.ts'"
+	},
+	"devDependencies": {
+		"@oh-my-pi/pi-coding-agent": "catalog:",
+		"@types/bun": "catalog:",
+		"@types/vscode": "1.90.0",
+		"marked": "^15.0.0"
+	}
+}
