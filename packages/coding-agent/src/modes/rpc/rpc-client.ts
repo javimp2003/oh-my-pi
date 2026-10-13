@@ -1157,6 +1157,17 @@ export class RpcClient {
 	}
 
 	/**
+	 * Move the session's leaf to `entryId` in place. On a user message the leaf moves to
+	 * its parent and the message comes back as `editorText`/`editorImages` to edit and resend.
+	 */
+	async navigateTree(
+		entryId: string,
+	): Promise<{ cancelled: boolean; editorText?: string; editorImages?: ImageContent[] }> {
+		const response = await this.#send({ type: "navigate_tree", entryId });
+		return this.#getData(response);
+	}
+
+	/**
 	 * Get text of last assistant message.
 	 */
 	async getLastAssistantText(): Promise<string | null> {

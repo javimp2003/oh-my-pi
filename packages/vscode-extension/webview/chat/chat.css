@@ -378,6 +378,67 @@ code {
 	height: 14px;
 }
 
+/* Editing a sent prompt: the bubble and its actions give way to an editor card. */
+.msg.user.editing > :not(.message-editor) {
+	display: none;
+}
+
+.message-editor {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: 100%;
+	padding: 8px 12px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-2xl);
+	background: var(--vscode-input-background);
+}
+
+.message-editor:focus-within {
+	border-color: color-mix(in oklab, var(--vscode-foreground) 22%, transparent);
+}
+
+.message-editor-input {
+	display: block;
+	width: 100%;
+	max-height: 40vh;
+	resize: none;
+	border: none;
+	outline: none !important;
+	background: transparent;
+	color: var(--vscode-input-foreground, var(--c-fg));
+	padding: 0;
+	overflow-y: auto;
+}
+
+.message-editor-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+.message-editor-actions button {
+	height: 26px;
+	padding: 0 12px;
+	font-size: var(--fs-sm);
+}
+
+.message-editor-actions button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.secondary-button {
+	border: 1px solid var(--c-border-heavy);
+	border-radius: 9999px;
+	background: transparent;
+	color: var(--c-fg);
+}
+
+.secondary-button:hover:not(:disabled) {
+	background: var(--c-hover);
+}
+
 .skill-chip {
 	padding: 1px 6px;
 	border-radius: var(--r-sm);

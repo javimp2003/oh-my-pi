@@ -165,6 +165,9 @@ function handle(update: ChatUpdate): void {
 		case "focusInput":
 			composer.focus();
 			break;
+		case "editAborted":
+			transcript.editAborted();
+			break;
 	}
 }
 

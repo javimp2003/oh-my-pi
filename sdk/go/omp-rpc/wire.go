@@ -2928,6 +2928,31 @@ func (v *BranchResult) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
+type NavigateTreeResult struct {
+	Cancelled bool `json:"cancelled"`
+	// Text of the user message navigated past, to edit and resend.
+	EditorText *string `json:"editorText,omitempty"`
+	// Images of that user message, in order.
+	EditorImages []ImageContent `json:"editorImages,omitempty"`
+}
+
+func (v *NavigateTreeResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "NavigateTreeResult", v.decodeFrom)
+}
+
+func (v *NavigateTreeResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out NavigateTreeResult
+	d := fieldDecoder{raw: raw, owner: "NavigateTreeResult"}
+	d.required("cancelled", &out.Cancelled)
+	d.optional("editorText", &out.EditorText)
+	d.optional("editorImages", &out.EditorImages)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 type TokenUsage struct {
 	Input      int64 `json:"input"`
 	Output     int64 `json:"output"`
@@ -7954,6 +7979,18 @@ func (c Commands) GetBranchMessages(ctx context.Context) ([]BranchMessage, error
 	var out GetBranchMessagesResult
 	err := c.call(ctx, "get_branch_messages", nil, 0, &out)
 	return out.Messages, err
+}
+
+// NavigateTreeCommand holds the parameters of "navigate_tree".
+type NavigateTreeCommand struct {
+	EntryID string `json:"entryId"`
+}
+
+// NavigateTree sends "navigate_tree": Move the session's leaf in place (same file, like the TUI's `/tree`). On a user message the leaf moves to its parent and the message is returned for re-editing; later entries stay in the file on an abandoned branch. Refused while the session is busy.
+func (c Commands) NavigateTree(ctx context.Context, p NavigateTreeCommand) (NavigateTreeResult, error) {
+	var out NavigateTreeResult
+	err := c.call(ctx, "navigate_tree", p, 0, &out)
+	return out, err
 }
 
 // GetLastAssistantText sends "get_last_assistant_text": Text of the last assistant message, if any.

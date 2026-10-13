@@ -116,6 +116,7 @@ export type RpcCommand =
 	| { id?: string; type: "branch"; entryId: string }
 	| { id?: string; type: "fork"; entryId?: string }
 	| { id?: string; type: "get_branch_messages" }
+	| { id?: string; type: "navigate_tree"; entryId: string }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string }
 	| { id?: string; type: "handoff"; customInstructions?: string }
@@ -560,6 +561,13 @@ export type RpcResponse =
 			command: "get_branch_messages";
 			success: true;
 			data: { messages: Array<{ entryId: string; text: string }> };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "navigate_tree";
+			success: true;
+			data: { cancelled: boolean; editorText?: string; editorImages?: ImageContent[] };
 	  }
 	| {
 			id?: string;

@@ -18,6 +18,7 @@ import { icon } from "../icons";
 import { fileLink, parseFileRef, thumbnail } from "./content";
 import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./markdown";
+import { MessageEditor } from "./message-editor";
 import { PlanCard } from "./plan-card";
 import { ToolCard, truncatedPre } from "./tools";
 
@@ -74,15 +75,18 @@ function formatElapsed(ms: number): string {
 	return `${Math.min(99, Math.floor(seconds / 3600))}h`;
 }
 
-/** A hover-revealed Copy action under a user bubble; the icon turns into a check after copying. */
-function copyActions(text: string): HTMLElement {
+/**
+ * Hover-revealed actions beside a user bubble: Edit (prompts only) and Copy,
+ * whose icon turns into a check after copying.
+ */
+function messageActions(text: string, onEdit?: () => void): HTMLElement {
 	const copy = iconButton("copy", "Copy message", () => {
 		void navigator.clipboard.writeText(text).then(() => {
 			copy.replaceChildren(icon("check"));
 			setTimeout(() => copy.replaceChildren(icon("copy")), 1200);
 		});
 	});
-	return h("div", { className: "msg-actions" }, copy);
+	return h("div", { className: "msg-actions" }, onEdit && iconButton("pencil", "Edit message", onEdit), copy);
 }
 
 function contentText(content: string | Array<{ type: string; text?: string }>): string {
@@ -98,7 +102,7 @@ function contentImages(content: string | Array<{ type: string }>): ImageContent[
 }
 
 /** User-style bubble: plain text (pre-wrapped), image thumbnails, optional label. */
-function bubble(text: string, images: ImageContent[], label?: string): HTMLElement {
+function bubble(text: string, images: ImageContent[], label?: string, onEdit?: () => void): HTMLElement {
 	const el = h("div", { className: "msg user" });
 	const body = h("div", { className: "bubble" });
 	if (label) body.append(h("div", { className: "bubble-label" }, label));
@@ -106,7 +110,7 @@ function bubble(text: string, images: ImageContent[], label?: string): HTMLEleme
 	if (images.length > 0) {
 		body.append(h("div", { className: "thumbs" }, ...images.map(image => thumbnail(image))));
 	}
-	el.append(body, copyActions(text));
+	el.append(body, messageActions(text, onEdit));
 	return el;
 }
 
@@ -160,7 +164,7 @@ function skillBubble(details: SkillPromptDetails, skillText: string): HTMLElemen
 		"div",
 		{ className: "msg user" },
 		h("div", { className: "bubble" }, text, folded),
-		copyActions(details.prompt ?? draft),
+		messageActions(details.prompt ?? draft),
 	);
 }
 
@@ -316,6 +320,9 @@ export class Transcript {
 	#anonymousCount = 0;
 	#retryNote: HTMLElement | undefined;
 	#compactionNote: HTMLElement | undefined;
+	/** Prompts (non-synthetic user messages) in the transcript; each bubble knows its ordinal. */
+	#promptCount = 0;
+	#editor: MessageEditor | undefined;
 
 	constructor(
 		private readonly post: Post,
@@ -353,6 +360,27 @@ export class Transcript {
 		this.#afterChange();
 	}
 
+	/** The host did not resend an edited prompt: its editor becomes editable again. */
+	editAborted(): void {
+		this.#editor?.reopen();
+	}
+
+	/** Edit the prompt `ordinal` in place; sending asks the host to rewind to it and resend. */
+	#editPrompt(element: HTMLElement, ordinal: number, text: string): void {
+		this.#editor?.close();
+		const editor = new MessageEditor(
+			element,
+			text,
+			edited => {
+				this.post({ type: "editMessage", fromEnd: this.#promptCount - 1 - ordinal, original: text, text: edited });
+			},
+			() => {
+				if (this.#editor === editor) this.#editor = undefined;
+			},
+		);
+		this.#editor = editor;
+	}
+
 	setHistory(messages: AgentMessage[]): void {
 		cancelAnimationFrame(this.#frame);
 		this.#frame = 0;
@@ -361,6 +389,8 @@ export class Transcript {
 		this.#tools.clear();
 		this.#retryNote = undefined;
 		this.#compactionNote = undefined;
+		this.#editor = undefined;
+		this.#promptCount = 0;
 		this.#list.replaceChildren();
 		for (const message of messages) {
 			if (message.role === "assistant") {
@@ -571,10 +601,16 @@ export class Transcript {
 	#appendStatic(message: AgentMessage): HTMLElement | undefined {
 		let el: HTMLElement | undefined;
 		switch (message.role) {
-			case "user":
+			case "user": {
 				if (message.synthetic) return undefined;
-				el = bubble(contentText(message.content), contentImages(message.content));
+				const ordinal = this.#promptCount++;
+				const text = contentText(message.content);
+				const prompt = bubble(text, contentImages(message.content), undefined, () =>
+					this.#editPrompt(prompt, ordinal, text),
+				);
+				el = prompt;
 				break;
+			}
 			case "custom":
 			case "hookMessage":
 				if (!message.display) return undefined;

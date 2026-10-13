@@ -3255,6 +3255,17 @@ pub struct BranchResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NavigateTreeResult {
+	pub cancelled: bool,
+	/// Text of the user message navigated past, to edit and resend.
+	#[serde(rename = "editorText", default, skip_serializing_if = "Option::is_none")]
+	pub editor_text: Option<String>,
+	/// Images of that user message, in order.
+	#[serde(rename = "editorImages", default, skip_serializing_if = "Option::is_none")]
+	pub editor_images: Option<Vec<ImageContent>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TokenUsage {
 	pub input: i64,
 	pub output: i64,
@@ -5390,6 +5401,12 @@ pub struct GetBranchMessagesResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NavigateTreeParams {
+	#[serde(rename = "entryId")]
+	pub entry_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GetLastAssistantTextResult {
 	#[serde(deserialize_with = "Deserialize::deserialize")]
 	pub text: Option<String>,
@@ -6810,6 +6827,23 @@ impl Command for GetBranchMessagesCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<GetBranchMessagesResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.messages)
+	}
+}
+
+/// Move the session's leaf in place (same file, like the TUI's `/tree`). On a user message the leaf moves to its parent and the message is returned for re-editing; later entries stay in the file on an abandoned branch. Refused while the session is busy.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NavigateTreeCommand {
+	#[serde(rename = "entryId")]
+	pub entry_id: String,
+}
+
+impl Command for NavigateTreeCommand {
+	const NAME: &'static str = "navigate_tree";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = NavigateTreeResult;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<NavigateTreeResult>(data.unwrap_or_else(|| Value::Object(Map::new())))
 	}
 }
 

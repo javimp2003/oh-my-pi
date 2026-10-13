@@ -230,6 +230,7 @@ correlate it via `id`. Ordering across concurrent commands is not guaranteed
 - `{ id?, type: "branch", entryId: string }`
 - `{ id?, type: "fork", entryId?: string }`
 - `{ id?, type: "get_branch_messages" }`
+- `{ id?, type: "navigate_tree", entryId: string }`
 - `{ id?, type: "get_last_assistant_text" }`
 - `{ id?, type: "set_session_name", name: string }`
 - `{ id?, type: "handoff", customInstructions?: string }`
@@ -237,6 +238,8 @@ correlate it via `id`. Ordering across concurrent commands is not guaranteed
 `handoff` fails while a response is streaming. On success, its payload is `{ savedPath? }` or `null` when no handoff was produced. Session transitions (`new_session`, `switch_session`, `branch`, `fork`, `open_session`) report cancellation when an extension prevents the transition.
 
 `fork` moves the process onto a new session file and returns `{ cancelled }`; read the new `sessionFile`/`sessionId` with `get_state`. With `entryId` (any `message` entry from `get_entries`, such as a user or assistant message), the new file holds the root-to-entry path including that entry plus the session's artifacts, so kept `artifact://` references still resolve, and its header's `parentSession` is the old session file. When `entryId` sits inside an assistant tool-call batch (the assistant message itself, or one of its tool results), the cut extends through the batch's recorded tool results so the fork never ends on tool calls whose results were dropped. This runs `session_before_branch`/`session_branch` hooks with reason `"fork"`, and the hook's `entryId` is the last kept entry. Without `entryId` it copies the whole session and its artifacts (`/fork`), records the old session id as `parentSession`, runs `session_before_switch`/`session_switch` with reason `"fork"`, and reports `cancelled: true` when the session is not persisted. A non-message `entryId` fails. Both variants fail with `code: "session_busy"` while a response is streaming or bash, eval, compaction, handoff, or retry work is running, including work that starts while the fork's hooks or flushes are awaited; a refused fork keeps the current session, its transcript, and its queued next-turn messages and background jobs. The Python client exposes `fork(entry_id=None) -> CancellationResult`.
+
+`navigate_tree` moves the session's leaf to `entryId` in place, the RPC form of the TUI's `/tree` rewind: the session file, id and title stay the same. Targeting a user message moves the leaf to that message's parent and returns `{ cancelled, editorText, editorImages? }` with the message's text and images, so the host can resend an edited version with `prompt`; it then continues on a new branch. Other entries become the leaf themselves and return `{ cancelled }`. Entries after the target stay in the file on the abandoned branch (reachable from the TUI's `/tree`) but leave the live session, `get_messages` and `get_state.messageCount`. It is refused with `code: "session_busy"` while the session is busy (abort and wait for `agent_end` first), fails for unknown entry ids, and runs the `session_before_tree`/`session_tree` hooks (a vetoing hook reports `cancelled: true`).
 
 ### Messages
 

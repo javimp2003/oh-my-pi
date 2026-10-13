@@ -13,6 +13,7 @@
 - Added schema metadata to `omp config list --json`: each entry now also carries `default` (omitted for credentials), `values` for enums, and `ui` (`tab`, `group`, `label`, `warning`, `options`) for settings shown in the settings panel
 - Added `PI_RPC_AUTO_TITLE`: RPC/ACP hosts that list sessions by title can keep automatic session titles, which protocol modes otherwise skip
 - Added plan mode to RPC: `set_plan_mode` enters or leaves it, `get_state` reports `planMode` and `planModeAvailable`, and the agent's plan proposal asks the host to approve or refine through a `select` dialog
+- Added `navigate_tree` to RPC: moves the session's leaf in place like the TUI's `/tree`; on a user message it rewinds past it and returns its text and images, so hosts can edit and resend any earlier prompt
 
 ### Changed
 

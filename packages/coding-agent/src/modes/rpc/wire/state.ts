@@ -217,6 +217,11 @@ export const stateDefs = {
 	),
 	BranchMessage: { entryId: "string", text: "string" },
 	BranchResult: { text: "string", cancelled: "boolean" },
+	NavigateTreeResult: {
+		cancelled: "boolean",
+		"editorText?": doc("string", "Text of the user message navigated past, to edit and resend."),
+		"editorImages?": doc("ImageContent[]", "Images of that user message, in order."),
+	},
 	TokenUsage: {
 		input: "number.integer",
 		output: "number.integer",

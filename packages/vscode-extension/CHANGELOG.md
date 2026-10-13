@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.0]
+
+### Added
+
+- Edit any prompt of the conversation: hover a message and click its pencil to edit it in place (`Enter` sends, `Esc` cancels). Editing the last prompt runs it again with the new text (a running turn is stopped first); editing an earlier one asks for confirmation and continues the session from it, removing the later messages from the conversation. The session stays the same (title, file); the removed turns remain in the session file on an abandoned branch, reachable from the terminal's `/tree`. Images of the message are sent again unchanged. Changes omp made to files are not undone. Needs omp with the `navigate_tree` RPC command (v18.9.1-custom.13 or later)
+
 ## [0.3.1]
 
 ### Changed

@@ -794,6 +794,15 @@ class BranchResult:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class NavigateTreeResult:
+    cancelled: bool
+    editor_text: str | None = None
+    """Text of the user message navigated past, to edit and resend."""
+    editor_images: tuple[ImageContent, ...] | None = None
+    """Images of that user message, in order."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class TokenUsage:
     input: int
     output: int
@@ -2098,6 +2107,15 @@ def parse_branch_result(value: object, path: str = "BranchResult") -> BranchResu
     return BranchResult(
         text=required(payload, "text", decode_str, path),
         cancelled=required(payload, "cancelled", decode_bool, path),
+    )
+
+
+def parse_navigate_tree_result(value: object, path: str = "NavigateTreeResult") -> NavigateTreeResult:
+    payload = expect_object(value, path)
+    return NavigateTreeResult(
+        cancelled=required(payload, "cancelled", decode_bool, path),
+        editor_text=optional(payload, "editorText", decode_str, path),
+        editor_images=optional(payload, "editorImages", array(parse_image_content), path),
     )
 
 
@@ -3462,6 +3480,12 @@ class WireClient:
         params: dict[str, object] = {}
         return required(expect_object(self._command("get_branch_messages", params), "get_branch_messages"), "messages", array(parse_branch_message), "get_branch_messages")
 
+    def navigate_tree(self, entry_id: str) -> NavigateTreeResult:
+        """Move the session's leaf in place (same file, like the TUI's `/tree`). On a user message the leaf moves to its parent and the message is returned for re-editing; later entries stay in the file on an abandoned branch. Refused while the session is busy."""
+        params: dict[str, object] = {}
+        params["entryId"] = entry_id
+        return parse_navigate_tree_result(self._command("navigate_tree", params), "navigate_tree")
+
     def get_last_assistant_text(self) -> str | None:
         """Text of the last assistant message, if any."""
         params: dict[str, object] = {}
@@ -3858,6 +3882,7 @@ __all__ = [
     "ModelCost",
     "ModelCycleResult",
     "ModelInfo",
+    "NavigateTreeResult",
     "NegotiateProtocolResult",
     "NoticeEvent",
     "NotifyType",
@@ -4034,6 +4059,7 @@ __all__ = [
     "parse_model_cost",
     "parse_model_cycle_result",
     "parse_model_info",
+    "parse_navigate_tree_result",
     "parse_negotiate_protocol_result",
     "parse_notice_event",
     "parse_notification",

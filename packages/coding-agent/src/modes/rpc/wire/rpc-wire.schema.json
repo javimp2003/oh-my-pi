@@ -606,6 +606,17 @@
 				"clientOmit": []
 			},
 			{
+				"name": "navigate_tree",
+				"doc": "Move the session's leaf in place (same file, like the TUI's `/tree`). On a user message the leaf moves to its parent and the message is returned for re-editing; later entries stay in the file on an abandoned branch. Refused while the session is busy.",
+				"params": "NavigateTreeParams",
+				"result": "NavigateTreeResult",
+				"nullable": false,
+				"unwrap": null,
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
 				"name": "get_last_assistant_text",
 				"doc": "Text of the last assistant message, if any.",
 				"params": null,
@@ -2997,6 +3008,28 @@
 			},
 			"required": [
 				"text",
+				"cancelled"
+			]
+		},
+		"NavigateTreeResult": {
+			"type": "object",
+			"properties": {
+				"cancelled": {
+					"type": "boolean"
+				},
+				"editorText": {
+					"type": "string",
+					"description": "Text of the user message navigated past, to edit and resend."
+				},
+				"editorImages": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/ImageContent"
+					},
+					"description": "Images of that user message, in order."
+				}
+			},
+			"required": [
 				"cancelled"
 			]
 		},
@@ -6574,6 +6607,17 @@
 			},
 			"required": [
 				"messages"
+			]
+		},
+		"NavigateTreeParams": {
+			"type": "object",
+			"properties": {
+				"entryId": {
+					"type": "string"
+				}
+			},
+			"required": [
+				"entryId"
 			]
 		},
 		"GetLastAssistantTextResult": {

@@ -8,6 +8,7 @@
  * a view that attaches later gets a snapshot (`replay`).
  */
 import * as fs from "node:fs/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import * as vscode from "vscode";
 import type {
 	AgentMessage,
@@ -18,7 +19,7 @@ import type {
 import { ompCommand, readConfig, workspaceCwd } from "../config";
 import { DialogBridge } from "../dialogs";
 import type { AgentStatus, ChatUpdate, ModelChoice } from "../protocol";
-import { OmpCommandError, OmpProcess } from "../rpc/omp-process";
+import { OmpCommandError, OmpProcess, type OmpResult } from "../rpc/omp-process";
 
 /** Notification frames that are not session events (everything else is forwarded as `event`). */
 const NON_EVENT_FRAMES: Record<string, true> = {
@@ -57,6 +58,10 @@ const STATE_CHANGING_EVENTS: Record<string, true> = {
 	command_output: true,
 	prompt_result: true,
 };
+
+/** `navigate_tree` retries while an aborted turn still winds down (bash, retries…). */
+const NAVIGATE_BUSY_RETRIES = 6;
+const NAVIGATE_BUSY_DELAY_MS = 500;
 
 /** What a new process should open. */
 export type SessionTarget = { kind: "continue" } | { kind: "new" } | { kind: "resume"; sessionFile: string };
@@ -244,6 +249,28 @@ export class AgentHost implements vscode.Disposable {
 		});
 	}
 
+	/**
+	 * Resend the user message `fromEnd` prompts from the end of the conversation
+	 * with `text` (keeping its images). omp's `navigate_tree` rewinds the session
+	 * in place to just before that message, so the edited prompt continues from
+	 * there and the later turns leave the conversation (they stay in the session
+	 * file on an abandoned branch, reachable from the terminal's `/tree`).
+	 * A running turn is aborted first. Returns false when a hook vetoed the rewind.
+	 */
+	async editMessage(fromEnd: number, original: string, text: string): Promise<boolean> {
+		const process = this.#requireProcess();
+		const entryId = await this.#userEntryId(process, fromEnd, original);
+		if (this.running) {
+			await process.request("abort");
+			await this.#untilIdle();
+		}
+		const result = await this.#navigateTree(process, entryId);
+		if (result.cancelled) return false;
+		await this.#sendSnapshot(process, this.#views);
+		await this.prompt(text, result.editorImages);
+		return true;
+	}
+
 	async removeQueued(message: string, queue: "steering" | "followUp"): Promise<void> {
 		await this.#requireProcess().request("remove_queued_message", { message, queue });
 	}
@@ -322,6 +349,57 @@ export class AgentHost implements vscode.Disposable {
 		const process = this.process;
 		if (!process) throw new Error('omp is not running. Use "omp: Restart Agent Process".');
 		return process;
+	}
+
+	/** The entry id of the user message `fromEnd` prompts from the end of the current branch. */
+	async #userEntryId(process: OmpProcess, fromEnd: number, original: string): Promise<string> {
+		const { entries, leafId } = await process.request("get_entries", {});
+		const byId = new Map<string, Record<string, unknown>>();
+		for (const entry of entries) if (typeof entry.id === "string") byId.set(entry.id, entry);
+		let seen = 0;
+		for (let id = leafId; id;) {
+			const entry = byId.get(id);
+			if (!entry) break;
+			const prompt = userPromptText(entry);
+			if (prompt !== undefined && seen++ === fromEnd) {
+				if (prompt.trim() !== original.trim()) break;
+				return id;
+			}
+			id = typeof entry.parentId === "string" ? entry.parentId : null;
+		}
+		throw new Error("That message is no longer in this session. Reopen the chat and try again.");
+	}
+
+	/** `navigate_tree`, retried while omp finishes winding down an aborted turn. */
+	async #navigateTree(process: OmpProcess, entryId: string): Promise<OmpResult<"navigate_tree">> {
+		for (let attempt = 0; ; attempt++) {
+			try {
+				return await process.request("navigate_tree", { entryId });
+			} catch (error) {
+				if (!(error instanceof OmpCommandError)) throw error;
+				if (error.message.startsWith("Unknown command")) {
+					throw new Error("Editing messages needs a newer omp (one with the `navigate_tree` RPC command).");
+				}
+				if (error.code !== "session_busy" || attempt >= NAVIGATE_BUSY_RETRIES) throw error;
+				await sleep(NAVIGATE_BUSY_DELAY_MS);
+			}
+		}
+	}
+
+	/** Resolves once no turn or compaction runs (or after `timeoutMs`; omp then reports what is still busy). */
+	async #untilIdle(timeoutMs = 15_000): Promise<void> {
+		if (!this.running) return;
+		const { promise, resolve } = Promise.withResolvers<void>();
+		const subscription = this.onDidChange(() => {
+			if (!this.running) resolve();
+		});
+		const timer = setTimeout(resolve, timeoutMs);
+		try {
+			await promise;
+		} finally {
+			subscription.dispose();
+			clearTimeout(timer);
+		}
 	}
 
 	async #stopProcess(): Promise<void> {
@@ -497,4 +575,25 @@ export class AgentHost implements vscode.Disposable {
 
 export function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The text of a session entry that is a prompt the user wrote (a non-synthetic
+ * user message), joined like the chat shows it; undefined for any other entry.
+ */
+function userPromptText(entry: Record<string, unknown>): string | undefined {
+	if (entry.type !== "message") return undefined;
+	const message = entry.message;
+	if (!message || typeof message !== "object" || !("role" in message) || message.role !== "user") return undefined;
+	if ("synthetic" in message && message.synthetic === true) return undefined;
+	const content = "content" in message ? message.content : undefined;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return undefined;
+	const texts: string[] = [];
+	for (const block of content) {
+		if (block && typeof block === "object" && "type" in block && block.type === "text" && "text" in block) {
+			if (typeof block.text === "string") texts.push(block.text);
+		}
+	}
+	return texts.join("\n");
 }

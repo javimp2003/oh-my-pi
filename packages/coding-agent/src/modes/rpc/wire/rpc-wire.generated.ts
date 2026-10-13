@@ -622,6 +622,14 @@ export interface BranchResult {
 	cancelled: boolean;
 }
 
+export interface NavigateTreeResult {
+	cancelled: boolean;
+	/** Text of the user message navigated past, to edit and resend. */
+	editorText?: string;
+	/** Images of that user message, in order. */
+	editorImages?: ImageContent[];
+}
+
 export interface TokenUsage {
 	input: number;
 	output: number;
@@ -1717,6 +1725,10 @@ export interface GetBranchMessagesResult {
 	messages: BranchMessage[];
 }
 
+export interface NavigateTreeParams {
+	entryId: string;
+}
+
 export interface GetLastAssistantTextResult {
 	text: string | null;
 }
@@ -1860,6 +1872,7 @@ export interface RpcWireCommands {
 	branch: { params: BranchParams; result: BranchResult };
 	fork: { params: ForkParams; result: CancellationResult };
 	get_branch_messages: { params: undefined; result: GetBranchMessagesResult };
+	navigate_tree: { params: NavigateTreeParams; result: NavigateTreeResult };
 	get_last_assistant_text: { params: undefined; result: GetLastAssistantTextResult };
 	set_session_name: { params: SetSessionNameParams; result: undefined };
 	handoff: { params: HandoffParams; result: HandoffResult | null };

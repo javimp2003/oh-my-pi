@@ -95,6 +95,8 @@ export type ChatUpdate =
 	/** Insert text at the composer cursor (Add Selection / Add File) and focus it. */
 	| { type: "insertText"; text: string }
 	| { type: "focusInput" }
+	/** An `editMessage` was not resent (declined, vetoed, or failed): the webview reopens its editor. */
+	| { type: "editAborted" }
 	/** Sessions of the workspace, newest first (answer to `listSessions`). */
 	| { type: "sessions"; sessions: SessionListItem[] }
 	/** Activity of every session that is running or finished unseen, by session file; sent when it changes. */
@@ -113,6 +115,12 @@ export type ChatRequest =
 	| { type: "ready" }
 	/** Send a prompt (with pasted images). While the agent is busy the host queues it (`ompCustom.sendWhileBusy`). */
 	| { type: "prompt"; text: string; images?: ImageContent[] }
+	/**
+	 * Edit a prompt of the conversation and resend it: the session continues from
+	 * there and everything after it leaves the conversation. `fromEnd` counts the
+	 * user messages after it (0 = the last one); `original` is its text as shown.
+	 */
+	| { type: "editMessage"; fromEnd: number; original: string; text: string }
 	| { type: "abort" }
 	| { type: "newSession" }
 	/** List the workspace's sessions for the history panel; the host answers with `sessions`. */

@@ -2431,6 +2431,19 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				return success(id, "get_branch_messages", { messages });
 			}
 
+			case "navigate_tree": {
+				// Moving the leaf mid-turn would race the transcript writes of the running work.
+				if (session.isBusyForSnapshot) {
+					return error(id, "navigate_tree", new SessionBusyError("navigate the session").message, "session_busy");
+				}
+				const result = await session.navigateTree(command.entryId);
+				return success(id, "navigate_tree", {
+					cancelled: result.cancelled,
+					editorText: result.editorText,
+					editorImages: result.editorImages,
+				});
+			}
+
 			case "get_last_assistant_text": {
 				const text = session.getLastAssistantText();
 				return success(id, "get_last_assistant_text", { text });

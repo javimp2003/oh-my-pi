@@ -287,6 +287,12 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		unwrap: "messages",
 	},
 	{
+		name: "navigate_tree",
+		doc: "Move the session's leaf in place (same file, like the TUI's `/tree`). On a user message the leaf moves to its parent and the message is returned for re-editing; later entries stay in the file on an abandoned branch. Refused while the session is busy.",
+		params: { entryId: "string" },
+		result: "NavigateTreeResult",
+	},
+	{
 		name: "get_last_assistant_text",
 		doc: "Text of the last assistant message, if any.",
 		result: { text: "string | null" },

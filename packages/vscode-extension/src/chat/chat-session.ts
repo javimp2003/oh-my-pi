@@ -180,6 +180,32 @@ export class ChatSession implements vscode.Disposable, HostView {
 		return this.#requireHost().availableModels();
 	}
 
+	/**
+	 * Resend an earlier prompt edited. Editing one that is not the last drops the
+	 * later turns from the conversation, so that asks for confirmation first.
+	 */
+	async #editMessage(fromEnd: number, original: string, text: string): Promise<void> {
+		let resent = false;
+		try {
+			if (fromEnd > 0) {
+				const later = fromEnd === 1 ? "the message after it" : `the ${fromEnd} messages after it`;
+				const choice = await vscode.window.showWarningMessage(
+					"Edit this message and continue from it?",
+					{
+						modal: true,
+						detail: `omp continues the session from the edited message: ${later} and every answer to them are removed from the conversation. Changes omp already made to your files are not undone.`,
+					},
+					"Edit and Resend",
+				);
+				if (choice !== "Edit and Resend") return;
+			}
+			resent = await this.#requireHost().editMessage(fromEnd, original, text);
+		} finally {
+			// The webview keeps the editor open until the conversation reloads.
+			if (!resent) this.post({ type: "editAborted" });
+		}
+	}
+
 	post(update: ChatUpdate): void {
 		if (this.#webviewReady) void this.surface.webview.postMessage(update);
 	}
@@ -255,6 +281,9 @@ export class ChatSession implements vscode.Disposable, HostView {
 				return;
 			case "prompt":
 				await this.#requireHost().prompt(request.text, request.images);
+				return;
+			case "editMessage":
+				await this.#editMessage(request.fromEnd, request.original, request.text);
 				return;
 			case "abort":
 				await this.abort();
