@@ -68,12 +68,18 @@ export function brailleSpinner(): BrailleSpinner {
 	};
 }
 
-/** Elapsed turn time like the TUI's `brandTimer`: `12s`, `3m`, `1h` (capped at 99h). */
+/** Elapsed turn time: `12s`, `1m 05s`, `2h 03m`. */
 function formatElapsed(ms: number): string {
-	const seconds = Math.floor(ms / 1000);
+	const seconds = Math.max(0, Math.floor(ms / 1000));
 	if (seconds < 60) return `${seconds}s`;
-	if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-	return `${Math.min(99, Math.floor(seconds / 3600))}h`;
+	const pad = (value: number) => String(value).padStart(2, "0");
+	if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${pad(seconds % 60)}s`;
+	return `${Math.floor(seconds / 3600)}h ${pad(Math.floor(seconds / 60) % 60)}m`;
+}
+
+/** The muted line under a finished turn's last answer: how long omp worked on it. */
+function turnFooter(ms: number): HTMLElement {
+	return h("div", { className: "msg turn-footer" }, `Worked for ${formatElapsed(ms)}`);
 }
 
 /**
@@ -136,6 +142,12 @@ interface SkillPromptDetails {
 
 function isSkillPromptDetails(details: unknown): details is SkillPromptDetails {
 	return typeof details === "object" && details !== null && "name" in details && typeof details.name === "string";
+}
+
+/** Something the user sent that starts work: a prompt or a skill invocation. */
+function isPrompt(message: AgentMessage): message is Extract<AgentMessage, { role: "user" | "custom" }> {
+	if (message.role === "user") return !message.synthetic;
+	return message.role === "custom" && message.customType === "skill-prompt";
 }
 
 /**
@@ -392,7 +404,22 @@ export class Transcript {
 		this.#editor = undefined;
 		this.#promptCount = 0;
 		this.#list.replaceChildren();
+		// A turn starts at a prompt that is not steering an unfinished turn (the last answer did not
+		// stop for tool calls) and ends at its last answer; finished turns get their "Worked for" line.
+		let turnStart: number | undefined;
+		let turnEnd: number | undefined;
+		let lastStop: string | undefined;
+		const closeTurn = () => {
+			if (turnStart !== undefined && turnEnd !== undefined && lastStop !== "toolUse") {
+				this.#list.append(turnFooter(turnEnd - turnStart));
+			}
+			turnStart = turnEnd = undefined;
+		};
 		for (const message of messages) {
+			if (isPrompt(message) && lastStop !== "toolUse") {
+				closeTurn();
+				turnStart = message.timestamp;
+			}
 			if (message.role === "assistant") {
 				const view = new AssistantView(
 					`h${this.#list.childElementCount}`,
@@ -401,10 +428,13 @@ export class Transcript {
 				);
 				view.update(message, false);
 				this.#list.append(view.element);
+				turnEnd = message.completedAt ?? message.timestamp + (message.duration ?? 0);
+				lastStop = message.stopReason;
 			} else {
 				this.#appendStatic(message);
 			}
 		}
+		closeTurn();
 		for (const card of this.#tools.values()) if (card.status === "pending") card.setStatus("none");
 		this.#pinned = true;
 		this.#afterChange();
@@ -506,6 +536,7 @@ export class Transcript {
 				for (const card of this.#tools.values()) {
 					if (card.status === "pending" || card.status === "running") card.setStatus("interrupted");
 				}
+				if (!this.#working.hidden) this.#list.append(turnFooter(Date.now() - this.#busySince));
 				break;
 			case "auto_retry_start":
 				this.#retryNote = this.#note(

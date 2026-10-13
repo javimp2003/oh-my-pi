@@ -1152,6 +1152,15 @@ code {
 	font-variant-numeric: tabular-nums;
 }
 
+/* "Worked for 1m 05s" under a finished turn: close to its answer, quieter than the text. */
+.turn-footer {
+	margin-top: -8px;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	font-variant-numeric: tabular-nums;
+	opacity: 0.8;
+}
+
 .new-messages {
 	position: absolute;
 	bottom: 10px;

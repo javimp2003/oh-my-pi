@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.3]
+
+### Added
+
+- A finished turn shows a small "Worked for 1m 23s" line under omp's last answer, also for earlier turns when a session is reopened (measured from the prompt to the last answer; messages sent while omp was working count toward the same turn)
+
+### Changed
+
+- The "Working" timer shows seconds past the first minute: `1m 05s` instead of `1m`, and `2h 03m` past the first hour
+
 ## [0.5.2]
 
 ### Fixed
