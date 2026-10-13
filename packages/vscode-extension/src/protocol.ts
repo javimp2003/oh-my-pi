@@ -110,6 +110,8 @@ export type ChatUpdate =
 	 * model's running transcript in `text`; `error` when a capture failed.
 	 */
 	| { type: "dictation"; state: "recording" | "transcribing" | "idle"; text?: string; error?: string }
+	/** omp's answer to a `predictWord` request: the rest of the word, or null for nothing to show. */
+	| { type: "wordPrediction"; requestId: number; suffix: string | null }
 	/** A finished dictation: insert `text` at the cursor, and send it when `submit`. */
 	| { type: "dictationText"; text: string; submit: boolean }
 	/** The "Toggle Voice Input" command: start dictating, or stop and transcribe. */
@@ -165,7 +167,11 @@ export type ChatRequest =
 	/** Remove a queued (not yet delivered) message. */
 	| { type: "removeQueued"; message: string; queue: "steering" | "followUp" }
 	/** Voice input: start recording, stop and transcribe, or drop the recording. */
-	| { type: "dictation"; action: "start" | "stop" | "cancel" };
+	| { type: "dictation"; action: "start" | "stop" | "cancel" }
+	/** Ghost text: predict the end of the word at `cursor` (a UTF-16 offset into `text`); answered by `wordPrediction`. */
+	| { type: "predictWord"; requestId: number; text: string; cursor: number }
+	/** A shown prediction was accepted (Tab/→) or typed past, for the engine to learn from. */
+	| { type: "predictWordFeedback"; text: string; cursor: number; suggestion: string; accepted: boolean };
 
 /** One setting row in the settings panel (from `omp config list --json`). */
 export interface SettingEntry {

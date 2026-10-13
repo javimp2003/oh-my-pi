@@ -77,6 +77,8 @@ const NAVIGATE_BUSY_RETRIES = 6;
 const NAVIGATE_BUSY_DELAY_MS = 500;
 /** Transcribing a long dictation through a cloud API can take a while. */
 const DICTATION_STOP_TIMEOUT_MS = 120_000;
+/** A first word prediction waits for omp's prediction daemon to start and load (up to about two minutes). */
+const PREDICT_TIMEOUT_MS = 155_000;
 
 /** What a new process should open. */
 export type SessionTarget = { kind: "continue" } | { kind: "new" } | { kind: "resume"; sessionFile: string };
@@ -451,6 +453,29 @@ export class AgentHost implements vscode.Disposable {
 	async dictationCancel(): Promise<void> {
 		this.#dictating = false;
 		await this.#process?.request("dictation_cancel");
+	}
+
+	/**
+	 * The rest of the prose word ending at `cursor` in `text`, from omp's word
+	 * prediction (`spelling.autocomplete`), or null. Failures (an omp without
+	 * the command, a prediction daemon that cannot start) show as no suggestion.
+	 */
+	async predictWord(text: string, cursor: number): Promise<string | null> {
+		const process = this.#process;
+		if (!process?.running) return null;
+		try {
+			const { suffix } = await process.request("predict_word", { text, cursor }, PREDICT_TIMEOUT_MS);
+			return suffix;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Tell omp's prediction engine a suggestion was accepted or typed past. */
+	predictWordFeedback(text: string, cursor: number, suggestion: string, accepted: boolean): void {
+		const process = this.#process;
+		if (!process?.running) return;
+		void process.request("predict_word_feedback", { text, cursor, suggestion, accepted }).catch(() => {});
 	}
 
 	/** Answer a plan review shown in a view. */

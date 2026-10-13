@@ -9,6 +9,7 @@ import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
 import { ContextMeter } from "./context-meter";
 import { DictationControl, type DictationState } from "./dictation";
+import { GhostText } from "./ghost-text";
 import { openLightbox } from "./lightbox";
 import { ModelPicker } from "./model-picker";
 
@@ -91,6 +92,8 @@ export class Composer {
 	#dictation: DictationControl;
 	/** A streaming speech model's running transcript, shown above the input while recording. */
 	#dictationPreview = h("div", { className: "dictation-preview", hidden: true });
+	/** Grey word predictions after the caret, accepted with Tab or →. */
+	#ghost: GhostText;
 
 	constructor(
 		private readonly post: Post,
@@ -110,6 +113,7 @@ export class Composer {
 		this.picker = new ModelPicker(post);
 		this.#meter = new ContextMeter(post);
 		this.#dictation = new DictationControl(post, state => this.#onDictationState(state));
+		this.#ghost = new GhostText(this.#input, post);
 		this.#thinkingToggle = iconButton("brain", "", () => {
 			this.#thinkingExpanded = !this.#thinkingExpanded;
 			this.#renderThinkingToggle();
@@ -144,7 +148,7 @@ export class Composer {
 				this.#popup,
 				this.#attachments,
 				this.#dictationPreview,
-				this.#input,
+				this.#ghost.element,
 				h(
 					"div",
 					{ className: "composer-footer" },
@@ -306,6 +310,11 @@ export class Composer {
 		if (error) this.showNotice("error", error);
 	}
 
+	/** omp answered a word prediction for the draft. */
+	wordPrediction(requestId: number, suffix: string | null): void {
+		this.#ghost.onPrediction(requestId, suffix);
+	}
+
 	/** A finished dictation: the text goes in at the cursor, and is sent when omp's submit trigger fired. */
 	dictationText(text: string, submit: boolean): void {
 		this.#dictation.update("idle");
@@ -328,6 +337,7 @@ export class Composer {
 		this.saveDraft(this.#input.value);
 		this.#refresh();
 		this.#updatePopup();
+		this.#ghost.onInput();
 	}
 
 	#refresh(): void {
@@ -339,6 +349,7 @@ export class Composer {
 		this.#send.disabled = !hasContent || this.#input.disabled;
 		setTooltip(this.#send, this.#busy ? "Queue message (Enter)" : "Send (Enter)");
 		this.#input.placeholder = this.#placeholder();
+		this.#ghost.setEnabled(!this.#input.disabled && this.#dictation.state === "idle");
 	}
 
 	#placeholder(): string {
@@ -448,6 +459,7 @@ export class Composer {
 				return;
 			}
 		}
+		if (this.#ghost.accept(event)) return;
 		if (event.key === "Enter" && !event.shiftKey) {
 			event.preventDefault();
 			this.#submit();

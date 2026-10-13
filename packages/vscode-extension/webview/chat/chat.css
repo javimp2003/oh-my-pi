@@ -1749,6 +1749,36 @@ code {
 	color: var(--vscode-input-placeholderForeground, var(--c-fg-3));
 }
 
+/* Word prediction: a mirror behind the textarea repeats the draft invisibly and shows the suggestion in grey. */
+.ghost-wrap {
+	position: relative;
+}
+
+.ghost-wrap .input {
+	position: relative;
+	z-index: 1;
+}
+
+.ghost-mirror {
+	position: absolute;
+	top: 0;
+	left: 0;
+	overflow: hidden;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+	pointer-events: none;
+	color: transparent;
+}
+
+.ghost-mirror[hidden] {
+	display: none;
+}
+
+.ghost-suggestion {
+	color: var(--vscode-editorGhostText-foreground, var(--c-fg-3));
+	opacity: 0.85;
+}
+
 .composer-footer {
 	display: flex;
 	align-items: center;

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.0]
+
+### Added
+
+- Word prediction in the composer, as in omp's terminal: the end of the word being typed shows in grey after the caret; `Tab` accepts it with a space, `→` without one, letters of it shorten it, anything else hides it. It uses omp's `predict_word` (engine set by `spelling.autocomplete`, learning from your prompt history), and accepted or ignored suggestions are reported back so it keeps learning
+
 ## [0.7.0]
 
 ### Added

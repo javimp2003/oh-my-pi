@@ -411,6 +411,14 @@ export class ChatSession implements vscode.Disposable, HostView {
 			case "dictation":
 				await this.#dictation(request.action);
 				return;
+			case "predictWord": {
+				const suffix = await this.#host?.predictWord(request.text, request.cursor);
+				this.post({ type: "wordPrediction", requestId: request.requestId, suffix: suffix ?? null });
+				return;
+			}
+			case "predictWordFeedback":
+				this.#host?.predictWordFeedback(request.text, request.cursor, request.suggestion, request.accepted);
+				return;
 			case "compact":
 				await this.compact();
 				return;

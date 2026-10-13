@@ -193,6 +193,9 @@ function handle(update: ChatUpdate): void {
 		case "dictation":
 			composer.dictationUpdate(update.state, update.text, update.error);
 			break;
+		case "wordPrediction":
+			composer.wordPrediction(update.requestId, update.suffix);
+			break;
 		case "dictationText":
 			composer.dictationText(update.text, update.submit);
 			break;
