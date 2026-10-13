@@ -8,6 +8,7 @@ import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
 import { ContextMeter } from "./context-meter";
+import { DictationControl, type DictationState } from "./dictation";
 import { openLightbox } from "./lightbox";
 import { ModelPicker } from "./model-picker";
 
@@ -35,6 +36,8 @@ const MAX_SUGGESTIONS = 50;
 const PLACEHOLDER = "Ask omp anything. / for commands and skills";
 const PLACEHOLDER_BUSY = "Ask for follow-up changes";
 const PLACEHOLDER_PLAN = "Plan mode: describe what to plan";
+const PLACEHOLDER_LISTENING = "Listening… click the microphone to finish, Esc to cancel";
+const PLACEHOLDER_TRANSCRIBING = "Transcribing…";
 
 /** A pasted image file as an omp image block (base64 data and MIME type). */
 function readImage(file: File): Promise<ImageContent> {
@@ -85,6 +88,9 @@ export class Composer {
 	/** Pasted images sent with the next prompt. */
 	#images: ImageContent[] = [];
 	#attachments = h("div", { className: "attachments", hidden: true });
+	#dictation: DictationControl;
+	/** A streaming speech model's running transcript, shown above the input while recording. */
+	#dictationPreview = h("div", { className: "dictation-preview", hidden: true });
 
 	constructor(
 		private readonly post: Post,
@@ -103,6 +109,7 @@ export class Composer {
 		this.#stop.hidden = true;
 		this.picker = new ModelPicker(post);
 		this.#meter = new ContextMeter(post);
+		this.#dictation = new DictationControl(post, state => this.#onDictationState(state));
 		this.#thinkingToggle = iconButton("brain", "", () => {
 			this.#thinkingExpanded = !this.#thinkingExpanded;
 			this.#renderThinkingToggle();
@@ -136,6 +143,7 @@ export class Composer {
 				{ className: "composer" },
 				this.#popup,
 				this.#attachments,
+				this.#dictationPreview,
 				this.#input,
 				h(
 					"div",
@@ -148,7 +156,14 @@ export class Composer {
 						this.#planToggle,
 						this.picker.element,
 					),
-					h("div", { className: "composer-footer-right" }, this.#meter.element, this.#stop, this.#send),
+					h(
+						"div",
+						{ className: "composer-footer-right" },
+						this.#meter.element,
+						this.#dictation.element,
+						this.#stop,
+						this.#send,
+					),
 				),
 			),
 		);
@@ -274,6 +289,40 @@ export class Composer {
 		this.#input.focus();
 	}
 
+	/** "Toggle Voice Input" from the command palette or a keybinding. */
+	toggleDictation(): void {
+		this.#dictation.toggle();
+	}
+
+	/** omp's dictation state; `text` is a streaming model's running transcript. */
+	dictationUpdate(
+		state: "recording" | "transcribing" | "idle",
+		text: string | undefined,
+		error: string | undefined,
+	): void {
+		this.#dictation.update(state);
+		this.#dictationPreview.textContent = text ?? "";
+		this.#dictationPreview.hidden = state !== "recording" || !text;
+		if (error) this.showNotice("error", error);
+	}
+
+	/** A finished dictation: the text goes in at the cursor, and is sent when omp's submit trigger fired. */
+	dictationText(text: string, submit: boolean): void {
+		this.#dictation.update("idle");
+		if (!text) {
+			this.showNotice("info", "No speech detected.");
+			return;
+		}
+		this.insertText(text);
+		if (submit) this.#submit();
+	}
+
+	#onDictationState(state: DictationState): void {
+		if (state !== "recording") this.#dictationPreview.hidden = true;
+		this.#refresh();
+		if (state === "idle") this.focus();
+	}
+
 	#onInput(): void {
 		this.#dismissedFor = undefined;
 		this.saveDraft(this.#input.value);
@@ -293,6 +342,8 @@ export class Composer {
 	}
 
 	#placeholder(): string {
+		if (this.#dictation.state === "recording") return PLACEHOLDER_LISTENING;
+		if (this.#dictation.state === "transcribing") return PLACEHOLDER_TRANSCRIBING;
 		if (this.#busy) return PLACEHOLDER_BUSY;
 		return this.#planOn ? PLACEHOLDER_PLAN : PLACEHOLDER;
 	}
@@ -400,6 +451,12 @@ export class Composer {
 		if (event.key === "Enter" && !event.shiftKey) {
 			event.preventDefault();
 			this.#submit();
+		} else if (
+			event.key === "Escape" &&
+			(this.#dictation.state === "starting" || this.#dictation.state === "recording")
+		) {
+			event.preventDefault();
+			this.#dictation.cancel();
 		} else if (event.key === "Escape" && this.#busy) {
 			event.preventDefault();
 			this.post({ type: "abort" });

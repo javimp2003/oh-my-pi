@@ -14,7 +14,14 @@ export function readConfig() {
 		resumeLastSession: config.get<boolean>("resumeLastSession", true),
 		sendWhileBusy: config.get<"steer" | "followUp">("sendWhileBusy", "steer"),
 		fileCheckpoints: config.get<boolean>("fileCheckpoints", true),
+		/** Spoken language for voice input as an ISO 639-1 code; `""` lets the speech model detect it. */
+		voiceLanguage: voiceLanguage(config.get<string>("voiceLanguage", "auto")),
 	};
+}
+
+function voiceLanguage(value: string): string {
+	const code = value.trim().toLowerCase();
+	return code === "auto" ? "" : code;
 }
 
 /** The workspace folder omp works in: the active editor's folder, else the first one, else home. */

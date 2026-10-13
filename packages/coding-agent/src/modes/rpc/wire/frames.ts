@@ -103,6 +103,11 @@ export const frameDefs = {
 		{ type: "'live_end'", "error?": "string" },
 		"Sent exactly once when a live session ends; `error` carries the failure cause.",
 	),
+	DictationState: "'recording' | 'transcribing' | 'idle'",
+	DictationStateEvent: doc(
+		{ type: "'dictation_state'", state: "DictationState", "text?": "string", "error?": "string" },
+		"Dictation state change, or the running transcript of a streaming model (`text`). `error` is set when a capture ended on its own (the microphone failed).",
+	),
 	BtwDeltaEvent: doc(
 		{ type: "'btw_delta'", recordId: "string", delta: "string" },
 		"Text appended to the running side question's latest answer.",

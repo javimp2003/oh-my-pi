@@ -5136,6 +5136,57 @@ func (v LiveEndEvent) MarshalJSON() ([]byte, error) {
 	return encodeObject(plain(v), `"type":"live_end"`, nil)
 }
 
+type DictationState string
+
+const (
+	DictationStateRecording    DictationState = "recording"
+	DictationStateTranscribing DictationState = "transcribing"
+	DictationStateIdle         DictationState = "idle"
+)
+
+func (v *DictationState) UnmarshalJSON(data []byte) error {
+	s, err := decodeString(data, "DictationState")
+	if err != nil {
+		return err
+	}
+	switch value := DictationState(s); value {
+	case DictationStateRecording, DictationStateTranscribing, DictationStateIdle:
+		*v = value
+		return nil
+	}
+	return unknownValue("DictationState", s)
+}
+
+// Dictation state change, or the running transcript of a streaming model (`text`). `error` is set when a capture ended on its own (the microphone failed).
+type DictationStateEvent struct {
+	State DictationState `json:"state"`
+	Text  *string        `json:"text,omitempty"`
+	Error *string        `json:"error,omitempty"`
+}
+
+func (v *DictationStateEvent) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "DictationStateEvent", v.decodeFrom)
+}
+
+func (v *DictationStateEvent) decodeFrom(raw map[string]json.RawMessage) error {
+	var out DictationStateEvent
+	d := fieldDecoder{raw: raw, owner: "DictationStateEvent"}
+	d.constant("type", "dictation_state")
+	d.required("state", &out.State)
+	d.optional("text", &out.Text)
+	d.optional("error", &out.Error)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+func (v DictationStateEvent) MarshalJSON() ([]byte, error) {
+	type plain DictationStateEvent
+	return encodeObject(plain(v), `"type":"dictation_state"`, nil)
+}
+
 // Text appended to the running side question's latest answer.
 type BtwDeltaEvent struct {
 	RecordID string `json:"recordId"`
@@ -6499,6 +6550,7 @@ func (LivePhaseEvent) isRpcNotification()               {}
 func (LiveLevelsEvent) isRpcNotification()              {}
 func (LiveTranscriptEvent) isRpcNotification()          {}
 func (LiveEndEvent) isRpcNotification()                 {}
+func (DictationStateEvent) isRpcNotification()          {}
 func (BtwDeltaEvent) isRpcNotification()                {}
 func (BtwRecordEvent) isRpcNotification()               {}
 func (CommandOutputEvent) isRpcNotification()           {}
@@ -6576,6 +6628,8 @@ func (v *RpcNotification) UnmarshalJSON(data []byte) error {
 		value, err = decodeVariant[LiveTranscriptEvent](raw)
 	case "live_end":
 		value, err = decodeVariant[LiveEndEvent](raw)
+	case "dictation_state":
+		value, err = decodeVariant[DictationStateEvent](raw)
 	case "btw_delta":
 		value, err = decodeVariant[BtwDeltaEvent](raw)
 	case "btw_record":
@@ -6689,6 +6743,7 @@ func (LivePhaseEvent) isRpcServerFrame()               {}
 func (LiveLevelsEvent) isRpcServerFrame()              {}
 func (LiveTranscriptEvent) isRpcServerFrame()          {}
 func (LiveEndEvent) isRpcServerFrame()                 {}
+func (DictationStateEvent) isRpcServerFrame()          {}
 func (BtwDeltaEvent) isRpcServerFrame()                {}
 func (BtwRecordEvent) isRpcServerFrame()               {}
 func (CommandOutputEvent) isRpcServerFrame()           {}
@@ -6776,6 +6831,8 @@ func (v *RpcServerFrame) UnmarshalJSON(data []byte) error {
 		value, err = decodeVariant[LiveTranscriptEvent](raw)
 	case "live_end":
 		value, err = decodeVariant[LiveEndEvent](raw)
+	case "dictation_state":
+		value, err = decodeVariant[DictationStateEvent](raw)
 	case "btw_delta":
 		value, err = decodeVariant[BtwDeltaEvent](raw)
 	case "btw_record":
@@ -7121,6 +7178,46 @@ func (v *LiveMuteResult) decodeFrom(raw map[string]json.RawMessage) error {
 	var out LiveMuteResult
 	d := fieldDecoder{raw: raw, owner: "LiveMuteResult"}
 	d.required("muted", &out.Muted)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+type DictationStartResult struct {
+	Model string `json:"model"`
+}
+
+func (v *DictationStartResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "DictationStartResult", v.decodeFrom)
+}
+
+func (v *DictationStartResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out DictationStartResult
+	d := fieldDecoder{raw: raw, owner: "DictationStartResult"}
+	d.required("model", &out.Model)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+type DictationStopResult struct {
+	Text   string `json:"text"`
+	Submit bool   `json:"submit"`
+}
+
+func (v *DictationStopResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "DictationStopResult", v.decodeFrom)
+}
+
+func (v *DictationStopResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out DictationStopResult
+	d := fieldDecoder{raw: raw, owner: "DictationStopResult"}
+	d.required("text", &out.Text)
+	d.required("submit", &out.Submit)
 	if d.err != nil {
 		return d.err
 	}
@@ -7768,6 +7865,31 @@ func (c Commands) LiveMute(ctx context.Context, p LiveMuteCommand) (bool, error)
 	var out LiveMuteResult
 	err := c.call(ctx, "live_mute", p, 0, &out)
 	return out.Muted, err
+}
+
+// DictationStartCommand holds the parameters of "dictation_start".
+type DictationStartCommand struct {
+	Language      *string `json:"language,omitempty"`
+	AllowDownload *bool   `json:"allowDownload,omitempty"`
+}
+
+// DictationStart sends "dictation_start": Start recording the default microphone for dictation with the `dictation` model role; returns the speech model in use once recording. `language` overrides `stt.language` for this capture (`""` detects it). A local model that is not downloaded yet is refused with code `model_download_required` unless `allowDownload` is set; no usable model fails with `no_dictation_model`.
+func (c Commands) DictationStart(ctx context.Context, p DictationStartCommand) (string, error) {
+	var out DictationStartResult
+	err := c.call(ctx, "dictation_start", p, 600*time.Second, &out)
+	return out.Model, err
+}
+
+// DictationStop sends "dictation_stop": Stop recording and transcribe; returns the text and whether `stt.submitTrigger` asks for it to be sent. Fails with code `not_dictating` when nothing is recording.
+func (c Commands) DictationStop(ctx context.Context) (DictationStopResult, error) {
+	var out DictationStopResult
+	err := c.call(ctx, "dictation_stop", nil, 120*time.Second, &out)
+	return out, err
+}
+
+// DictationCancel sends "dictation_cancel": Drop the running dictation without transcribing it, if any.
+func (c Commands) DictationCancel(ctx context.Context) error {
+	return c.call(ctx, "dictation_cancel", nil, 0, nil)
 }
 
 // SetModelCommand holds the parameters of "set_model".

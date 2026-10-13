@@ -70,6 +70,8 @@ export class STTController {
 	#streamCommitted = false;
 	#streamAbort: AbortController | null = null;
 	#streamUtterance = "";
+	/** `stt.language` override of the current capture, from {@link start}. */
+	#captureLanguage: string | undefined;
 
 	// Buffered cloud capture.
 	#cloudModel: Model<Api> | null = null;
@@ -108,10 +110,12 @@ export class STTController {
 	}
 
 	/** Start dictating into `editor`, reporting to `options` until the capture ends. A no-op while a
-	 *  capture is starting, recording, or transcribing. */
-	async start(editor: SttTarget, options: SttCallbacks): Promise<void> {
+	 *  capture is starting, recording, or transcribing. `language` overrides `stt.language` for this
+	 *  capture (`""` lets the model detect it). */
+	async start(editor: SttTarget, options: SttCallbacks, overrides?: { language?: string }): Promise<void> {
 		if (this.#state === "transcribing") options.showStatus("Transcription in progress...");
 		if (this.#toggling || this.#state !== "idle") return;
+		this.#captureLanguage = overrides?.language;
 		await this.#transition(options, () => this.#start(editor, options));
 	}
 
@@ -146,6 +150,11 @@ export class STTController {
 		} finally {
 			this.#toggling = false;
 		}
+	}
+
+	/** The source language of the current capture: its override, else `stt.language`. */
+	#language(): string {
+		return this.#captureLanguage ?? cfgSttLanguage.get(this.#settings);
 	}
 
 	#resolveModel(): Model<Api> | undefined {
@@ -307,7 +316,7 @@ export class STTController {
 		let failed = false;
 		let finalText = "";
 		try {
-			const language = cfgSttLanguage.get(this.#settings);
+			const language = this.#language();
 			const result = await transcribeAudio(
 				model,
 				{
@@ -363,7 +372,7 @@ export class STTController {
 	}
 
 	async #startStreaming(editor: SttTarget, options: SttCallbacks, modelKey: SttModelKey): Promise<void> {
-		const language = cfgSttLanguage.get(this.#settings);
+		const language = this.#language();
 		this.#streamEditor = editor;
 		this.#streamCallbacks = options;
 		this.#streamCommitted = false;

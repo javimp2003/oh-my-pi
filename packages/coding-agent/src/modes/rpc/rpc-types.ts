@@ -78,6 +78,9 @@ export type RpcCommand =
 	| { id?: string; type: "live_start"; voice?: string; instructions?: string }
 	| { id?: string; type: "live_stop" }
 	| { id?: string; type: "live_mute"; muted?: boolean }
+	| { id?: string; type: "dictation_start"; language?: string; allowDownload?: boolean }
+	| { id?: string; type: "dictation_stop" }
+	| { id?: string; type: "dictation_cancel" }
 
 	// Model
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
@@ -295,6 +298,17 @@ export interface RpcLiveEndFrame {
 }
 
 export type RpcLiveFrame = RpcLivePhaseFrame | RpcLiveLevelsFrame | RpcLiveTranscriptFrame | RpcLiveEndFrame;
+
+/**
+ * Dictation state change, or the running transcript of a streaming model.
+ * `error` is set when a capture ended on its own (the microphone failed).
+ */
+export interface RpcDictationStateFrame {
+	type: "dictation_state";
+	state: "recording" | "transcribing" | "idle";
+	text?: string;
+	error?: string;
+}
 
 /** `open_session` result: `resumed` is false when a fresh session was started in the directory. */
 export interface RpcOpenSessionResult {
@@ -581,6 +595,15 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "live_start"; success: true; data: { voice: string } }
 	| { id?: string; type: "response"; command: "live_stop"; success: true }
 	| { id?: string; type: "response"; command: "live_mute"; success: true; data: { muted: boolean } }
+	| { id?: string; type: "response"; command: "dictation_start"; success: true; data: { model: string } }
+	| {
+			id?: string;
+			type: "response";
+			command: "dictation_stop";
+			success: true;
+			data: { text: string; submit: boolean };
+	  }
+	| { id?: string; type: "response"; command: "dictation_cancel"; success: true }
 	| { id?: string; type: "response"; command: "handoff"; success: true; data: RpcHandoffResult | null }
 
 	// Messages

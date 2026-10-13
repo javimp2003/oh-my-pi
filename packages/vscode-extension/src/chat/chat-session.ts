@@ -11,9 +11,9 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { SessionState } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
-import { agentDir, workspaceCwd } from "../config";
+import { agentDir, readConfig, workspaceCwd } from "../config";
 import type { AgentStatus, ChatRequest, ChatUpdate, ModelChoice } from "../protocol";
-import type { OmpProcess } from "../rpc/omp-process";
+import { OmpCommandError, type OmpProcess } from "../rpc/omp-process";
 import { renameStoredSession } from "../sessions/rename";
 import { guessSessionDir, listSessions, relativeTime, sessionLabel } from "../sessions/session-store";
 import { webviewHtml } from "../webview-html";
@@ -247,6 +247,12 @@ export class ChatSession implements vscode.Disposable, HostView {
 		this.post({ type: "insertText", text });
 	}
 
+	/** "Toggle Voice Input": the webview starts dictating, or stops and transcribes. */
+	toggleDictation(): void {
+		this.surface.reveal();
+		this.post({ type: "toggleDictation" });
+	}
+
 	dispose(): void {
 		this.#hostSubscription?.dispose();
 		const host = this.#host;
@@ -276,6 +282,63 @@ export class ChatSession implements vscode.Disposable, HostView {
 	#notice(level: "info" | "warning" | "error", message: string): void {
 		this.log.appendLine(`[${level}] ${message}`);
 		this.post({ type: "notice", level, message });
+	}
+
+	/** Voice input: omp records the microphone and transcribes it; the webview shows the state. */
+	async #dictation(action: "start" | "stop" | "cancel"): Promise<void> {
+		const host = this.#requireHost();
+		if (action === "cancel") {
+			await host.dictationCancel();
+			return;
+		}
+		if (action === "start") {
+			await this.#startDictation(host, false);
+			return;
+		}
+		try {
+			const { text, submit } = await host.dictationStop();
+			this.post({ type: "dictationText", text, submit });
+		} catch (error) {
+			this.post({ type: "dictation", state: "idle" });
+			throw error;
+		}
+	}
+
+	/**
+	 * Start dictating. Without a usable speech model (no Groq key, local model
+	 * not downloaded) offer to sign in to Groq or download the local model.
+	 */
+	async #startDictation(host: AgentHost, allowDownload: boolean): Promise<void> {
+		const language = readConfig().voiceLanguage;
+		try {
+			if (!allowDownload) {
+				await host.dictationStart(language, false);
+				return;
+			}
+			await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: "omp: downloading the speech model…" },
+				() => host.dictationStart(language, true),
+			);
+		} catch (error) {
+			this.post({ type: "dictation", state: "idle" });
+			if (!(error instanceof OmpCommandError)) throw error;
+			if (error.message.startsWith("Unknown command")) {
+				throw new Error("Voice input needs a newer omp (one with the dictation RPC commands).");
+			}
+			if (error.code !== "model_download_required" && error.code !== "no_dictation_model") throw error;
+			const setup = await chooseSpeechSetup(error.code === "model_download_required" ? error.message : undefined);
+			if (setup === "groq") {
+				const process = host.process;
+				if (!process) return;
+				await vscode.window.withProgress(
+					{ location: vscode.ProgressLocation.Notification, title: "omp: signing in to Groq…" },
+					() => process.request("login", { providerId: "groq" }),
+				);
+				await this.#startDictation(host, false);
+			} else if (setup === "download") {
+				await this.#startDictation(host, true);
+			}
+		}
 	}
 
 	/** The workspace's sessions for the history panel, newest first, with what each is doing. */
@@ -354,6 +417,9 @@ export class ChatSession implements vscode.Disposable, HostView {
 				return;
 			case "login":
 				this.commands.login(this);
+				return;
+			case "dictation":
+				await this.#dictation(request.action);
 				return;
 			case "compact":
 				await this.compact();
@@ -500,4 +566,29 @@ function relativeList(files: readonly string[]): string {
 	return files.length > shown.length
 		? `${shown.join(", ")} and ${files.length - shown.length} more`
 		: shown.join(", ");
+}
+
+const SET_UP_GROQ = "Use Groq (free API key)";
+const DOWNLOAD_LOCAL = "Download Local Model";
+
+/**
+ * Ask how voice input should transcribe when omp has no usable speech model:
+ * Groq's hosted Whisper (an API key from console.groq.com, free tier) or omp's
+ * local model. `download` is omp's message naming the local model and its size.
+ */
+async function chooseSpeechSetup(download: string | undefined): Promise<"groq" | "download" | undefined> {
+	const detail = [
+		"omp records your microphone and turns speech into text with a speech model.",
+		"Groq transcribes with Whisper in about a second; its free tier covers hours of audio a day. Sign in with an API key from console.groq.com/keys.",
+		download
+			? `Or run it on this machine: ${download.replace(/ must be downloaded first$/, "")} is downloaded once.`
+			: undefined,
+	].filter(Boolean);
+	const choice = await vscode.window.showInformationMessage(
+		"Set up voice input",
+		{ modal: true, detail: detail.join("\n\n") },
+		SET_UP_GROQ,
+		...(download ? [DOWNLOAD_LOCAL] : []),
+	);
+	return choice === SET_UP_GROQ ? "groq" : choice === DOWNLOAD_LOCAL ? "download" : undefined;
 }

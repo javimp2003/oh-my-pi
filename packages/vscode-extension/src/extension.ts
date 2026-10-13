@@ -290,6 +290,13 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand("ompCustom.addSelectionToChat", run(addSelectionToChat)),
 		vscode.commands.registerCommand("ompCustom.addFileToChat", run(addFileToChat)),
 		vscode.commands.registerCommand(
+			"ompCustom.toggleVoiceInput",
+			run(async () => {
+				const chat = chats.active ?? (await chats.focusSidebar());
+				chat?.toggleDictation();
+			}),
+		),
+		vscode.commands.registerCommand(
 			"ompCustom.openSettings",
 			run(() => SettingsPanel.show(context.extensionUri)),
 		),

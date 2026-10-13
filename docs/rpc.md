@@ -95,6 +95,7 @@ Clients MUST continue reading stdout after closing stdin. Normal EOF and extensi
 13. Builtin slash-command side channels (`command_output`, `session_info_update`, `config_update`); `session_info_update` also fires whenever the session title changes (auto-titling, `set_session_name`)
 14. Transport overflow notifications (`rpc_frame_error`), when an event cannot fit within the transport limits
 15. Live voice frames (`live_phase`, `live_levels`, `live_transcript`, `live_end`); see [Live Voice Sub-Protocol](#live-voice-sub-protocol)
+16. Dictation frames (`dictation_state`); see [Dictation Sub-Protocol](#dictation-sub-protocol)
 
 Protocol v2 may wrap oversized logical frames from these categories in `rpc_chunk` frames.
 
@@ -1431,6 +1432,42 @@ Live frames are not session events: `set_event_filter` never drops them.
 
 Closing stdin, or `pi.shutdown()`, stops an active live session before the
 process exits.
+
+## Dictation Sub-Protocol
+
+Hosts can turn speech into prompt text without their own audio stack: omp
+records the default microphone natively (as the TUI's speech-to-text does) and
+transcribes it with the `dictation` model role, a cloud transcription API
+(`openai-transcriptions`, e.g. `groq/whisper-large-v3-turbo`, preferred when a
+Groq key is stored) or a local model. The text comes back to the host; nothing
+is sent to the agent.
+
+### Commands
+
+- `{ id?, type: "dictation_start", language?: string, allowDownload?: boolean }` → `data: { model: string }`
+- `{ id?, type: "dictation_stop" }` → `data: { text: string, submit: boolean }`
+- `{ id?, type: "dictation_cancel" }`
+
+`dictation_start` responds once the microphone is open, with the speech model
+in use. `language` overrides `stt.language` for this capture; `""` lets the
+model detect it. A local model that is not downloaded yet is refused with
+`code: "model_download_required"` (the message names its size) unless
+`allowDownload` is set, in which case the start waits for the download. It
+fails with `dictation_busy` while a capture or a live session runs, and with
+`no_dictation_model` when no speech model is usable. `dictation_stop` stops
+recording and resolves with the transcript once transcription finishes;
+`submit` is true when `stt.submitTrigger` asks for the text to be sent (a
+spoken "submit" is already removed from `text`). It fails with
+`not_dictating` when nothing records, and with the provider's error when
+transcription fails. `dictation_cancel` drops the capture without transcribing
+it. `live_start` is refused while dictating.
+
+### Frames
+
+- `{ type: "dictation_state", state: "recording" | "transcribing" | "idle", text?: string, error?: string }` — on every state change and whenever a streaming (local) model updates the running transcript in `text`. A capture that ended on its own (the microphone failed) ends with an `idle` frame carrying `error`.
+
+Closing stdin, or `pi.shutdown()`, drops a running capture and releases the
+microphone.
 
 ## Host URI Sub-Protocol
 

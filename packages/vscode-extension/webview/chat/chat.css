@@ -1707,6 +1707,54 @@ code {
 	color: var(--omp-accent);
 }
 
+/* Voice input: the microphone button, red and pulsing while recording, with the elapsed time beside it. */
+.dictation {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.dictation-button {
+	width: 28px;
+	height: 28px;
+	border-radius: 9999px;
+}
+
+.dictation[data-state="starting"] .dictation-button,
+.dictation[data-state="transcribing"] .dictation-button {
+	color: var(--omp-accent);
+	animation: dictation-pulse 1.2s ease-in-out infinite;
+}
+
+.dictation[data-state="recording"] .dictation-button {
+	background: color-mix(in srgb, var(--c-error) 18%, transparent);
+	color: var(--c-error);
+	animation: dictation-pulse 1.2s ease-in-out infinite;
+}
+
+.dictation-button:disabled {
+	cursor: default;
+}
+
+.dictation-timer {
+	color: var(--c-error);
+	font-size: var(--fs-sm);
+	font-variant-numeric: tabular-nums;
+}
+
+.dictation-preview {
+	padding: 0 2px 6px;
+	color: var(--c-fg-3);
+	font-style: italic;
+	white-space: pre-wrap;
+}
+
+@keyframes dictation-pulse {
+	50% {
+		opacity: 0.55;
+	}
+}
+
 /* Context meter: ring button plus its popover */
 
 .context-meter {

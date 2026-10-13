@@ -2,7 +2,7 @@
 	"name": "omp-custom-vscode",
 	"displayName": "omp (custom)",
 	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.5.4",
+	"version": "0.6.0",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",
@@ -142,6 +142,11 @@
 			{
 				"command": "ompCustom.addFileToChat",
 				"title": "Add File to Chat",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.toggleVoiceInput",
+				"title": "Toggle Voice Input",
 				"category": "omp"
 			},
 			{
@@ -357,6 +362,11 @@
 					"type": "boolean",
 					"default": true,
 					"description": "Before each prompt that starts a turn, snapshot the git repositories of the workspace (without touching branches, the index or history), so editing that prompt can restore the files omp changed since. Git-ignored files and files outside git repositories are not covered. Needs git on the PATH."
+				},
+				"ompCustom.voiceLanguage": {
+					"type": "string",
+					"default": "auto",
+					"markdownDescription": "Language you speak to the microphone button, as an ISO 639-1 code (`es`, `en`, …). `auto` lets the speech model detect it; a fixed language is more accurate on short phrases."
 				}
 			}
 		}

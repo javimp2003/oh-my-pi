@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.0]
+
+### Added
+
+- Voice input: a microphone button in the composer (and the `omp: Toggle Voice Input` command) records what you say and inserts the transcript at the cursor. omp records the microphone natively and transcribes with Groq's Whisper (`groq/whisper-large-v3-turbo`, free tier with an API key) or its local model; without either, the first click offers to sign in to Groq or download the local model. While recording the button turns red with a timer; click it again to transcribe, `Esc` to drop the recording. `ompCustom.voiceLanguage` sets the spoken language (`auto` by default). Needs omp v18.9.1-custom.14 or later
+
 ## [0.5.4]
 
 ### Fixed

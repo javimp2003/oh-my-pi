@@ -57,7 +57,10 @@ interface ChunkFrame {
 	data: string;
 }
 
-/** Commands answered only when long work finishes (a whole OAuth flow, a shell command, a compaction). */
+/**
+ * Commands answered only when long work finishes (a whole OAuth flow, a shell
+ * command, a compaction, the OS microphone prompt or a speech model download).
+ */
 const UNBOUNDED_COMMANDS: Record<string, true> = {
 	login: true,
 	bash: true,
@@ -65,6 +68,7 @@ const UNBOUNDED_COMMANDS: Record<string, true> = {
 	handoff: true,
 	get_available_models: true,
 	set_model: true,
+	dictation_start: true,
 };
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Matches the server's advertised `maxReassembledFrameBytes`. */

@@ -100,6 +100,15 @@ export type ChatUpdate =
 	| { type: "focusInput" }
 	/** An `editMessage` was not resent (declined, vetoed, or failed): the webview reopens its editor. */
 	| { type: "editAborted" }
+	/**
+	 * Dictation state from omp (recording, transcribing, idle), with a streaming
+	 * model's running transcript in `text`; `error` when a capture failed.
+	 */
+	| { type: "dictation"; state: "recording" | "transcribing" | "idle"; text?: string; error?: string }
+	/** A finished dictation: insert `text` at the cursor, and send it when `submit`. */
+	| { type: "dictationText"; text: string; submit: boolean }
+	/** The "Toggle Voice Input" command: start dictating, or stop and transcribe. */
+	| { type: "toggleDictation" }
 	/** Sessions of the workspace, newest first (answer to `listSessions`). */
 	| { type: "sessions"; sessions: SessionListItem[] }
 	/** Activity of every session that is running or finished unseen, by session file; sent when it changes. */
@@ -149,7 +158,9 @@ export type ChatRequest =
 	| { type: "openFile"; path: string; line?: number }
 	| { type: "openExternal"; url: string }
 	/** Remove a queued (not yet delivered) message. */
-	| { type: "removeQueued"; message: string; queue: "steering" | "followUp" };
+	| { type: "removeQueued"; message: string; queue: "steering" | "followUp" }
+	/** Voice input: start recording, stop and transcribe, or drop the recording. */
+	| { type: "dictation"; action: "start" | "stop" | "cancel" };
 
 /** One setting row in the settings panel (from `omp config list --json`). */
 export interface SettingEntry {

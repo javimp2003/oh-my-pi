@@ -3,6 +3,33 @@
 provider "groq" {
 	default-model "openai/gpt-oss-120b"
 	env "GROQ_API_KEY"
+	kind-apis {
+		stt "openai-transcriptions"
+	}
+
+	// Groq's Whisper rows answer only on the OpenAI-compatible transcription
+	// endpoint; they are authored here so the dictation role resolves before
+	// (or without) discovery. Groq bills them per audio hour, which ModelCost
+	// cannot express, so their costs stay zero.
+	seed api="openai-transcriptions" base-url="https://api.groq.com/openai/v1" bundle="always" {
+		model "whisper-large-v3-turbo" name="Whisper Large V3 Turbo" {
+			reasoning #false
+			input "text"
+			cost input=0 output=0 cache-read=0 cache-write=0
+			limits
+			supports-tools #false
+		}
+		model "whisper-large-v3" name="Whisper Large V3" {
+			reasoning #false
+			input "text"
+			cost input=0 output=0 cache-read=0 cache-write=0
+			limits
+			supports-tools #false
+		}
+	}
+	models "whisper-large-v3-turbo" "whisper-large-v3" {
+		kind "stt"
+	}
 
 	thinking-mode "effort"
 	class "unknown" {

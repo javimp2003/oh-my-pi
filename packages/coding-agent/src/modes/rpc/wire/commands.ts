@@ -205,6 +205,21 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		result: { muted: "boolean" },
 		unwrap: "muted",
 	},
+	{
+		name: "dictation_start",
+		doc: 'Start recording the default microphone for dictation with the `dictation` model role; returns the speech model in use once recording. `language` overrides `stt.language` for this capture (`""` detects it). A local model that is not downloaded yet is refused with code `model_download_required` unless `allowDownload` is set; no usable model fails with `no_dictation_model`.',
+		params: { "language?": "string", "allowDownload?": "boolean" },
+		result: { model: "string" },
+		unwrap: "model",
+		timeoutMs: 600_000,
+	},
+	{
+		name: "dictation_stop",
+		doc: "Stop recording and transcribe; returns the text and whether `stt.submitTrigger` asks for it to be sent. Fails with code `not_dictating` when nothing is recording.",
+		result: { text: "string", submit: "boolean" },
+		timeoutMs: 120_000,
+	},
+	{ name: "dictation_cancel", doc: "Drop the running dictation without transcribing it, if any." },
 
 	{
 		name: "set_model",

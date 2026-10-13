@@ -172,6 +172,15 @@ function handle(update: ChatUpdate): void {
 		case "editAborted":
 			transcript.editAborted();
 			break;
+		case "dictation":
+			composer.dictationUpdate(update.state, update.text, update.error);
+			break;
+		case "dictationText":
+			composer.dictationText(update.text, update.submit);
+			break;
+		case "toggleDictation":
+			composer.toggleDictation();
+			break;
 	}
 }
 

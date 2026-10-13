@@ -98,6 +98,7 @@
 		"xai-oauth/grok-tts"
 	],
 	"dictation": [
+		"groq/whisper-large-v3-turbo",
 		"local/parakeet-tdt-0.6b-v3"
 	],
 	"judge": [

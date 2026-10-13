@@ -127,6 +127,7 @@ export type LoginProviderId =
 	| "gmi-cloud"
 	| "google-antigravity"
 	| "google-gemini-cli"
+	| "groq"
 	| "helmcode"
 	| "huggingface"
 	| "kagi"

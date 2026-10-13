@@ -77,6 +77,7 @@ import { RpcBtwController } from "./rpc-btw";
 import { RpcGoalController } from "./rpc-goal";
 import { RpcPlanController } from "./rpc-plan";
 import { RpcLiveBridge, type RpcLiveSessionFactory } from "./rpc-live";
+import { RpcDictationBridge, type RpcDictationControllerFactory, RpcDictationError } from "./rpc-dictation";
 import { RpcOutputWriter } from "./rpc-output";
 import {
 	RpcExtensionUserMessageTracker,
@@ -1062,6 +1063,11 @@ export function requestRpcSelect(
 	);
 }
 
+/** The response `code` of a failed dictation command, when the bridge gave one. */
+function dictationErrorCode(err: unknown): string | undefined {
+	return err instanceof RpcDictationError ? err.code : undefined;
+}
+
 /** Validates `ask` answers against the questions; any mismatch throws instead of guessing. */
 function parseAskDialogResponse(
 	response: RpcExtensionUIResponse,
@@ -1335,6 +1341,8 @@ export interface RpcModeOptions {
 	input?: ReadableStream<Uint8Array>;
 	/** Builds `live_start` sessions; defaults to the real {@link LiveSessionController}. */
 	createLiveSession?: RpcLiveSessionFactory;
+	/** Builds dictation captures; defaults to the real STT controller. */
+	createDictationController?: RpcDictationControllerFactory;
 }
 
 /**
@@ -1342,7 +1350,14 @@ export interface RpcModeOptions {
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
 export async function runRpcMode(session: AgentSession, options: RpcModeOptions = {}): Promise<never> {
-	const { setToolUIContext, headless = false, subagentEventBus, input = claimRpcInput(), createLiveSession } = options;
+	const {
+		setToolUIContext,
+		headless = false,
+		subagentEventBus,
+		input = claimRpcInput(),
+		createLiveSession,
+		createDictationController,
+	} = options;
 	// Signal to RPC clients that the server is ready to accept commands
 	// Suppress terminal notifications: they write \x07 (BEL) or OSC sequences directly to
 	// process.stdout with no newline, which the reader merges with the next JSON line and
@@ -1411,6 +1426,8 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	const hostUriBridge = new RpcHostUriBridge(output);
 	// Live frames go straight to `output`, so `set_event_filter` (session events only) never drops them.
 	const liveBridge = new RpcLiveBridge(session, output, createLiveSession);
+	// Dictation frames likewise bypass the session event filter.
+	const dictation = new RpcDictationBridge(session, output, createDictationController);
 	const subagentRegistry = subagentEventBus ? new RpcSubagentRegistry(subagentEventBus, output) : undefined;
 
 	// Shutdown request flag (wrapped in object to allow mutation with const)
@@ -1709,6 +1726,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 			});
 			// Close the realtime call (microphone, socket) before the session it delegates into.
 			await liveBridge.stop();
+			dictation.cancel();
 			await session.dispose();
 		} catch (error) {
 			if (!persistenceFailure || error !== persistenceFailure) throw error;
@@ -2166,7 +2184,36 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				return success(id, "set_host_tools", { toolNames: tools.map(tool => tool.name) });
 			}
 
+			case "dictation_start": {
+				if (liveBridge.active) {
+					return error(id, "dictation_start", "End the live voice session before dictating", "dictation_busy");
+				}
+				try {
+					return success(
+						id,
+						"dictation_start",
+						await dictation.start({ language: command.language, allowDownload: command.allowDownload }),
+					);
+				} catch (err) {
+					return error(id, "dictation_start", toError(err).message, dictationErrorCode(err));
+				}
+			}
+
+			case "dictation_stop": {
+				try {
+					return success(id, "dictation_stop", await dictation.stop());
+				} catch (err) {
+					return error(id, "dictation_stop", toError(err).message, dictationErrorCode(err));
+				}
+			}
+
+			case "dictation_cancel": {
+				dictation.cancel();
+				return success(id, "dictation_cancel");
+			}
+
 			case "live_start": {
+				if (dictation.active) return error(id, "live_start", "Stop dictating before starting a live session");
 				try {
 					return success(
 						id,
@@ -2724,6 +2771,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 	hostToolBridge.close("RPC client disconnected before host tool execution completed");
 	hostUriBridge.clear("RPC client disconnected before host URI request completed");
 	await liveBridge.stop();
+	dictation.cancel();
 	await inputDispatcher.drain();
 	await shutdownCoordinator.drain();
 	subagentRegistry?.dispose();

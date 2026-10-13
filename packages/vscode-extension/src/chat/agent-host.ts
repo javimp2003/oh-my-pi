@@ -47,6 +47,7 @@ const NON_EVENT_FRAMES: Record<string, true> = {
 	live_levels: true,
 	live_transcript: true,
 	live_end: true,
+	dictation_state: true,
 	btw_delta: true,
 	btw_record: true,
 	command_output: true,
@@ -73,6 +74,8 @@ const STATE_CHANGING_EVENTS: Record<string, true> = {
 /** `navigate_tree` retries while an aborted turn still winds down (bash, retries…). */
 const NAVIGATE_BUSY_RETRIES = 6;
 const NAVIGATE_BUSY_DELAY_MS = 500;
+/** Transcribing a long dictation through a cloud API can take a while. */
+const DICTATION_STOP_TIMEOUT_MS = 120_000;
 
 /** What a new process should open. */
 export type SessionTarget = { kind: "continue" } | { kind: "new" } | { kind: "resume"; sessionFile: string };
@@ -117,6 +120,8 @@ export class AgentHost implements vscode.Disposable {
 	#busy = false;
 	/** When the running turn started (`agent_start`), for the working timer of every view showing it. */
 	#busySince = 0;
+	/** A dictation this host started is recording (or transcribing). */
+	#dictating = false;
 	/** Idle with nothing queued or pending (omp's `session_settled` / `get_state.isSettled`). */
 	#settled = true;
 	/** A turn finished while no view was attached; cleared when a view shows the session. */
@@ -198,6 +203,8 @@ export class AgentHost implements vscode.Disposable {
 
 	detach(view: HostView): void {
 		this.#views.delete(view);
+		// Speech meant for a view that moved on must not land in another one.
+		if (this.#views.size === 0 && this.#dictating) void this.dictationCancel();
 	}
 
 	/** Bring `view` up to date: status, transcript and pickers, pending plan reviews. */
@@ -410,6 +417,33 @@ export class AgentHost implements vscode.Disposable {
 			reasoning: model.reasoning,
 			contextWindow: model.contextWindow,
 		}));
+	}
+
+	/**
+	 * Start recording the microphone for dictation (omp records and transcribes);
+	 * resolves with the speech model once recording. `language` is an ISO code,
+	 * or `""` to let the model detect it. Unbounded: opening the microphone can
+	 * wait for the OS permission prompt, and a local model for its download.
+	 */
+	async dictationStart(language: string, allowDownload: boolean): Promise<string> {
+		const { model } = await this.#requireProcess().request("dictation_start", { language, allowDownload });
+		this.#dictating = true;
+		return model;
+	}
+
+	/** Stop recording and transcribe; `submit` when omp's `stt.submitTrigger` asks to send. */
+	async dictationStop(): Promise<{ text: string; submit: boolean }> {
+		try {
+			return await this.#requireProcess().request("dictation_stop", undefined, DICTATION_STOP_TIMEOUT_MS);
+		} finally {
+			this.#dictating = false;
+		}
+	}
+
+	/** Drop the running dictation without transcribing it. */
+	async dictationCancel(): Promise<void> {
+		this.#dictating = false;
+		await this.#process?.request("dictation_cancel");
 	}
 
 	/** Answer a plan review shown in a view. */
@@ -695,6 +729,10 @@ export class AgentHost implements vscode.Disposable {
 				break;
 			case "rpc_frame_error":
 				this.log.appendLine(`[frame dropped] ${frame.error}`);
+				break;
+			case "dictation_state":
+				if (frame.state === "idle") this.#dictating = false;
+				this.post({ type: "dictation", state: frame.state, text: frame.text, error: frame.error });
 				break;
 		}
 		if (!NON_EVENT_FRAMES[frame.type])

@@ -1147,6 +1147,16 @@ export interface LiveEndEvent {
 	error?: string;
 }
 
+export type DictationState = "recording" | "transcribing" | "idle";
+
+/** Dictation state change, or the running transcript of a streaming model (`text`). `error` is set when a capture ended on its own (the microphone failed). */
+export interface DictationStateEvent {
+	type: "dictation_state";
+	state: DictationState;
+	text?: string;
+	error?: string;
+}
+
 /** Text appended to the running side question's latest answer. */
 export interface BtwDeltaEvent {
 	type: "btw_delta";
@@ -1465,7 +1475,7 @@ export interface HostUriSchemeDefinition {
 }
 
 /** Unsolicited outbound frame (everything except responses and host tool/URI requests), discriminated by `type`. */
-export type RpcNotification = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | BtwDeltaEvent | BtwRecordEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent;
+export type RpcNotification = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | DictationStateEvent | BtwDeltaEvent | BtwRecordEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent;
 
 /** Any frame the server writes to stdout (after reassembling `rpc_chunk` sequences), discriminated by `type`. */
 export type RpcServerFrame = RpcResponse | RpcHostRequest | RpcNotification;
@@ -1644,6 +1654,20 @@ export interface LiveMuteParams {
 
 export interface LiveMuteResult {
 	muted: boolean;
+}
+
+export interface DictationStartParams {
+	language?: string;
+	allowDownload?: boolean;
+}
+
+export interface DictationStartResult {
+	model: string;
+}
+
+export interface DictationStopResult {
+	text: string;
+	submit: boolean;
 }
 
 export interface SetModelParams {
@@ -1850,6 +1874,9 @@ export interface RpcWireCommands {
 	live_start: { params: LiveStartParams; result: LiveStartResult };
 	live_stop: { params: undefined; result: undefined };
 	live_mute: { params: LiveMuteParams; result: LiveMuteResult };
+	dictation_start: { params: DictationStartParams; result: DictationStartResult };
+	dictation_stop: { params: undefined; result: DictationStopResult };
+	dictation_cancel: { params: undefined; result: undefined };
 	set_model: { params: SetModelParams; result: ModelInfo };
 	cycle_model: { params: undefined; result: ModelCycleResult | null };
 	get_available_models: { params: undefined; result: GetAvailableModelsResult };

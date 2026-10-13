@@ -14,6 +14,8 @@
 - Added `PI_RPC_AUTO_TITLE`: RPC/ACP hosts that list sessions by title can keep automatic session titles, which protocol modes otherwise skip
 - Added plan mode to RPC: `set_plan_mode` enters or leaves it, `get_state` reports `planMode` and `planModeAvailable`, and the agent's plan proposal asks the host to approve or refine through a `select` dialog
 - Added `navigate_tree` to RPC: moves the session's leaf in place like the TUI's `/tree`; on a user message it rewinds past it and returns its text and images, so hosts can edit and resend any earlier prompt
+- Added dictation to RPC: `dictation_start`, `dictation_stop` and `dictation_cancel` record the microphone natively and transcribe it with the `dictation` model role, returning the text to the host; `dictation_state` frames report the state and a streaming model's running transcript
+- Added Groq's Whisper models (`groq/whisper-large-v3-turbo`, `groq/whisper-large-v3`) as speech-to-text models, and Groq to `/login` with an API key. The `dictation` role now prefers `groq/whisper-large-v3-turbo` when a Groq key is stored, before the local Parakeet model
 
 ### Changed
 

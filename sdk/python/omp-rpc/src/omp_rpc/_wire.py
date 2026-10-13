@@ -186,6 +186,11 @@ _LIVE_ROLE_VALUES: Final[frozenset[str]] = frozenset({"user", "assistant"})
 _decode_live_role = cast("Decoder[LiveRole]", literal(_LIVE_ROLE_VALUES))
 
 
+DictationState: TypeAlias = Literal["recording", "transcribing", "idle"]
+_DICTATION_STATE_VALUES: Final[frozenset[str]] = frozenset({"recording", "transcribing", "idle"})
+_decode_dictation_state = cast("Decoder[DictationState]", literal(_DICTATION_STATE_VALUES))
+
+
 WidgetPlacement: TypeAlias = Literal["aboveEditor", "belowEditor"]
 _WIDGET_PLACEMENT_VALUES: Final[frozenset[str]] = frozenset({"aboveEditor", "belowEditor"})
 _decode_widget_placement = cast("Decoder[WidgetPlacement]", literal(_WIDGET_PLACEMENT_VALUES))
@@ -1360,6 +1365,15 @@ class LiveEndEvent:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class DictationStateEvent:
+    """Dictation state change, or the running transcript of a streaming model (`text`). `error` is set when a capture ended on its own (the microphone failed)."""
+    type: Literal["dictation_state"] = "dictation_state"
+    state: DictationState
+    text: str | None = None
+    error: str | None = None
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class BtwDeltaEvent:
     """Text appended to the running side question's latest answer."""
     type: Literal["btw_delta"] = "btw_delta"
@@ -1606,6 +1620,12 @@ class SetPlanModeResult:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class DictationStopResult:
+    text: str
+    submit: bool
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class LogoutResult:
     remaining_source: str | None = None
 
@@ -1632,7 +1652,7 @@ RpcAgentEvent: TypeAlias = AgentStartEvent | AgentEndEvent | TurnStartEvent | Tu
 """A session event, discriminated by `type`; `set_event_filter` selects which are sent."""
 
 
-RpcNotification: TypeAlias = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | BtwDeltaEvent | BtwRecordEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent | UnknownNotification
+RpcNotification: TypeAlias = ReadyEvent | PromptResultEvent | SessionSettledEvent | ExtensionError | ExtensionUiRequest | AvailableCommandsUpdateEvent | SubagentLifecycleEvent | SubagentProgressEvent | SubagentEvent | LivePhaseEvent | LiveLevelsEvent | LiveTranscriptEvent | LiveEndEvent | DictationStateEvent | BtwDeltaEvent | BtwRecordEvent | CommandOutputEvent | SessionInfoUpdateEvent | ConfigUpdateEvent | RpcFrameErrorEvent | RpcAgentEvent | UnknownNotification
 """Unsolicited outbound frame (everything except responses and host tool/URI requests), discriminated by `type`."""
 
 
@@ -2758,6 +2778,16 @@ def parse_live_end_event(value: object, path: str = "LiveEndEvent") -> LiveEndEv
     )
 
 
+def parse_dictation_state_event(value: object, path: str = "DictationStateEvent") -> DictationStateEvent:
+    payload = expect_object(value, path)
+    required(payload, "type", cast('Decoder[Literal["dictation_state"]]', literal(frozenset({"dictation_state"}))), path)
+    return DictationStateEvent(
+        state=required(payload, "state", _decode_dictation_state, path),
+        text=optional(payload, "text", decode_str, path),
+        error=optional(payload, "error", decode_str, path),
+    )
+
+
 def parse_btw_delta_event(value: object, path: str = "BtwDeltaEvent") -> BtwDeltaEvent:
     payload = expect_object(value, path)
     required(payload, "type", cast('Decoder[Literal["btw_delta"]]', literal(frozenset({"btw_delta"}))), path)
@@ -3042,6 +3072,14 @@ def parse_set_plan_mode_result(value: object, path: str = "SetPlanModeResult") -
     )
 
 
+def parse_dictation_stop_result(value: object, path: str = "DictationStopResult") -> DictationStopResult:
+    payload = expect_object(value, path)
+    return DictationStopResult(
+        text=required(payload, "text", decode_str, path),
+        submit=required(payload, "submit", decode_bool, path),
+    )
+
+
 def parse_logout_result(value: object, path: str = "LogoutResult") -> LogoutResult:
     payload = expect_object(value, path)
     return LogoutResult(
@@ -3121,6 +3159,7 @@ _RPC_NOTIFICATION_CASES: Final[dict[str, Decoder[RpcNotification]]] = {
         "live_levels": parse_live_levels_event,
         "live_transcript": parse_live_transcript_event,
         "live_end": parse_live_end_event,
+        "dictation_state": parse_dictation_state_event,
         "btw_delta": parse_btw_delta_event,
         "btw_record": parse_btw_record_event,
         "command_output": parse_command_output_event,
@@ -3345,6 +3384,25 @@ class WireClient:
         if muted is not None:
             params["muted"] = muted
         return required(expect_object(self._command("live_mute", params), "live_mute"), "muted", decode_bool, "live_mute")
+
+    def dictation_start(self, *, language: str | None = None, allow_download: bool | None = None) -> str:
+        """Start recording the default microphone for dictation with the `dictation` model role; returns the speech model in use once recording. `language` overrides `stt.language` for this capture (`""` detects it). A local model that is not downloaded yet is refused with code `model_download_required` unless `allowDownload` is set; no usable model fails with `no_dictation_model`."""
+        params: dict[str, object] = {}
+        if language is not None:
+            params["language"] = language
+        if allow_download is not None:
+            params["allowDownload"] = allow_download
+        return required(expect_object(self._command("dictation_start", params, timeout=600), "dictation_start"), "model", decode_str, "dictation_start")
+
+    def dictation_stop(self) -> DictationStopResult:
+        """Stop recording and transcribe; returns the text and whether `stt.submitTrigger` asks for it to be sent. Fails with code `not_dictating` when nothing is recording."""
+        params: dict[str, object] = {}
+        return parse_dictation_stop_result(self._command("dictation_stop", params, timeout=120), "dictation_stop")
+
+    def dictation_cancel(self) -> None:
+        """Drop the running dictation without transcribing it, if any."""
+        params: dict[str, object] = {}
+        self._command("dictation_cancel", params)
 
     def set_model(self, provider: str, model_id: str) -> ModelInfo:
         """Select a model by provider and id."""
@@ -3626,6 +3684,10 @@ class WireClient:
         """Subscribe to `live_end`: Sent exactly once when a live session ends; `error` carries the failure cause."""
         return self._listen("live_end", listener)
 
+    def on_dictation_state(self, listener: Callable[[DictationStateEvent], None]) -> Callable[[], None]:
+        """Subscribe to `dictation_state`: Dictation state change, or the running transcript of a streaming model (`text`). `error` is set when a capture ended on its own (the microphone failed)."""
+        return self._listen("dictation_state", listener)
+
     def on_btw_delta(self, listener: Callable[[BtwDeltaEvent], None]) -> Callable[[], None]:
         """Subscribe to `btw_delta`: Text appended to the running side question's latest answer."""
         return self._listen("btw_delta", listener)
@@ -3840,6 +3902,9 @@ __all__ = [
     "ContextUsage",
     "CustomMessage",
     "DeveloperMessage",
+    "DictationState",
+    "DictationStateEvent",
+    "DictationStopResult",
     "EditorUiRequest",
     "Effort",
     "ExtensionError",
@@ -4026,6 +4091,8 @@ __all__ = [
     "parse_context_usage",
     "parse_custom_message",
     "parse_developer_message",
+    "parse_dictation_state_event",
+    "parse_dictation_stop_result",
     "parse_editor_ui_request",
     "parse_extension_error",
     "parse_extension_ui_request",

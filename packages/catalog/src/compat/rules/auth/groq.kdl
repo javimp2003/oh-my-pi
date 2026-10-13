@@ -1,3 +1,10 @@
 auth "groq" {
 	name "Groq"
+	login "api-key" {
+		auth-url "https://console.groq.com/keys"
+		instructions "Create or copy your API key from the Groq console"
+		prompt "Paste your Groq API key" placeholder="gsk_..."
+		normalize "strip-bearer"
+		validate "models-endpoint" label="groq" url="https://api.groq.com/openai/v1/models"
+	}
 }

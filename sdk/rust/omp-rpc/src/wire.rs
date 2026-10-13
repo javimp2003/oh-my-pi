@@ -4254,6 +4254,37 @@ pub struct LiveEndEvent {
 	pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum DictationState {
+	#[serde(rename = "recording")]
+	Recording,
+	#[serde(rename = "transcribing")]
+	Transcribing,
+	#[serde(rename = "idle")]
+	Idle,
+}
+
+impl DictationState {
+	/// Wire value.
+	pub fn as_str(self) -> &'static str {
+		match self {
+			Self::Recording => "recording",
+			Self::Transcribing => "transcribing",
+			Self::Idle => "idle",
+		}
+	}
+}
+
+/// Dictation state change, or the running transcript of a streaming model (`text`). `error` is set when a capture ended on its own (the microphone failed).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationStateEvent {
+	pub state: DictationState,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub text: Option<String>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub error: Option<String>,
+}
+
 /// Text appended to the running side question's latest answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BtwDeltaEvent {
@@ -4925,6 +4956,8 @@ pub enum RpcNotification {
 	LiveTranscript(LiveTranscriptEvent),
 	/// Sent exactly once when a live session ends; `error` carries the failure cause.
 	LiveEnd(LiveEndEvent),
+	/// Dictation state change, or the running transcript of a streaming model (`text`). `error` is set when a capture ended on its own (the microphone failed).
+	DictationState(DictationStateEvent),
 	/// Text appended to the running side question's latest answer.
 	BtwDelta(BtwDeltaEvent),
 	/// Full side-question record on every lifecycle change (started, complete, cancelled, error); the last one per id wins.
@@ -4960,6 +4993,7 @@ impl RpcNotification {
 			Some("live_levels") => |value| serde_json::from_value(value).map(Self::LiveLevels),
 			Some("live_transcript") => |value| serde_json::from_value(value).map(Self::LiveTranscript),
 			Some("live_end") => |value| serde_json::from_value(value).map(Self::LiveEnd),
+			Some("dictation_state") => |value| serde_json::from_value(value).map(Self::DictationState),
 			Some("btw_delta") => |value| serde_json::from_value(value).map(Self::BtwDelta),
 			Some("btw_record") => |value| serde_json::from_value(value).map(Self::BtwRecord),
 			Some("command_output") => |value| serde_json::from_value(value).map(Self::CommandOutput),
@@ -4989,6 +5023,7 @@ impl Serialize for RpcNotification {
 			Self::LiveLevels(member) => serialize_tagged(member, &[("type", "live_levels")], serializer),
 			Self::LiveTranscript(member) => serialize_tagged(member, &[("type", "live_transcript")], serializer),
 			Self::LiveEnd(member) => serialize_tagged(member, &[("type", "live_end")], serializer),
+			Self::DictationState(member) => serialize_tagged(member, &[("type", "dictation_state")], serializer),
 			Self::BtwDelta(member) => serialize_tagged(member, &[("type", "btw_delta")], serializer),
 			Self::BtwRecord(member) => serialize_tagged(member, &[("type", "btw_record")], serializer),
 			Self::CommandOutput(member) => serialize_tagged(member, &[("type", "command_output")], serializer),
@@ -5026,7 +5061,7 @@ impl RpcServerFrame {
 		let decode: fn(Value) -> Result<Self, serde_json::Error> = match value.get("type").and_then(Value::as_str) {
 			Some("response") => |value| serde_json::from_value(value).map(Self::Response),
 			Some("host_tool_call" | "host_tool_cancel" | "host_uri_request" | "host_uri_cancel") => |value| serde_json::from_value(value).map(Self::RpcHostRequest),
-			Some("ready" | "prompt_result" | "session_settled" | "extension_error" | "extension_ui_request" | "available_commands_update" | "subagent_lifecycle" | "subagent_progress" | "subagent_event" | "live_phase" | "live_levels" | "live_transcript" | "live_end" | "btw_delta" | "btw_record" | "command_output" | "session_info_update" | "config_update" | "rpc_frame_error" | "agent_start" | "agent_end" | "turn_start" | "turn_end" | "message_start" | "message_update" | "message_end" | "tool_execution_start" | "tool_execution_update" | "tool_stream_update" | "tool_execution_end" | "auto_compaction_start" | "auto_compaction_end" | "auto_retry_start" | "auto_retry_end" | "cache_warming_start" | "cache_warming_end" | "retry_fallback_applied" | "retry_fallback_succeeded" | "model_changed" | "config_warnings_changed" | "advisor_cost_changed" | "advisor_yielded" | "ttsr_triggered" | "todo_reminder" | "todo_auto_clear" | "irc_message" | "notice" | "thinking_level_changed" | "goal_updated" | "queue_update") => |value| serde_json::from_value(value).map(Self::RpcNotification),
+			Some("ready" | "prompt_result" | "session_settled" | "extension_error" | "extension_ui_request" | "available_commands_update" | "subagent_lifecycle" | "subagent_progress" | "subagent_event" | "live_phase" | "live_levels" | "live_transcript" | "live_end" | "dictation_state" | "btw_delta" | "btw_record" | "command_output" | "session_info_update" | "config_update" | "rpc_frame_error" | "agent_start" | "agent_end" | "turn_start" | "turn_end" | "message_start" | "message_update" | "message_end" | "tool_execution_start" | "tool_execution_update" | "tool_stream_update" | "tool_execution_end" | "auto_compaction_start" | "auto_compaction_end" | "auto_retry_start" | "auto_retry_end" | "cache_warming_start" | "cache_warming_end" | "retry_fallback_applied" | "retry_fallback_succeeded" | "model_changed" | "config_warnings_changed" | "advisor_cost_changed" | "advisor_yielded" | "ttsr_triggered" | "todo_reminder" | "todo_auto_clear" | "irc_message" | "notice" | "thinking_level_changed" | "goal_updated" | "queue_update") => |value| serde_json::from_value(value).map(Self::RpcNotification),
 			_ => |value| Ok(Self::Unknown(value)),
 		};
 		decode(value)
@@ -5292,6 +5327,25 @@ pub struct LiveMuteParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LiveMuteResult {
 	pub muted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationStartParams {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub language: Option<String>,
+	#[serde(rename = "allowDownload", default, skip_serializing_if = "Option::is_none")]
+	pub allow_download: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationStartResult {
+	pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DictationStopResult {
+	pub text: String,
+	pub submit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6466,6 +6520,54 @@ impl Command for LiveMuteCommand {
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		serde_json::from_value::<LiveMuteResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.muted)
+	}
+}
+
+/// Start recording the default microphone for dictation with the `dictation` model role; returns the speech model in use once recording. `language` overrides `stt.language` for this capture (`""` detects it). A local model that is not downloaded yet is refused with code `model_download_required` unless `allowDownload` is set; no usable model fails with `no_dictation_model`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct DictationStartCommand {
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub language: Option<String>,
+	#[serde(rename = "allowDownload", default, skip_serializing_if = "Option::is_none")]
+	pub allow_download: Option<bool>,
+}
+
+impl Command for DictationStartCommand {
+	const NAME: &'static str = "dictation_start";
+	const TIMEOUT_MS: Option<u64> = Some(600000);
+	type Output = String;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<DictationStartResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.model)
+	}
+}
+
+/// Stop recording and transcribe; returns the text and whether `stt.submitTrigger` asks for it to be sent. Fails with code `not_dictating` when nothing is recording.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct DictationStopCommand {}
+
+impl Command for DictationStopCommand {
+	const NAME: &'static str = "dictation_stop";
+	const TIMEOUT_MS: Option<u64> = Some(120000);
+	type Output = DictationStopResult;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<DictationStopResult>(data.unwrap_or_else(|| Value::Object(Map::new())))
+	}
+}
+
+/// Drop the running dictation without transcribing it, if any.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct DictationCancelCommand {}
+
+impl Command for DictationCancelCommand {
+	const NAME: &'static str = "dictation_cancel";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = ();
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		let _ = data;
+		Ok(())
 	}
 }
 

@@ -40,6 +40,7 @@ import type {
 	RpcHostToolDefinition,
 	RpcHostToolResult,
 	RpcHostToolUpdate,
+	RpcDictationStateFrame,
 	RpcLiveFrame,
 	RpcOpenSessionResult,
 	RpcPromptResultFrame,
@@ -116,6 +117,7 @@ export type RpcAvailableCommandsUpdateListener = (commands: RpcAvailableSlashCom
 export type RpcPromptResultListener = (result: RpcPromptResultFrame) => void;
 export type RpcSessionSettledListener = () => void;
 export type RpcLiveListener = (frame: RpcLiveFrame) => void;
+export type RpcDictationListener = (frame: RpcDictationStateFrame) => void;
 
 export interface RpcClientToolContext<TDetails = unknown> {
 	toolCallId: string;
@@ -249,6 +251,10 @@ function isRpcLiveFrame(value: unknown): value is RpcLiveFrame {
 	return isRecord(value) && typeof value.type === "string" && Object.hasOwn(LIVE_FRAME_TYPES, value.type);
 }
 
+function isRpcDictationStateFrame(value: unknown): value is RpcDictationStateFrame {
+	return isRecord(value) && value.type === "dictation_state" && typeof value.state === "string";
+}
+
 function isRpcAvailableCommandsUpdateFrame(value: unknown): value is RpcAvailableCommandsUpdateFrame {
 	if (!isRecord(value)) return false;
 	return value.type === "available_commands_update" && Array.isArray(value.commands);
@@ -335,6 +341,7 @@ export class RpcClient {
 	#promptResultListeners = new Set<RpcPromptResultListener>();
 	#sessionSettledListeners = new Set<RpcSessionSettledListener>();
 	#liveListeners = new Set<RpcLiveListener>();
+	#dictationListeners = new Set<RpcDictationListener>();
 	/** `promptAndWait` completions keyed by request id; registered before the prompt is sent. */
 	#promptResultWaiters = new Map<string, (result: RpcPromptResultFrame) => void>();
 	/** Same-id failures that arrive after the success ack removed the pending request. */
@@ -673,6 +680,14 @@ export class RpcClient {
 		};
 	}
 
+	/** Subscribe to `dictation_state` frames: state changes and the running transcript. */
+	onDictation(listener: RpcDictationListener): () => void {
+		this.#dictationListeners.add(listener);
+		return () => {
+			this.#dictationListeners.delete(listener);
+		};
+	}
+
 	/**
 	 * Get collected stderr output (useful for debugging).
 	 */
@@ -873,6 +888,31 @@ export class RpcClient {
 	async liveMute(muted?: boolean): Promise<{ muted: boolean }> {
 		const response = await this.#send({ type: "live_mute", muted });
 		return this.#getData(response);
+	}
+
+	/**
+	 * Start dictating from the default microphone with the `dictation` model role; resolves with
+	 * the speech model once recording. `language` overrides `stt.language` (`""` detects it).
+	 */
+	async dictationStart(options?: { language?: string; allowDownload?: boolean }): Promise<{ model: string }> {
+		const response = await this.#send({
+			type: "dictation_start",
+			language: options?.language,
+			allowDownload: options?.allowDownload,
+		});
+		return this.#getData(response);
+	}
+
+	/** Stop dictating and transcribe; `submit` reflects `stt.submitTrigger`. */
+	async dictationStop(): Promise<{ text: string; submit: boolean }> {
+		const response = await this.#send({ type: "dictation_stop" });
+		return this.#getData(response);
+	}
+
+	/** Drop the running dictation without transcribing it, if any. */
+	async dictationCancel(): Promise<void> {
+		const response = await this.#send({ type: "dictation_cancel" });
+		this.#getData(response);
 	}
 
 	/**
@@ -1512,6 +1552,13 @@ export class RpcClient {
 
 		if (isRpcLiveFrame(data)) {
 			for (const listener of this.#liveListeners) {
+				listener(data);
+			}
+			return;
+		}
+
+		if (isRpcDictationStateFrame(data)) {
+			for (const listener of this.#dictationListeners) {
 				listener(data);
 			}
 			return;
