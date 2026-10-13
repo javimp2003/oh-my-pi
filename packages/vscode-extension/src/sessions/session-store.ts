@@ -17,6 +17,10 @@ export interface SessionSummary {
 	title?: string;
 	/** First line of the first user prompt. */
 	firstMessage?: string;
+	/** First line of the latest user prompt; absent when it could not be found near the end of a huge file. */
+	lastMessage?: string;
+	/** The first prompt is also the latest one: the session has a single prompt. */
+	singlePrompt: boolean;
 	modified: Date;
 	/** User + assistant messages found in the scanned prefix; a lower bound for long sessions. */
 	messageCount: number;
@@ -26,6 +30,10 @@ export interface SessionSummary {
 
 /** Bytes read from each file: covers the title, header, and first prompts of nearly every session. */
 const SCAN_BYTES = 64 * 1024;
+/** The latest prompt of a longer file is searched backwards from its end in chunks of this size… */
+const TAIL_CHUNK_BYTES = 256 * 1024;
+/** …up to this far back (long tool outputs can follow the last prompt). */
+const MAX_TAIL_BYTES = 16 * 1024 * 1024;
 
 /** Display label: the title, else the first prompt, else the file name. */
 export function sessionLabel(session: SessionSummary): string {
@@ -58,7 +66,11 @@ export async function listSessions(dir: string): Promise<SessionSummary[]> {
 			.map(name => readSummary(path.join(dir, name)).catch(() => undefined)),
 	);
 	return sessions
-		.filter((session): session is SessionSummary => session !== undefined && session.messageCount > 0)
+		.filter(
+			(session): session is SessionSummary =>
+				// A first prompt with an image can fill the whole prefix: its message is found later.
+				session !== undefined && (session.messageCount > 0 || session.firstMessage !== undefined),
+		)
 		.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 }
 
@@ -79,10 +91,17 @@ async function readSummary(file: string): Promise<SessionSummary> {
 			modified: stat.mtime,
 			messageCount: 0,
 			truncated,
+			singlePrompt: false,
 		};
+		// Prompts are told apart by the byte offset of their line.
+		let firstOffset: number | undefined;
+		let last: { offset: number; text: string } | undefined;
+		let offset = 0;
 		for (const line of lines) {
+			const lineOffset = offset;
+			offset += Buffer.byteLength(line) + 1;
 			if (!line.trim()) continue;
-			let entry: { type?: string; title?: string; id?: string; message?: { role?: string; content?: unknown } };
+			let entry: SessionLine;
 			try {
 				entry = JSON.parse(line);
 			} catch {
@@ -96,16 +115,120 @@ async function readSummary(file: string): Promise<SessionSummary> {
 				const role = entry.message?.role;
 				if (role !== "user" && role !== "assistant") continue;
 				summary.messageCount++;
-				if (role === "user" && summary.firstMessage === undefined) {
-					const prompt = promptText(entry.message?.content);
-					if (prompt) summary.firstMessage = prompt;
+				const prompt = userPrompt(entry);
+				if (prompt === undefined) continue;
+				if (firstOffset === undefined) {
+					firstOffset = lineOffset;
+					summary.firstMessage = prompt;
 				}
+				last = { offset: lineOffset, text: prompt };
 			}
 		}
+		if (truncated) {
+			// A first prompt carrying an image can be a line longer than the whole prefix.
+			if (firstOffset === undefined) {
+				const first = await findFirstPrompt(handle, stat.size);
+				firstOffset = first?.offset;
+				summary.firstMessage = first?.text;
+			}
+			last = await findLastPrompt(handle, stat.size);
+		}
+		summary.lastMessage = last?.text;
+		summary.singlePrompt = last !== undefined && last.offset === firstOffset;
 		return summary;
 	} finally {
 		await handle.close();
 	}
+}
+
+interface SessionLine {
+	type?: string;
+	title?: string;
+	id?: string;
+	message?: { role?: string; content?: unknown; synthetic?: boolean };
+}
+
+/** The first line of a prompt the user wrote (not a synthetic user message omp injects). */
+function userPrompt(entry: SessionLine): string | undefined {
+	if (entry.type !== "message" || entry.message?.role !== "user" || entry.message.synthetic) return undefined;
+	return promptText(entry.message.content);
+}
+
+/** A user prompt in a line of the session file, or undefined (cheap check before parsing). */
+function promptInLine(line: string): string | undefined {
+	if (!line.includes('"user"')) return undefined;
+	try {
+		return userPrompt(JSON.parse(line));
+	} catch {
+		return undefined;
+	}
+}
+
+/** The first prompt of a long file, read forwards in chunks up to {@link MAX_TAIL_BYTES}. */
+async function findFirstPrompt(
+	handle: fs.FileHandle,
+	size: number,
+): Promise<{ offset: number; text: string } | undefined> {
+	/** Chunks of the line being read, until its end turns up. */
+	let parts: Buffer[] = [];
+	let lineOffset = 0;
+	for (let position = 0; position < size && position < MAX_TAIL_BYTES;) {
+		const chunk = Buffer.alloc(Math.min(TAIL_CHUNK_BYTES, size - position));
+		const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+		if (bytesRead === 0) break;
+		const data = chunk.subarray(0, bytesRead);
+		let from = 0;
+		for (let newline = data.indexOf(0x0a); newline >= 0; newline = data.indexOf(0x0a, from)) {
+			const line = Buffer.concat([...parts, data.subarray(from, newline)]).toString("utf8");
+			const prompt = promptInLine(line);
+			if (prompt !== undefined) return { offset: lineOffset, text: prompt };
+			parts = [];
+			lineOffset = position + newline + 1;
+			from = newline + 1;
+		}
+		parts.push(data.subarray(from));
+		position += bytesRead;
+	}
+	return undefined;
+}
+
+/**
+ * The latest prompt of a file too long to read whole: lines are read
+ * backwards from the end, up to {@link MAX_TAIL_BYTES}, and only lines that
+ * can be a user message are parsed.
+ */
+async function findLastPrompt(
+	handle: fs.FileHandle,
+	size: number,
+): Promise<{ offset: number; text: string } | undefined> {
+	let end = size;
+	/** Bytes of a line cut by the previous chunk's start, joined with the next chunk read. */
+	let carry = Buffer.alloc(0);
+	while (end > 0 && size - end < MAX_TAIL_BYTES) {
+		const start = Math.max(0, end - TAIL_CHUNK_BYTES);
+		const chunk = Buffer.alloc(end - start);
+		await handle.read(chunk, 0, chunk.length, start);
+		const data = Buffer.concat([chunk, carry]);
+		// Unless the chunk starts the file, its first line may be cut: keep it for the next round.
+		const firstNewline = start === 0 ? -1 : data.indexOf(0x0a);
+		if (firstNewline < 0 && start > 0) {
+			carry = data;
+			end = start;
+			continue;
+		}
+		carry = data.subarray(0, firstNewline + 1);
+		let lineEnd = data.length;
+		while (lineEnd > firstNewline + 1) {
+			const newline = data.lastIndexOf(0x0a, lineEnd - 1);
+			const lineStart = Math.max(newline + 1, firstNewline + 1);
+			const line = data.subarray(lineStart, lineEnd).toString("utf8");
+			lineEnd = lineStart - 1;
+			const prompt = promptInLine(line);
+			if (prompt !== undefined) return { offset: start + lineStart, text: prompt };
+		}
+		end = start;
+	}
+	return undefined;
 }
 
 function promptText(content: unknown): string | undefined {

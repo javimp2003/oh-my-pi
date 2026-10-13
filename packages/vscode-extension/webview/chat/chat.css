@@ -295,6 +295,70 @@ code {
 	display: flex;
 }
 
+/* Find in chat (Ctrl+F): a bar in the top-right corner, like VS Code's find widget. */
+.find-bar {
+	position: absolute;
+	top: 6px;
+	right: 14px;
+	z-index: 20;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	padding: 3px 4px 3px 8px;
+	border: 1px solid var(--vscode-widget-border, var(--c-border-heavy));
+	border-radius: var(--r-md);
+	background: var(--vscode-editorWidget-background, var(--c-surface));
+	box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgb(0 0 0 / 0.3));
+}
+
+.find-bar[hidden] {
+	display: none;
+}
+
+.find-input {
+	width: 170px;
+	height: 24px;
+	padding: 0 6px;
+	border: 1px solid var(--vscode-input-border, transparent);
+	border-radius: var(--r-sm);
+	background: var(--vscode-input-background);
+	color: var(--vscode-input-foreground, var(--c-fg));
+	font: inherit;
+	font-size: var(--fs-sm);
+}
+
+.find-input:focus {
+	outline: 1px solid var(--vscode-focusBorder);
+	outline-offset: -1px;
+}
+
+.find-bar.no-results .find-input {
+	border-color: var(--vscode-inputValidation-errorBorder, var(--c-error));
+}
+
+.find-count {
+	min-width: 56px;
+	padding: 0 4px;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.find-bar .icon-button {
+	width: 22px;
+	height: 22px;
+}
+
+::highlight(omp-find) {
+	background-color: var(--vscode-editor-findMatchHighlightBackground, rgb(234 92 0 / 0.33));
+}
+
+::highlight(omp-find-current) {
+	background-color: var(--vscode-editor-findMatchBackground, rgb(81 92 106));
+	color: inherit;
+}
+
 .transcript-wrap {
 	flex: 1;
 	min-width: 0;
@@ -1418,7 +1482,7 @@ code {
 }
 
 .history-age,
-.history-detail {
+.history-prompts {
 	color: var(--c-fg-3);
 	font-size: var(--fs-sm);
 }
@@ -1459,9 +1523,23 @@ code {
 	outline: none;
 }
 
-/* Under the label: past the 10px marker slot and the 8px gap. */
-.history-detail {
+/* First and last prompt under the label: past the 10px marker slot and the 8px gap. */
+.history-prompts {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	column-gap: 8px;
 	padding-left: 18px;
+}
+
+.history-prompt {
+	display: contents;
+}
+
+.history-prompt-label {
+	opacity: 0.75;
+}
+
+.history-prompt-text {
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;

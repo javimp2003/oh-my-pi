@@ -28,7 +28,8 @@ export type IconName =
 	| "handoff"
 	| "python"
 	| "close"
-	| "mic";
+	| "mic"
+	| "chevronUp";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -40,6 +41,7 @@ const PATHS: Record<IconName, string> = {
 	arrowUp: "M12 19V5M5 12l7-7 7 7",
 	stop: "M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z",
 	chevronDown: "m6 9 6 6 6-6",
+	chevronUp: "m18 15-6-6-6 6",
 	chevronRight: "m9 18 6-6-6-6",
 	back: "M19 12H5M12 19l-7-7 7-7",
 	copy: "M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2zM4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2",

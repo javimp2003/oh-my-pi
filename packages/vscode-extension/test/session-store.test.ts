@@ -63,6 +63,80 @@ describe("listSessions", () => {
 		expect(session!.messageCount).toBeLessThan(6);
 	});
 
+	it("reports the first and latest prompts, and a session with a single prompt", async () => {
+		const dir = await tempDir();
+		await fs.writeFile(
+			path.join(dir, "2026-01-01_a.jsonl"),
+			sessionFile({ id: "a", prompts: ["explain the repo", "now add tests\nwith details"] }),
+		);
+		await fs.writeFile(path.join(dir, "2026-01-02_b.jsonl"), sessionFile({ id: "b", prompts: ["same text"] }));
+		// Two prompts with the same text are still two prompts.
+		await fs.writeFile(path.join(dir, "2026-01-03_c.jsonl"), sessionFile({ id: "c", prompts: ["again", "again"] }));
+
+		const byId = Object.fromEntries((await listSessions(dir)).map(session => [session.id, session]));
+
+		expect(byId.a).toMatchObject({ firstMessage: "explain the repo", lastMessage: "now add tests", singlePrompt: false });
+		expect(byId.b).toMatchObject({ firstMessage: "same text", lastMessage: "same text", singlePrompt: true });
+		expect(byId.c).toMatchObject({ firstMessage: "again", lastMessage: "again", singlePrompt: false });
+	});
+
+	it("finds the latest prompt near the end of a long session, past long tool output", async () => {
+		const dir = await tempDir();
+		const file = path.join(dir, "2026-01-01_long.jsonl");
+		// ~1.2 MB: the latest prompt sits after several 256 KB reads from the end, its line cut by one of them.
+		const prompts = ["start", "middle", "latest ñandú prompt"];
+		await fs.writeFile(file, `${sessionFile({ id: "long", prompts, padding: 400_000 })}`);
+
+		const [session] = await listSessions(dir);
+
+		expect(session).toMatchObject({
+			firstMessage: "start",
+			lastMessage: "latest ñandú prompt",
+			singlePrompt: false,
+			truncated: true,
+		});
+	});
+
+	it("does not count user messages omp injects as prompts", async () => {
+		const dir = await tempDir();
+		const file = path.join(dir, "2026-01-01_s.jsonl");
+		const injected = JSON.stringify({
+			type: "message",
+			message: { role: "user", synthetic: true, content: [{ type: "text", text: "<system-notice>job done" }] },
+		});
+		await fs.writeFile(file, `${sessionFile({ id: "s", prompts: ["only real prompt"] })}${injected}\n`);
+
+		const [session] = await listSessions(dir);
+
+		expect(session).toMatchObject({ lastMessage: "only real prompt", singlePrompt: true });
+	});
+
+	it("finds a first prompt whose line is longer than the scanned prefix (an attached image)", async () => {
+		const dir = await tempDir();
+		const file = path.join(dir, "2026-01-01_img.jsonl");
+		const header = sessionFile({ id: "img", prompts: [] });
+		const withImage = JSON.stringify({
+			type: "message",
+			message: {
+				role: "user",
+				content: [
+					{ type: "text", text: "what is in this screenshot?" },
+					{ type: "image", data: "A".repeat(300_000), mimeType: "image/png" },
+				],
+			},
+		});
+		const rest = sessionFile({ id: "img", prompts: ["follow-up"] }).split("\n").slice(2).join("\n");
+		await fs.writeFile(file, `${header}${withImage}\n${rest}`);
+
+		const [session] = await listSessions(dir);
+
+		expect(session).toMatchObject({
+			firstMessage: "what is in this screenshot?",
+			lastMessage: "follow-up",
+			singlePrompt: false,
+		});
+	});
+
 	it("returns nothing for a directory that does not exist yet", async () => {
 		expect(await listSessions(path.join(await tempDir(), "missing"))).toEqual([]);
 	});

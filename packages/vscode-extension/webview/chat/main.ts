@@ -9,6 +9,7 @@ import { getVsCodeApi } from "../vscode-api";
 import { Composer } from "./composer";
 import { Header } from "./header";
 import { HistoryPanel } from "./history";
+import { FindBar } from "./find";
 import { Transcript, brailleSpinner } from "./transcript";
 
 interface ChatViewState {
@@ -47,14 +48,31 @@ const statusPanel = h(
 	h("div", { className: "status-card" }, statusSpinner.element, statusLabel, statusMessage, restart),
 );
 
+const find = new FindBar(transcript.searchRoot, transcript.scrollElement);
+
 const root = document.getElementById("root")!;
 root.classList.add("chat");
 installTooltips();
 root.append(
 	header.element,
-	h("div", { className: "main" }, transcript.element, statusPanel, history.element),
+	h("div", { className: "main" }, transcript.element, find.element, statusPanel, history.element),
 	composer.element,
 );
+
+// Find in chat: Ctrl+F (⌘F on macOS, where Ctrl+F moves the caret), then F3 / ⌘G for the next match.
+const isMac = navigator.userAgent.includes("Mac");
+document.addEventListener("keydown", event => {
+	const mod = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+	const key = event.key.toLowerCase();
+	if (mod && !event.altKey && key === "f") {
+		event.preventDefault();
+		if (history.isOpen) history.focusSearch();
+		else find.open();
+	} else if (find.isOpen && (event.key === "F3" || (mod && key === "g"))) {
+		event.preventDefault();
+		find.step(event.shiftKey ? -1 : 1);
+	}
+});
 
 let sessionFile: string | undefined;
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0]
+
+### Added
+
+- Find in chat: `Ctrl+F` (`⌘F` on macOS) opens a find bar that highlights every match in the conversation, with a "3/12" count, `Enter` / `Shift+Enter` (`F3`, `⌘G`) to move between matches, and folded thinking or tool rows unfolding to show the current one. It follows the conversation as it streams
+- The History panel shows each session's first and latest prompt under its name ("Only prompt" when there is one); its search also matches them. The Sessions view tooltip and `omp: Switch Session…` show them too. In long sessions the latest prompt is found by reading the file from its end
+
+### Fixed
+
+- Sessions whose first prompt carries a large image no longer disappear from the History panel and the Sessions view
+
 ## [0.6.3]
 
 ### Fixed

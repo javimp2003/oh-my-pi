@@ -27,7 +27,7 @@ export class SessionItem extends vscode.TreeItem {
 		this.tooltip = new vscode.MarkdownString(
 			[
 				`**${escapeMarkdown(sessionLabel(session))}**`,
-				session.title && session.firstMessage ? escapeMarkdown(session.firstMessage) : undefined,
+				...promptLines(session).map(escapeMarkdown),
 				activity === "running" ? "omp is working on this session." : undefined,
 				activity === "done" ? "Finished while you were in another session." : undefined,
 				`${count} · ${session.modified.toLocaleString()}`,
@@ -122,7 +122,7 @@ export async function pickSession(
 	const items = sessions.map(session => ({
 		label: `${session.path === activeFile ? "$(comment-discussion) " : ""}${sessionLabel(session)}`,
 		description: relativeTime(session.modified),
-		detail: session.title ? session.firstMessage : undefined,
+		detail: promptLines(session).join(" · ") || undefined,
 		session,
 	}));
 	const picked = await vscode.window.showQuickPick(items, {
@@ -132,6 +132,15 @@ export async function pickSession(
 		matchOnDetail: true,
 	});
 	return picked?.session;
+}
+
+/** "First: …" and "Last: …" (or "Only prompt: …") lines of a session's prompts. */
+function promptLines(session: SessionSummary): string[] {
+	if (session.singlePrompt && session.firstMessage) return [`Only prompt: ${session.firstMessage}`];
+	return [
+		...(session.firstMessage ? [`First: ${session.firstMessage}`] : []),
+		...(session.lastMessage ? [`Last: ${session.lastMessage}`] : []),
+	];
 }
 
 function escapeMarkdown(text: string): string {

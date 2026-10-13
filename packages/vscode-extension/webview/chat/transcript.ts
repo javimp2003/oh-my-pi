@@ -336,6 +336,16 @@ export class Transcript {
 	#promptCount = 0;
 	#editor: MessageEditor | undefined;
 
+	/** The conversation's messages, which find-in-chat searches. */
+	get searchRoot(): HTMLElement {
+		return this.#list;
+	}
+
+	/** The scrolling container of the conversation. */
+	get scrollElement(): HTMLElement {
+		return this.#scroller;
+	}
+
 	constructor(
 		private readonly post: Post,
 		onExample: (prompt: string) => void,

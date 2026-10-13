@@ -53,7 +53,12 @@ export type SessionActivity = "running" | "done";
 export interface SessionListItem {
 	path: string;
 	label: string;
-	detail?: string;
+	/** First line of the session's first prompt. */
+	firstPrompt?: string;
+	/** First line of its latest prompt; absent when that is the first one (see `singlePrompt`) or unknown. */
+	lastPrompt?: string;
+	/** The session has a single prompt. */
+	singlePrompt: boolean;
 	age: string;
 	active: boolean;
 	activity?: SessionActivity;

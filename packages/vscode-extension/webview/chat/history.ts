@@ -43,6 +43,12 @@ export class HistoryPanel {
 		return !this.element.hidden;
 	}
 
+	/** Put the caret in the panel's search box (Ctrl+F while the panel is open). */
+	focusSearch(): void {
+		this.#search.focus();
+		this.#search.select();
+	}
+
 	toggle(): void {
 		if (this.isOpen) {
 			this.close();
@@ -107,7 +113,7 @@ export class HistoryPanel {
 		}
 		const needle = this.#search.value.trim().toLowerCase();
 		this.#matches = this.#sessions.filter(item =>
-			`${item.label} ${item.detail ?? ""}`.toLowerCase().includes(needle),
+			`${item.label} ${item.firstPrompt ?? ""} ${item.lastPrompt ?? ""}`.toLowerCase().includes(needle),
 		);
 		if (this.#matches.length === 0) {
 			const text = this.#sessions.length === 0 ? "No chats yet" : "No matches";
@@ -145,7 +151,7 @@ export class HistoryPanel {
 				editing ? null : h("span", { className: "history-age" }, item.age),
 				editing ? null : rename,
 			),
-			item.detail && !editing ? h("div", { className: "history-detail" }, item.detail) : null,
+			editing ? null : this.#prompts(item),
 		);
 		// Keep focus in the search box, except when clicking into the rename field.
 		row.addEventListener("mousedown", event => {
@@ -155,6 +161,27 @@ export class HistoryPanel {
 			if (!editing) this.#open(item);
 		});
 		return row;
+	}
+
+	/** The session's first and latest prompts under its name; a single prompt says so. */
+	#prompts(item: SessionListItem): HTMLElement | null {
+		const line = (label: string, text: string) =>
+			h(
+				"div",
+				{ className: "history-prompt" },
+				h("span", { className: "history-prompt-label" }, label),
+				h("span", { className: "history-prompt-text" }, text),
+			);
+		if (item.singlePrompt && item.firstPrompt) {
+			return h("div", { className: "history-prompts" }, line("Only prompt", item.firstPrompt));
+		}
+		if (!item.firstPrompt && !item.lastPrompt) return null;
+		return h(
+			"div",
+			{ className: "history-prompts" },
+			item.firstPrompt ? line("First", item.firstPrompt) : null,
+			item.lastPrompt ? line("Last", item.lastPrompt) : null,
+		);
 	}
 
 	/** Inline name editor: Enter renames, Escape or leaving the field cancels. */
