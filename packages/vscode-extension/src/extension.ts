@@ -297,6 +297,10 @@ export function activate(context: vscode.ExtensionContext): void {
 			}),
 		),
 		vscode.commands.registerCommand(
+			"ompCustom.findInChat",
+			run(() => chats.openFind()),
+		),
+		vscode.commands.registerCommand(
 			"ompCustom.openSettings",
 			run(() => SettingsPanel.show(context.extensionUri)),
 		),

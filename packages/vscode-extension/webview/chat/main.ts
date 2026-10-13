@@ -60,19 +60,27 @@ root.append(
 );
 
 // Find in chat: Ctrl+F (⌘F on macOS, where Ctrl+F moves the caret), then F3 / ⌘G for the next match.
+// VS Code binds Ctrl+F to the code editor's find even while this webview has focus, so the
+// extension contributes a keybinding (`ompCustom.findInChat`) for while it reports focus here;
+// that command arrives as `openFind`. The key handler below covers the key when no binding applies.
+function openFind(): void {
+	if (history.isOpen) history.focusSearch();
+	else find.open();
+}
 const isMac = navigator.userAgent.includes("Mac");
 document.addEventListener("keydown", event => {
 	const mod = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
 	const key = event.key.toLowerCase();
 	if (mod && !event.altKey && key === "f") {
 		event.preventDefault();
-		if (history.isOpen) history.focusSearch();
-		else find.open();
+		openFind();
 	} else if (find.isOpen && (event.key === "F3" || (mod && key === "g"))) {
 		event.preventDefault();
 		find.step(event.shiftKey ? -1 : 1);
 	}
 });
+window.addEventListener("focus", () => post({ type: "focusChanged", focused: true }));
+window.addEventListener("blur", () => post({ type: "focusChanged", focused: false }));
 
 let sessionFile: string | undefined;
 
@@ -201,6 +209,9 @@ function handle(update: ChatUpdate): void {
 			break;
 		case "toggleDictation":
 			composer.toggleDictation();
+			break;
+		case "openFind":
+			openFind();
 			break;
 	}
 }

@@ -45,6 +45,9 @@ export class ChatSession implements vscode.Disposable, HostView {
 	readonly #onDidChange = new vscode.EventEmitter<ChatSession>();
 	/** Fires when the shown session, its process, title, model, or busy state changes. */
 	readonly onDidChange = this.#onDidChange.event;
+	readonly #onDidChangeFocus = new vscode.EventEmitter<boolean>();
+	/** Fires when keyboard focus enters (`true`) or leaves the chat webview. */
+	readonly onDidChangeFocus = this.#onDidChangeFocus.event;
 
 	constructor(
 		readonly surface: ChatSurface,
@@ -253,6 +256,11 @@ export class ChatSession implements vscode.Disposable, HostView {
 		this.post({ type: "toggleDictation" });
 	}
 
+	/** "Find in Chat" (Ctrl+F while the chat has focus): open the webview's find bar. */
+	openFind(): void {
+		this.post({ type: "openFind" });
+	}
+
 	dispose(): void {
 		this.#hostSubscription?.dispose();
 		const host = this.#host;
@@ -263,6 +271,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 		}
 		for (const disposable of this.#disposables) disposable.dispose();
 		this.#onDidChange.dispose();
+		this.#onDidChangeFocus.fire(false);
+		this.#onDidChangeFocus.dispose();
 	}
 
 	/**
@@ -354,6 +364,9 @@ export class ChatSession implements vscode.Disposable, HostView {
 
 	async #handle(request: ChatRequest): Promise<void> {
 		switch (request.type) {
+			case "focusChanged":
+				this.#onDidChangeFocus.fire(request.focused);
+				return;
 			case "ready":
 				this.#webviewReady = true;
 				if (this.#host) await this.#host.replay(this);

@@ -2,7 +2,7 @@
 	"name": "omp-custom-vscode",
 	"displayName": "omp (custom)",
 	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.8.1",
+	"version": "0.8.2",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",
@@ -150,6 +150,11 @@
 				"category": "omp"
 			},
 			{
+				"command": "ompCustom.findInChat",
+				"title": "Find in Chat",
+				"category": "omp"
+			},
+			{
 				"command": "ompCustom.openSettings",
 				"title": "Settings",
 				"category": "omp",
@@ -278,6 +283,10 @@
 			],
 			"commandPalette": [
 				{
+					"command": "ompCustom.findInChat",
+					"when": "false"
+				},
+				{
 					"command": "ompCustom.openSession",
 					"when": "false"
 				},
@@ -306,6 +315,12 @@
 				"command": "ompCustom.focusChat",
 				"key": "ctrl+alt+o",
 				"mac": "cmd+alt+o"
+			},
+			{
+				"command": "ompCustom.findInChat",
+				"key": "ctrl+f",
+				"mac": "cmd+f",
+				"when": "ompCustom.chatFocused"
 			}
 		],
 		"configuration": {

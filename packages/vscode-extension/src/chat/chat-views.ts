@@ -14,6 +14,9 @@ import { ChatSession, type ChatSurface } from "./chat-session";
 
 type SessionCommands = ChatSession["commands"];
 
+/** Context key: a chat webview has keyboard focus (the `ompCustom.findInChat` keybinding's `when`). */
+const CHAT_FOCUSED_CONTEXT = "ompCustom.chatFocused";
+
 export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposable {
 	static readonly viewId = "ompCustom.chat";
 
@@ -22,6 +25,8 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 	#sidebarView: vscode.WebviewView | undefined;
 	readonly #panels = new Set<ChatSession>();
 	#active: ChatSession | undefined;
+	/** The chat whose webview has keyboard focus. */
+	#focused: ChatSession | undefined;
 	readonly #onDidChangeActive = new vscode.EventEmitter<ChatSession | undefined>();
 	/** Fires when the active chat changes or its session/state changes. */
 	readonly onDidChangeActive = this.#onDidChangeActive.event;
@@ -118,7 +123,18 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 		session.onDidChange(() => {
 			if (session === this.active) this.#onDidChangeActive.fire(session);
 		});
+		session.onDidChangeFocus(focused => {
+			if (focused) this.#focused = session;
+			else if (this.#focused === session) this.#focused = undefined;
+			// Ctrl+F goes to the chat's find bar while one has focus, not to the editor's (package.json keybinding).
+			void vscode.commands.executeCommand("setContext", CHAT_FOCUSED_CONTEXT, this.#focused !== undefined);
+		});
 		return session;
+	}
+
+	/** "Find in Chat": the chat with keyboard focus, else the active one, opens its find bar. */
+	openFind(): void {
+		(this.#focused ?? this.active)?.openFind();
 	}
 
 	/** A session no chat shows waits for the user: offer to show it in the active chat. */

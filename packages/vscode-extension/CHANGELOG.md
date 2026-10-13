@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.2]
+
+### Fixed
+
+- `Ctrl+F` (`⌘F`) in the chat opened the code editor's find, which took the typing, while the chat's find bar appeared without focus. The chat now reports when it has keyboard focus and contributes a keybinding (`omp: Find in Chat`) that, while it does, sends the key to its own find bar
+
 ## [0.8.1]
 
 ### Fixed
