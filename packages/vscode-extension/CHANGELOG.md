@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.2]
+
+### Fixed
+
+- omp's own messages no longer look like prompts you sent. A finished background job showed its result (the `<system-notice>` omp hands the model) in a user bubble labelled "async-result"; it is now an activity row like the terminal's, "Background job completed bg_1 · bash · 650ms", that expands to the command and its output. Supervised process exits show as "Supervised process completed/failed" rows, and any other extension notice as a row named after its type
+
 ## [0.5.1]
 
 ### Fixed

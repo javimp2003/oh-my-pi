@@ -19,6 +19,7 @@ import { fileLink, parseFileRef, thumbnail } from "./content";
 import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./markdown";
 import { MessageEditor } from "./message-editor";
+import { noticeElement } from "./notices";
 import { PlanCard } from "./plan-card";
 import { ToolCard, truncatedPre } from "./tools";
 
@@ -101,11 +102,10 @@ function contentImages(content: string | Array<{ type: string }>): ImageContent[
 	return typeof content === "string" ? [] : (content.filter(block => block.type === "image") as ImageContent[]);
 }
 
-/** User-style bubble: plain text (pre-wrapped), image thumbnails, optional label. */
-function bubble(text: string, images: ImageContent[], label?: string, onEdit?: () => void): HTMLElement {
+/** A prompt's bubble: plain text (pre-wrapped) and image thumbnails. */
+function bubble(text: string, images: ImageContent[], onEdit?: () => void): HTMLElement {
 	const el = h("div", { className: "msg user" });
 	const body = h("div", { className: "bubble" });
-	if (label) body.append(h("div", { className: "bubble-label" }, label));
 	if (text) body.append(h("div", { className: "bubble-text" }, text));
 	if (images.length > 0) {
 		body.append(h("div", { className: "thumbs" }, ...images.map(image => thumbnail(image))));
@@ -606,21 +606,21 @@ export class Transcript {
 				if (message.synthetic) return undefined;
 				const ordinal = this.#promptCount++;
 				const text = contentText(message.content);
-				const prompt = bubble(text, contentImages(message.content), undefined, () =>
-					this.#editPrompt(prompt, ordinal, text),
-				);
+				const prompt = bubble(text, contentImages(message.content), () => this.#editPrompt(prompt, ordinal, text));
 				el = prompt;
 				break;
 			}
 			case "custom":
 			case "hookMessage":
 				if (!message.display) return undefined;
+				// Only a skill invocation is something the user wrote; the rest (background job results,
+				// process exits, extension notices) comes from omp and must not look like a prompt.
 				el =
 					message.role === "custom" &&
 					message.customType === "skill-prompt" &&
 					isSkillPromptDetails(message.details)
 						? skillBubble(message.details, contentText(message.content))
-						: bubble(contentText(message.content), contentImages(message.content), message.customType);
+						: noticeElement(message.customType, contentText(message.content), message.details);
 				break;
 			case "toolResult":
 				this.#applyToolResult(message);
