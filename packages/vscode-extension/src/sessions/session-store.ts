@@ -111,11 +111,11 @@ async function readSummary(file: string): Promise<SessionSummary> {
 				if (entry.title?.trim()) summary.title = entry.title.trim();
 			} else if (entry.type === "session") {
 				if (entry.id) summary.id = entry.id;
-			} else if (entry.type === "message") {
-				const role = entry.message?.role;
-				if (role !== "user" && role !== "assistant") continue;
-				summary.messageCount++;
+			} else {
+				const role = entry.type === "message" ? entry.message?.role : undefined;
 				const prompt = userPrompt(entry);
+				// Skill and collab prompts are custom messages that start a user turn.
+				if (role === "user" || role === "assistant" || prompt !== undefined) summary.messageCount++;
 				if (prompt === undefined) continue;
 				if (firstOffset === undefined) {
 					firstOffset = lineOffset;
@@ -145,13 +145,57 @@ interface SessionLine {
 	type?: string;
 	title?: string;
 	id?: string;
-	message?: { role?: string; content?: unknown; synthetic?: boolean };
+	customType?: string;
+	attribution?: string;
+	details?: unknown;
+	content?: unknown;
+	message?: {
+		role?: string;
+		content?: unknown;
+		synthetic?: boolean;
+		customType?: string;
+		attribution?: string;
+		details?: unknown;
+	};
 }
 
-/** The first line of a prompt the user wrote (not a synthetic user message omp injects). */
+/** Custom message types that start a user turn when the user sent them (omp's `isUserTurnInitiator`). */
+const USER_TURN_CUSTOM_TYPES: Record<string, true> = { "skill-prompt": true, "collab-prompt": true };
+
+/**
+ * The first line of a prompt the user sent: a user message (not a synthetic
+ * one omp injects), or a `/skill:` or collab prompt, which omp stores as a
+ * user-attributed custom message whose content is the expanded skill; its
+ * typed text is in `details` (`/skill:name args` as written).
+ */
 function userPrompt(entry: SessionLine): string | undefined {
-	if (entry.type !== "message" || entry.message?.role !== "user" || entry.message.synthetic) return undefined;
-	return promptText(entry.message.content);
+	if (entry.type === "message" && entry.message?.role === "user") {
+		return entry.message.synthetic ? undefined : promptText(entry.message.content);
+	}
+	const custom =
+		entry.type === "custom_message"
+			? entry
+			: entry.type === "message" && entry.message?.role === "custom"
+				? entry.message
+				: undefined;
+	if (!custom?.customType || !USER_TURN_CUSTOM_TYPES[custom.customType] || custom.attribution !== "user") {
+		return undefined;
+	}
+	return skillPromptText(custom.details) ?? promptText(custom.content);
+}
+
+/** What the user typed to invoke a skill, as omp's titles show it (never the expanded SKILL.md body). */
+function skillPromptText(details: unknown): string | undefined {
+	if (!details || typeof details !== "object") return undefined;
+	const field = (name: string) => {
+		const value = (details as Record<string, unknown>)[name];
+		return typeof value === "string" && value.trim() ? value.trim() : undefined;
+	};
+	const name = field("name");
+	const args = field("args");
+	const typed =
+		field("__queueChipText") ?? field("prompt") ?? (name ? `/skill:${name}${args ? ` ${args}` : ""}` : args);
+	return typed ? promptText(typed) : undefined;
 }
 
 /** A user prompt in a line of the session file, or undefined (cheap check before parsing). */

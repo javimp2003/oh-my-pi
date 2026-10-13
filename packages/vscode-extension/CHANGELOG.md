@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.1]
+
+### Fixed
+
+- History's first and latest prompt now count `/skill:` invocations (and collab prompts), which omp stores apart from plain messages: a session whose first or latest prompt used a skill showed only its plain messages, often as a single "Only prompt". They show as typed (`/skill:name …`), and count in the Sessions view's message total
+
 ## [0.8.0]
 
 ### Added

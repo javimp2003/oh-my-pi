@@ -75,7 +75,11 @@ describe("listSessions", () => {
 
 		const byId = Object.fromEntries((await listSessions(dir)).map(session => [session.id, session]));
 
-		expect(byId.a).toMatchObject({ firstMessage: "explain the repo", lastMessage: "now add tests", singlePrompt: false });
+		expect(byId.a).toMatchObject({
+			firstMessage: "explain the repo",
+			lastMessage: "now add tests",
+			singlePrompt: false,
+		});
 		expect(byId.b).toMatchObject({ firstMessage: "same text", lastMessage: "same text", singlePrompt: true });
 		expect(byId.c).toMatchObject({ firstMessage: "again", lastMessage: "again", singlePrompt: false });
 	});
@@ -111,6 +115,39 @@ describe("listSessions", () => {
 		expect(session).toMatchObject({ lastMessage: "only real prompt", singlePrompt: true });
 	});
 
+	it("counts /skill: invocations as prompts, showing what the user typed", async () => {
+		const dir = await tempDir();
+		const file = path.join(dir, "2026-01-01_k.jsonl");
+		// As omp writes them: a user-attributed custom message whose content is the expanded skill.
+		const skill = (args: string, attribution = "user") =>
+			JSON.stringify({
+				type: "custom_message",
+				customType: "skill-prompt",
+				content: '[IMPORTANT: User invoked the "demo" skill; follow its instructions]\n\nDo the demo thing.',
+				display: true,
+				details: { name: "demo", args, prompt: `/skill:demo ${args}`, lineCount: 1 },
+				attribution,
+			});
+		const [header, title, ...messages] = sessionFile({ id: "k", prompts: ["plain question"] }).split("\n");
+		const lines = [
+			header,
+			title,
+			skill("check the gateway"),
+			...messages.filter(Boolean),
+			skill("auto-loaded", "agent"),
+			skill("last one"),
+		];
+		await fs.writeFile(file, `${lines.join("\n")}\n`);
+
+		const [session] = await listSessions(dir);
+
+		expect(session).toMatchObject({
+			firstMessage: "/skill:demo check the gateway",
+			lastMessage: "/skill:demo last one",
+			singlePrompt: false,
+		});
+	});
+
 	it("finds a first prompt whose line is longer than the scanned prefix (an attached image)", async () => {
 		const dir = await tempDir();
 		const file = path.join(dir, "2026-01-01_img.jsonl");
@@ -125,7 +162,10 @@ describe("listSessions", () => {
 				],
 			},
 		});
-		const rest = sessionFile({ id: "img", prompts: ["follow-up"] }).split("\n").slice(2).join("\n");
+		const rest = sessionFile({ id: "img", prompts: ["follow-up"] })
+			.split("\n")
+			.slice(2)
+			.join("\n");
 		await fs.writeFile(file, `${header}${withImage}\n${rest}`);
 
 		const [session] = await listSessions(dir);
