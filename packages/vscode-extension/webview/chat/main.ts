@@ -59,10 +59,14 @@ root.append(
 let sessionFile: string | undefined;
 
 let busy = false;
-function setBusy(next: boolean): void {
-	if (busy === next) return;
+let busySince: number | undefined;
+/** `since`: when the shown session's turn started; a session switch keeps busy but changes it. */
+function setBusy(next: boolean, since?: number): void {
+	const start = next ? (since ?? (busy ? busySince : undefined) ?? Date.now()) : undefined;
+	if (busy === next && busySince === start) return;
 	busy = next;
-	transcript.setBusy(next);
+	busySince = start;
+	transcript.setBusy(next, start);
 	composer.setBusy(next);
 }
 
@@ -120,7 +124,7 @@ function handle(update: ChatUpdate): void {
 			if (state.thinkingLevel) composer.picker.setThinkingLevel(state.thinkingLevel);
 			composer.setUsage(state, update.stats);
 			composer.setPlanState(state);
-			if (state.isStreaming !== undefined) setBusy(state.isStreaming);
+			if (state.isStreaming !== undefined) setBusy(state.isStreaming, update.busySince);
 			if (state.queuedMessages) {
 				const queued = state.queuedMessages;
 				composer.setQueue(queued.steering, queued.followUp, queued.liveSteered);

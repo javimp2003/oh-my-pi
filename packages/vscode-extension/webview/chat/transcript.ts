@@ -419,11 +419,12 @@ export class Transcript {
 		this.#afterChange();
 	}
 
-	setBusy(busy: boolean): void {
+	/** Show or hide the working row; `since` is when the turn started, so its timer reads the turn's own age. */
+	setBusy(busy: boolean, since = Date.now()): void {
 		this.#working.hidden = !busy;
 		if (busy) {
-			this.#busySince = Date.now();
-			this.#elapsed.textContent = formatElapsed(0);
+			this.#busySince = since;
+			this.#elapsed.textContent = formatElapsed(Date.now() - since);
 			this.#spinner.start(() => {
 				this.#elapsed.textContent = formatElapsed(Date.now() - this.#busySince);
 			});

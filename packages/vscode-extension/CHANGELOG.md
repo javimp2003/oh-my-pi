@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.1]
+
+### Fixed
+
+- The "Working" timer shows how long the session on screen has been running. Switching between two sessions that both work kept the first one's timer, and going back to a working session restarted it from 0s; each session now keeps its own start time
+
 ## [0.5.0]
 
 ### Added

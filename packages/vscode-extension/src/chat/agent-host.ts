@@ -115,6 +115,8 @@ export class AgentHost implements vscode.Disposable {
 	#title: string | undefined;
 	/** Between `agent_start` and `agent_end`: a turn is running. */
 	#busy = false;
+	/** When the running turn started (`agent_start`), for the working timer of every view showing it. */
+	#busySince = 0;
 	/** Idle with nothing queued or pending (omp's `session_settled` / `get_state.isSettled`). */
 	#settled = true;
 	/** A turn finished while no view was attached; cleared when a view shows the session. */
@@ -683,6 +685,7 @@ export class AgentHost implements vscode.Disposable {
 			this.post({ type: "event", event: frame as Extract<ChatUpdate, { type: "event" }>["event"] });
 		if (frame.type === "agent_start") {
 			this.#busy = true;
+			this.#busySince = Date.now();
 			this.#settled = false;
 			this.#onDidChange.fire(this);
 		} else if (frame.type === "agent_end") {
@@ -714,7 +717,13 @@ export class AgentHost implements vscode.Disposable {
 		if (state.isSettled !== undefined) this.#settled = state.isSettled && !this.#busy;
 		if (state.sessionName) this.#title = state.sessionName;
 		else if (fileChanged) this.#title = undefined;
-		this.post({ type: "state", state, stats, title: this.#title });
+		this.post({
+			type: "state",
+			state,
+			stats,
+			title: this.#title,
+			busySince: this.#busy ? this.#busySince : undefined,
+		});
 		this.#onDidChange.fire(this);
 	}
 

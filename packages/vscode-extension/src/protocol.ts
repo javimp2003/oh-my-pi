@@ -82,8 +82,11 @@ export type ChatUpdate =
 	 * `notice`, ...). `message_*` frames carry `messageId`, stable from start to end.
 	 */
 	| { type: "event"; event: RpcAgentEvent & { messageId?: string } }
-	/** Session snapshot; re-sent after every turn, model change, or session switch. */
-	| { type: "state"; state: SessionState; stats?: SessionStats; title?: string }
+	/**
+	 * Session snapshot; re-sent after every turn, model change, or session switch.
+	 * `busySince` is when the session's running turn started (epoch ms), absent while idle.
+	 */
+	| { type: "state"; state: SessionState; stats?: SessionStats; title?: string; busySince?: number }
 	| { type: "models"; models: ModelChoice[] }
 	| { type: "thinkingLevels"; levels: ThinkingLevel[] }
 	/** Slash commands for composer completion. */
