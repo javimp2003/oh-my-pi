@@ -17,7 +17,14 @@ import type { OmpProcess } from "../rpc/omp-process";
 import { renameStoredSession } from "../sessions/rename";
 import { guessSessionDir, listSessions, relativeTime, sessionLabel } from "../sessions/session-store";
 import { webviewHtml } from "../webview-html";
-import { type AgentHost, errorMessage, type HostView, type SessionTarget } from "./agent-host";
+import {
+	type AgentHost,
+	type EditPlan,
+	errorMessage,
+	type FileRestore,
+	type HostView,
+	type SessionTarget,
+} from "./agent-host";
 import type { AgentPool } from "./agent-pool";
 
 export interface ChatSurface {
@@ -181,28 +188,48 @@ export class ChatSession implements vscode.Disposable, HostView {
 	}
 
 	/**
-	 * Resend an earlier prompt edited. Editing one that is not the last drops the
-	 * later turns from the conversation, so that asks for confirmation first.
+	 * Resend a prompt edited. Editing one that is not the last drops the later
+	 * turns from the conversation, and when omp changed files since that prompt
+	 * the user picks whether they go back too; either asks for confirmation.
 	 */
 	async #editMessage(fromEnd: number, original: string, text: string): Promise<void> {
 		let resent = false;
 		try {
-			if (fromEnd > 0) {
-				const later = fromEnd === 1 ? "the message after it" : `the ${fromEnd} messages after it`;
-				const choice = await vscode.window.showWarningMessage(
-					"Edit this message and continue from it?",
-					{
-						modal: true,
-						detail: `omp continues the session from the edited message: ${later} and every answer to them are removed from the conversation. Changes omp already made to your files are not undone.`,
-					},
-					"Edit and Resend",
-				);
-				if (choice !== "Edit and Resend") return;
-			}
-			resent = await this.#requireHost().editMessage(fromEnd, original, text);
+			const host = this.#requireHost();
+			const plan = await host.planEdit(fromEnd, original);
+			const decision = await confirmEdit(fromEnd, plan);
+			if (!decision) return;
+			const result = await host.editMessage(fromEnd, original, text, decision.restore);
+			resent = result.resent;
+			if (result.restored) void this.#reportRestore(host, result.restored);
 		} finally {
 			// The webview keeps the editor open until the conversation reloads.
 			if (!resent) this.post({ type: "editAborted" });
+		}
+	}
+
+	/** Say what the restore did, offering to undo it. */
+	async #reportRestore(host: AgentHost, restored: FileRestore): Promise<void> {
+		const count = restored.files.length;
+		const kept = restored.conflicts.length;
+		if (count === 0 && kept === 0) return;
+		const parts = [`omp: restored ${count} ${count === 1 ? "file" : "files"}`];
+		if (kept > 0) parts.push(`kept ${kept} you also changed: ${relativeList(restored.conflicts)}`);
+		const message = `${parts.join("; ")}.`;
+		if (count === 0) {
+			void vscode.window.showInformationMessage(message);
+			return;
+		}
+		if ((await vscode.window.showInformationMessage(message, "Undo")) !== "Undo") return;
+		try {
+			const skipped = await host.undoRestore(restored);
+			if (skipped.length > 0) {
+				void vscode.window.showWarningMessage(
+					`omp: undid the restore except for files changed since: ${relativeList(skipped)}.`,
+				);
+			}
+		} catch (error) {
+			this.#notice("error", `Undo failed: ${errorMessage(error)}`);
 		}
 	}
 
@@ -409,4 +436,68 @@ async function isFile(file: string): Promise<boolean> {
 		stats => stats.isFile(),
 		() => false,
 	);
+}
+
+const RESTORE = "Edit and Restore Files";
+const KEEP = "Edit Only";
+const RESEND = "Edit and Resend";
+
+/**
+ * Ask how to edit prompt `fromEnd`: whether to continue (always asked when
+ * later messages go away) and whether to restore the files omp changed since,
+ * with the conflicting files to reset outright. Undefined when cancelled.
+ */
+async function confirmEdit(
+	fromEnd: number,
+	plan: EditPlan,
+): Promise<{ restore?: { overwrite: string[] } } | undefined> {
+	const changed = plan.files.length + plan.conflicts.length;
+	if (fromEnd === 0 && changed === 0) return {};
+	const detail: string[] = [];
+	if (fromEnd > 0) {
+		const later = fromEnd === 1 ? "the message after it" : `the ${fromEnd} messages after it`;
+		detail.push(
+			`omp continues the session from the edited message: ${later} and every answer to them are removed from the conversation.`,
+		);
+	}
+	if (changed > 0) {
+		detail.push(
+			`Since this message omp changed ${changed} ${changed === 1 ? "file" : "files"}: ${relativeList([...plan.files, ...plan.conflicts])}. Restoring reverts only omp's changes; changes made by you or other sessions are kept.`,
+		);
+		if (plan.conflicts.length > 0) {
+			detail.push(
+				`${plan.conflicts.length} of them were also changed by someone else on the same lines; you choose which of those go back.`,
+			);
+		}
+		detail.push("Git-ignored files (such as a venv) and files outside git repositories are not restored.");
+	} else if (!plan.checkpoint) {
+		detail.push("This message has no file snapshot, so your files stay as they are.");
+	}
+	const buttons = changed > 0 ? [RESTORE, KEEP] : [RESEND];
+	const choice = await vscode.window.showWarningMessage(
+		fromEnd > 0 ? "Edit this message and continue from it?" : "Restore the files omp changed since this message?",
+		{ modal: true, detail: detail.join("\n\n") },
+		...buttons,
+	);
+	if (choice === undefined) return undefined;
+	if (choice !== RESTORE) return {};
+	if (plan.conflicts.length === 0) return { restore: { overwrite: [] } };
+	const picked = await vscode.window.showQuickPick(
+		plan.conflicts.map(file => ({ label: vscode.workspace.asRelativePath(file), file })),
+		{
+			canPickMany: true,
+			title: "omp: files changed by omp and by someone else",
+			placeHolder: "Pick the files to put back as they were before the message (other changes in them are lost)",
+		},
+	);
+	if (picked === undefined) return undefined;
+	return { restore: { overwrite: picked.map(item => item.file) } };
+}
+
+/** Up to six workspace-relative paths, then "and N more". */
+function relativeList(files: readonly string[]): string {
+	const shown = files.slice(0, 6).map(file => vscode.workspace.asRelativePath(file));
+	return files.length > shown.length
+		? `${shown.join(", ")} and ${files.length - shown.length} more`
+		: shown.join(", ");
 }

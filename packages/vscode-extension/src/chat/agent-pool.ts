@@ -10,6 +10,7 @@
  * "done" until a view shows the session again.
  */
 import * as vscode from "vscode";
+import type { CheckpointStore } from "../checkpoints/store";
 import type { SessionActivity } from "../protocol";
 import { AgentHost } from "./agent-host";
 
@@ -32,10 +33,13 @@ export class AgentPool implements vscode.Disposable {
 	/** A session no view shows is waiting for the user (a plan to approve). */
 	readonly onNeedsAttention = this.#onNeedsAttention.event;
 
-	constructor(readonly log: vscode.OutputChannel) {}
+	constructor(
+		readonly log: vscode.OutputChannel,
+		readonly checkpoints: CheckpointStore,
+	) {}
 
 	create(): AgentHost {
-		const host = new AgentHost(this.log);
+		const host = new AgentHost(this.log, this.checkpoints);
 		this.#hosts.add(host);
 		host.onDidChange(() => this.#update(host));
 		host.onNeedsAttention(() => this.#onNeedsAttention.fire(host));

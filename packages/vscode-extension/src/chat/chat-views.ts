@@ -6,6 +6,7 @@
  * act on.
  */
 import * as vscode from "vscode";
+import type { CheckpointStore } from "../checkpoints/store";
 import { readConfig } from "../config";
 import type { AgentHost, SessionTarget } from "./agent-host";
 import { AgentPool } from "./agent-pool";
@@ -29,8 +30,9 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 		readonly extensionUri: vscode.Uri,
 		readonly log: vscode.OutputChannel,
 		readonly commands: SessionCommands,
+		checkpoints: CheckpointStore,
 	) {
-		this.pool = new AgentPool(log);
+		this.pool = new AgentPool(log, checkpoints);
 		this.pool.onNeedsAttention(host => void this.#offerHost(host));
 	}
 

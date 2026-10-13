@@ -8,6 +8,7 @@
  * a view that attaches later gets a snapshot (`replay`).
  */
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import * as vscode from "vscode";
 import type {
@@ -16,7 +17,17 @@ import type {
 	RpcNotification,
 	SessionState,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
-import { ompCommand, readConfig, workspaceCwd } from "../config";
+import { gitAvailable } from "../checkpoints/git";
+import { discoverRepos } from "../checkpoints/repos";
+import {
+	restoreTurns,
+	snapshotTree,
+	type TurnSnapshots,
+	undoRestore,
+	type WrittenFile,
+} from "../checkpoints/snapshots";
+import type { CheckpointStore, RepoCheckpoint } from "../checkpoints/store";
+import { ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
 import { DialogBridge } from "../dialogs";
 import type { AgentStatus, ChatUpdate, ModelChoice } from "../protocol";
 import { OmpCommandError, OmpProcess, type OmpResult } from "../rpc/omp-process";
@@ -66,6 +77,29 @@ const NAVIGATE_BUSY_DELAY_MS = 500;
 /** What a new process should open. */
 export type SessionTarget = { kind: "continue" } | { kind: "new" } | { kind: "resume"; sessionFile: string };
 
+/** Files involved in editing a prompt (absolute paths). */
+export interface EditPlan {
+	/** Whether the prompt has a file checkpoint (it started a turn while file checkpoints were on). */
+	checkpoint: boolean;
+	/** Files a restore changes. */
+	files: string[];
+	/** Files omp and someone else changed on the same lines: a restore leaves them unless told to overwrite. */
+	conflicts: string[];
+}
+
+/** A file restore that was applied, with what undoing it needs. */
+export interface FileRestore {
+	repos: Array<{ root: string; current: string; files: WrittenFile[] }>;
+	files: string[];
+	conflicts: string[];
+}
+
+export interface EditResult {
+	/** False when a hook vetoed the rewind: nothing changed. */
+	resent: boolean;
+	restored?: FileRestore;
+}
+
 /** A chat view showing a host: where its updates go. */
 export interface HostView {
 	post(update: ChatUpdate): void;
@@ -86,6 +120,10 @@ export class AgentHost implements vscode.Disposable {
 	/** A turn finished while no view was attached; cleared when a view shows the session. */
 	#finishedUnseen = false;
 	#refreshTimer: NodeJS.Timeout | undefined;
+	/** The turn being checkpointed: snapshots taken before its prompt was sent. */
+	#turn: { sessionFile: string; repos: RepoCheckpoint[]; promptTimestamp?: number } | undefined;
+	/** Checkpoint snapshots and writes, in order; awaited before anything reads them. */
+	#checkpointWork: Promise<void> = Promise.resolve();
 	readonly #views = new Set<HostView>();
 	readonly #dialogs: DialogBridge;
 	readonly #statusTexts = new Map<string, string>();
@@ -98,7 +136,10 @@ export class AgentHost implements vscode.Disposable {
 	/** Fires when the session waits for the user (a plan to approve) with no view showing it. */
 	readonly onNeedsAttention = this.#onNeedsAttention.event;
 
-	constructor(readonly log: vscode.OutputChannel) {
+	constructor(
+		readonly log: vscode.OutputChannel,
+		private readonly checkpoints?: CheckpointStore,
+	) {
 		this.#dialogs = new DialogBridge({
 			respond: response => this.#process?.respond(response),
 			setStatus: (key, text) => {
@@ -241,12 +282,33 @@ export class AgentHost implements vscode.Disposable {
 		await this.#sendSnapshot(process, this.#views);
 	}
 
+	/** Send a prompt. One that starts a turn first snapshots the workspace's repositories (file checkpoints). */
 	async prompt(text: string, images: ImageContent[] | undefined): Promise<void> {
-		await this.#requireProcess().request("prompt", {
+		const process = this.#requireProcess();
+		if (!this.#busy) await this.#beginTurnCheckpoint();
+		await process.request("prompt", {
 			message: text,
 			...(images?.length ? { images } : {}),
 			streamingBehavior: readConfig().sendWhileBusy,
 		});
+	}
+
+	/**
+	 * What editing the prompt `fromEnd` prompts from the end involves for files:
+	 * whether that prompt has a file checkpoint and, if so, which files a
+	 * restore would change and which conflict (changed by omp and by someone
+	 * else on the same lines). Nothing changes on disk.
+	 */
+	async planEdit(fromEnd: number, original: string): Promise<EditPlan> {
+		const target = await this.#findPrompt(this.#requireProcess(), fromEnd, original);
+		const repos = await this.#repoTurns(target.timestamps);
+		if (!repos) return { checkpoint: false, files: [], conflicts: [] };
+		const results = await Promise.all(repos.map(repo => restoreTurns(repo.root, repo.turns, { write: false })));
+		return {
+			checkpoint: true,
+			files: results.flatMap(result => result.files.map(file => path.join(result.root, file.path))),
+			conflicts: results.flatMap(result => result.conflicts.map(file => path.join(result.root, file))),
+		};
 	}
 
 	/**
@@ -255,20 +317,42 @@ export class AgentHost implements vscode.Disposable {
 	 * in place to just before that message, so the edited prompt continues from
 	 * there and the later turns leave the conversation (they stay in the session
 	 * file on an abandoned branch, reachable from the terminal's `/tree`).
-	 * A running turn is aborted first. Returns false when a hook vetoed the rewind.
+	 * A running turn is aborted first.
+	 *
+	 * With `restoreFiles`, the files omp changed since that message go back to
+	 * how they were (see `restoreTurns`); conflicting files listed in `overwrite`
+	 * are reset outright, other conflicts are left as they are.
 	 */
-	async editMessage(fromEnd: number, original: string, text: string): Promise<boolean> {
+	async editMessage(
+		fromEnd: number,
+		original: string,
+		text: string,
+		restoreFiles?: { overwrite: readonly string[] },
+	): Promise<EditResult> {
 		const process = this.#requireProcess();
-		const entryId = await this.#userEntryId(process, fromEnd, original);
+		const target = await this.#findPrompt(process, fromEnd, original);
 		if (this.running) {
 			await process.request("abort");
 			await this.#untilIdle();
 		}
-		const result = await this.#navigateTree(process, entryId);
-		if (result.cancelled) return false;
+		// The aborted turn's closing snapshot belongs to what gets restored.
+		await this.#checkpointWork;
+		const result = await this.#navigateTree(process, target.entryId);
+		if (result.cancelled) return { resent: false };
+		const restored = restoreFiles ? await this.#restoreFiles(target.timestamps, restoreFiles.overwrite) : undefined;
 		await this.#sendSnapshot(process, this.#views);
 		await this.prompt(text, result.editorImages);
-		return true;
+		return { resent: true, restored };
+	}
+
+	/** Undo a file restore; resolves to the files left alone because they changed since. */
+	async undoRestore(restored: FileRestore): Promise<string[]> {
+		const skipped = await Promise.all(
+			restored.repos.map(async repo =>
+				(await undoRestore(repo.root, repo.current, repo.files)).map(file => path.join(repo.root, file)),
+			),
+		);
+		return skipped.flat();
 	}
 
 	async removeQueued(message: string, queue: "steering" | "followUp"): Promise<void> {
@@ -351,23 +435,132 @@ export class AgentHost implements vscode.Disposable {
 		return process;
 	}
 
-	/** The entry id of the user message `fromEnd` prompts from the end of the current branch. */
-	async #userEntryId(process: OmpProcess, fromEnd: number, original: string): Promise<string> {
+	/**
+	 * The user message `fromEnd` prompts from the end of the current branch:
+	 * its entry id, and the timestamps of it and every later prompt, oldest first.
+	 */
+	async #findPrompt(
+		process: OmpProcess,
+		fromEnd: number,
+		original: string,
+	): Promise<{ entryId: string; timestamps: number[] }> {
 		const { entries, leafId } = await process.request("get_entries", {});
 		const byId = new Map<string, Record<string, unknown>>();
 		for (const entry of entries) if (typeof entry.id === "string") byId.set(entry.id, entry);
+		const timestamps: number[] = [];
 		let seen = 0;
 		for (let id = leafId; id;) {
 			const entry = byId.get(id);
 			if (!entry) break;
-			const prompt = userPromptText(entry);
-			if (prompt !== undefined && seen++ === fromEnd) {
-				if (prompt.trim() !== original.trim()) break;
-				return id;
+			const prompt = userPrompt(entry);
+			if (prompt) {
+				if (prompt.timestamp !== undefined) timestamps.unshift(prompt.timestamp);
+				if (seen++ === fromEnd) {
+					if (prompt.text.trim() !== original.trim()) break;
+					// Checkpoints are keyed by the prompt's timestamp: without one there is none to find.
+					return { entryId: id, timestamps: prompt.timestamp === undefined ? [] : timestamps };
+				}
 			}
 			id = typeof entry.parentId === "string" ? entry.parentId : null;
 		}
 		throw new Error("That message is no longer in this session. Reopen the chat and try again.");
+	}
+
+	/** Snapshot the repositories before a turn starts; the prompt that starts it keys the checkpoint. */
+	async #beginTurnCheckpoint(): Promise<void> {
+		this.#turn = undefined;
+		const sessionFile = this.sessionFile;
+		if (!this.checkpoints || !sessionFile || !readConfig().fileCheckpoints || !(await gitAvailable())) return;
+		try {
+			const roots = await discoverRepos(workspaceRoots());
+			const repos = await Promise.all(
+				roots.map(root =>
+					snapshotTree(root).then(
+						before => ({ root, before }),
+						error => {
+							this.log.appendLine(`[checkpoint] ${root}: ${errorMessage(error)}`);
+							return undefined;
+						},
+					),
+				),
+			);
+			this.#turn = { sessionFile, repos: repos.filter(repo => repo !== undefined) };
+		} catch (error) {
+			this.log.appendLine(`[checkpoint] ${errorMessage(error)}`);
+		}
+	}
+
+	/** Track the turn's checkpoint through its events: keyed by its prompt, closed by `agent_end`. */
+	#trackCheckpoint(frame: RpcNotification): void {
+		const turn = this.#turn;
+		const store = this.checkpoints;
+		if (!turn || !store) return;
+		if ((frame.type === "message_start" || frame.type === "message_end") && turn.promptTimestamp === undefined) {
+			const message = frame.message;
+			if (message.role !== "user" || message.synthetic) return;
+			turn.promptTimestamp = message.timestamp;
+			const checkpoint = { promptTimestamp: message.timestamp, repos: turn.repos };
+			this.#queueCheckpointWork(() => store.put(turn.sessionFile, checkpoint));
+		} else if (frame.type === "agent_end") {
+			this.#turn = undefined;
+			const promptTimestamp = turn.promptTimestamp;
+			if (promptTimestamp === undefined) return;
+			this.#queueCheckpointWork(async () => {
+				const repos = await Promise.all(
+					turn.repos.map(async repo => ({
+						...repo,
+						after: await snapshotTree(repo.root).catch(() => undefined),
+					})),
+				);
+				await store.put(turn.sessionFile, { promptTimestamp, repos });
+			});
+		}
+	}
+
+	#queueCheckpointWork(work: () => Promise<void>): void {
+		this.#checkpointWork = this.#checkpointWork
+			.then(work)
+			.catch(error => this.log.appendLine(`[checkpoint] ${errorMessage(error)}`));
+	}
+
+	/**
+	 * Per repository, the snapshots of the turns started by `timestamps` (a
+	 * prompt and the later ones on the branch), or undefined when the first of
+	 * them has no checkpoint. Repositories the first checkpoint lacks are skipped.
+	 */
+	async #repoTurns(
+		timestamps: readonly number[],
+	): Promise<Array<{ root: string; turns: TurnSnapshots[] }> | undefined> {
+		const sessionFile = this.sessionFile;
+		const [first] = timestamps;
+		if (!this.checkpoints || !sessionFile || first === undefined) return undefined;
+		await this.#checkpointWork;
+		const byPrompt = new Map((await this.checkpoints.load(sessionFile)).map(entry => [entry.promptTimestamp, entry]));
+		const start = byPrompt.get(first);
+		if (!start) return undefined;
+		return start.repos.map(({ root }) => ({
+			root,
+			turns: timestamps.flatMap(timestamp => byPrompt.get(timestamp)?.repos.find(repo => repo.root === root) ?? []),
+		}));
+	}
+
+	async #restoreFiles(timestamps: readonly number[], overwrite: readonly string[]): Promise<FileRestore | undefined> {
+		const repos = await this.#repoTurns(timestamps);
+		if (!repos) return undefined;
+		const results = await Promise.all(
+			repos.map(repo => {
+				const relative = overwrite
+					.map(file => path.relative(repo.root, file))
+					.filter(file => !file.startsWith("..") && !path.isAbsolute(file))
+					.map(file => file.split(path.sep).join("/"));
+				return restoreTurns(repo.root, repo.turns, { write: true, overwrite: new Set(relative) });
+			}),
+		);
+		return {
+			repos: results.map(({ root, current, files }) => ({ root, current, files })),
+			files: results.flatMap(result => result.files.map(file => path.join(result.root, file.path))),
+			conflicts: results.flatMap(result => result.conflicts.map(file => path.join(result.root, file))),
+		};
 	}
 
 	/** `navigate_tree`, retried while omp finishes winding down an aborted turn. */
@@ -461,6 +654,7 @@ export class AgentHost implements vscode.Disposable {
 
 	#onFrame(process: OmpProcess, frame: RpcNotification): void {
 		if (this.#process !== process) return;
+		this.#trackCheckpoint(frame);
 		switch (frame.type) {
 			case "available_commands_update":
 				this.post({ type: "commands", commands: frame.commands });
@@ -578,16 +772,18 @@ export function errorMessage(error: unknown): string {
 }
 
 /**
- * The text of a session entry that is a prompt the user wrote (a non-synthetic
- * user message), joined like the chat shows it; undefined for any other entry.
+ * A session entry that is a prompt the user wrote (a non-synthetic user
+ * message): its text, joined like the chat shows it, and its timestamp.
+ * Undefined for any other entry.
  */
-function userPromptText(entry: Record<string, unknown>): string | undefined {
+function userPrompt(entry: Record<string, unknown>): { text: string; timestamp: number | undefined } | undefined {
 	if (entry.type !== "message") return undefined;
 	const message = entry.message;
 	if (!message || typeof message !== "object" || !("role" in message) || message.role !== "user") return undefined;
 	if ("synthetic" in message && message.synthetic === true) return undefined;
+	const timestamp = "timestamp" in message && typeof message.timestamp === "number" ? message.timestamp : undefined;
 	const content = "content" in message ? message.content : undefined;
-	if (typeof content === "string") return content;
+	if (typeof content === "string") return { text: content, timestamp };
 	if (!Array.isArray(content)) return undefined;
 	const texts: string[] = [];
 	for (const block of content) {
@@ -595,5 +791,5 @@ function userPromptText(entry: Record<string, unknown>): string | undefined {
 			if (typeof block.text === "string") texts.push(block.text);
 		}
 	}
-	return texts.join("\n");
+	return { text: texts.join("\n"), timestamp };
 }

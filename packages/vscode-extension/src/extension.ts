@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { CheckpointStore } from "./checkpoints/store";
 import { errorMessage } from "./chat/agent-host";
 import type { ChatSession } from "./chat/chat-session";
 import { ChatRegistry } from "./chat/chat-views";
@@ -11,11 +12,17 @@ import { SettingsPanel, openConfigFile } from "./settings/settings-panel";
 
 export function activate(context: vscode.ExtensionContext): void {
 	const log = vscode.window.createOutputChannel("omp (custom)");
-	const chats: ChatRegistry = new ChatRegistry(context.extensionUri, log, {
-		openSettings: () => SettingsPanel.show(context.extensionUri),
-		login: session => void login(session),
-		attachFiles: session => void attachFiles(session),
-	});
+	const checkpoints = new CheckpointStore(path.join(context.globalStorageUri.fsPath, "checkpoints"));
+	const chats: ChatRegistry = new ChatRegistry(
+		context.extensionUri,
+		log,
+		{
+			openSettings: () => SettingsPanel.show(context.extensionUri),
+			login: session => void login(session),
+			attachFiles: session => void attachFiles(session),
+		},
+		checkpoints,
+	);
 	// Running and finished-unseen marks for every session with a process in this window.
 	const tree = new SessionsTree(() => chats.pool.activities());
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
@@ -150,6 +157,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		const chat = chats.active;
 		if (chat?.process && chat.state?.sessionFile === item.session.path) await chat.newSession();
 		await chats.pool.stopSession(item.session.path);
+		await checkpoints.remove(item.session.path);
 		for (const file of sessionPaths(item.session.path)) {
 			await vscode.workspace.fs
 				.delete(vscode.Uri.file(file), { recursive: true, useTrash: true })

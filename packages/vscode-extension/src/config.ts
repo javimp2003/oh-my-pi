@@ -13,6 +13,7 @@ export function readConfig() {
 		env: config.get<Record<string, string>>("env", {}),
 		resumeLastSession: config.get<boolean>("resumeLastSession", true),
 		sendWhileBusy: config.get<"steer" | "followUp">("sendWhileBusy", "steer"),
+		fileCheckpoints: config.get<boolean>("fileCheckpoints", true),
 	};
 }
 
@@ -22,6 +23,12 @@ export function workspaceCwd(): string {
 	const folder =
 		(active && vscode.workspace.getWorkspaceFolder(active)) ?? vscode.workspace.workspaceFolders?.[0] ?? undefined;
 	return folder?.uri.fsPath ?? os.homedir();
+}
+
+/** Every workspace folder, or the folder omp works in when none is open. */
+export function workspaceRoots(): string[] {
+	const folders = vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? [];
+	return folders.length > 0 ? folders : [workspaceCwd()];
 }
 
 export function ompCommand(cwd: string): OmpCommand {

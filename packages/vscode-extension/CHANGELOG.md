@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.0]
+
+### Added
+
+- Editing a prompt can restore the files omp changed since it ("Edit and Restore Files", also offered for the last prompt when it changed files). The extension snapshots every git repository of the workspace before each prompt that starts a turn and when the turn ends, and reverts only what changed inside omp's turns, shell commands included; changes you or other sessions made in between are kept, and files both changed on the same lines are listed so you pick which go back. A notification offers to undo the restore. Snapshots never touch branches, the index or history; git-ignored files (a venv, `node_modules`), untracked files over 10 MB and files outside git repositories are not covered. Prompts sent before this version, or while omp was working, have no snapshot. Needs git on the PATH; `ompCustom.fileCheckpoints` turns it off
+
 ## [0.4.0]
 
 ### Added
