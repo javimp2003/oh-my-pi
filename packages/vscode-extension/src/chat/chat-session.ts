@@ -292,7 +292,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 			return;
 		}
 		if (action === "start") {
-			await this.#startDictation(host, false);
+			await this.#startDictation(host);
 			return;
 		}
 		try {
@@ -305,39 +305,27 @@ export class ChatSession implements vscode.Disposable, HostView {
 	}
 
 	/**
-	 * Start dictating. Without a usable speech model (no Groq key, local model
-	 * not downloaded) offer to sign in to Groq or download the local model.
+	 * Start dictating. Without a cloud speech model (no Groq key) offer to sign
+	 * in to Groq, then start.
 	 */
-	async #startDictation(host: AgentHost, allowDownload: boolean): Promise<void> {
-		const language = readConfig().voiceLanguage;
+	async #startDictation(host: AgentHost): Promise<void> {
 		try {
-			if (!allowDownload) {
-				await host.dictationStart(language, false);
-				return;
-			}
-			await vscode.window.withProgress(
-				{ location: vscode.ProgressLocation.Notification, title: "omp: downloading the speech model…" },
-				() => host.dictationStart(language, true),
-			);
+			await host.dictationStart(readConfig().voiceLanguage);
 		} catch (error) {
 			this.post({ type: "dictation", state: "idle" });
 			if (!(error instanceof OmpCommandError)) throw error;
 			if (error.message.startsWith("Unknown command")) {
 				throw new Error("Voice input needs a newer omp (one with the dictation RPC commands).");
 			}
-			if (error.code !== "model_download_required" && error.code !== "no_dictation_model") throw error;
-			const setup = await chooseSpeechSetup(error.code === "model_download_required" ? error.message : undefined);
-			if (setup === "groq") {
-				const process = host.process;
-				if (!process) return;
-				await vscode.window.withProgress(
-					{ location: vscode.ProgressLocation.Notification, title: "omp: signing in to Groq…" },
-					() => process.request("login", { providerId: "groq" }),
-				);
-				await this.#startDictation(host, false);
-			} else if (setup === "download") {
-				await this.#startDictation(host, true);
-			}
+			if (error.code !== "no_dictation_model") throw error;
+			if (!(await confirmGroqSetup())) return;
+			const process = host.process;
+			if (!process) return;
+			await vscode.window.withProgress(
+				{ location: vscode.ProgressLocation.Notification, title: "omp: signing in to Groq…" },
+				() => process.request("login", { providerId: "groq" }),
+			);
+			await this.#startDictation(host);
 		}
 	}
 
@@ -568,27 +556,18 @@ function relativeList(files: readonly string[]): string {
 		: shown.join(", ");
 }
 
-const SET_UP_GROQ = "Use Groq (free API key)";
-const DOWNLOAD_LOCAL = "Download Local Model";
+const SIGN_IN_TO_GROQ = "Sign In to Groq";
 
-/**
- * Ask how voice input should transcribe when omp has no usable speech model:
- * Groq's hosted Whisper (an API key from console.groq.com, free tier) or omp's
- * local model. `download` is omp's message naming the local model and its size.
- */
-async function chooseSpeechSetup(download: string | undefined): Promise<"groq" | "download" | undefined> {
-	const detail = [
-		"omp records your microphone and turns speech into text with a speech model.",
-		"Groq transcribes with Whisper in about a second; its free tier covers hours of audio a day. Sign in with an API key from console.groq.com/keys.",
-		download
-			? `Or run it on this machine: ${download.replace(/ must be downloaded first$/, "")} is downloaded once.`
-			: undefined,
-	].filter(Boolean);
+/** Voice input transcribes through Groq's API: ask to sign in when omp has no Groq key. */
+async function confirmGroqSetup(): Promise<boolean> {
 	const choice = await vscode.window.showInformationMessage(
 		"Set up voice input",
-		{ modal: true, detail: detail.join("\n\n") },
-		SET_UP_GROQ,
-		...(download ? [DOWNLOAD_LOCAL] : []),
+		{
+			modal: true,
+			detail:
+				"omp records your microphone and Groq turns speech into text with Whisper, in about a second; its free tier covers hours of audio a day. Sign in with an API key from console.groq.com/keys.",
+		},
+		SIGN_IN_TO_GROQ,
 	);
-	return choice === SET_UP_GROQ ? "groq" : choice === DOWNLOAD_LOCAL ? "download" : undefined;
+	return choice === SIGN_IN_TO_GROQ;
 }

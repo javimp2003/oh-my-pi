@@ -1,15 +1,16 @@
 /**
  * Dictation for RPC mode: records the default microphone through the same
- * {@link STTController} as the TUI's speech-to-text (native capture, the
- * `dictation` model role: a cloud transcription API or a local model) and
- * hands the text to the host instead of an editor. State changes and the
- * running transcript go out as unsolicited `dictation_state` frames.
+ * {@link STTController} as the TUI's speech-to-text (native capture) and
+ * transcribes it through a cloud transcription API (the first
+ * `openai-transcriptions` model of the `dictation` role chain, e.g. Groq's
+ * Whisper), then hands the text to the host instead of an editor. Local
+ * speech models are never used here: hosts get no model download. State
+ * changes and the transcript go out as unsolicited `dictation_state` frames.
  */
+import type { Api, Model } from "@oh-my-pi/pi-catalog/types";
 import { resolveRoleChain } from "../../config/model-resolver";
 import { roleCandidatePool } from "../../config/model-roles";
 import type { AgentSession } from "../../session/agent-session";
-import { isSttModelCached } from "../../stt/downloader";
-import { resolveSttModelSpec } from "../../stt/models";
 import { type SttCallbacks, STTController, type SttState, type SttTarget } from "../../stt/stt-controller";
 import type { RpcDictationStateFrame } from "./rpc-types";
 
@@ -23,15 +24,13 @@ export type RpcDictationControllerFactory = (session: AgentSession) => RpcDictat
 export interface RpcDictationStartOptions {
 	/** Source language for this capture (`""` lets the model detect it); `stt.language` when omitted. */
 	language?: string;
-	/** Allow a first-use download of a local speech model (otherwise refused with `model_download_required`). */
-	allowDownload?: boolean;
 }
 
 /** A failed dictation command, with an optional machine-readable `code` for the response. */
 export class RpcDictationError extends Error {
 	constructor(
 		message: string,
-		readonly code?: "no_dictation_model" | "model_download_required" | "dictation_busy" | "not_dictating",
+		readonly code?: "no_dictation_model" | "dictation_busy" | "not_dictating",
 	) {
 		super(message);
 		this.name = "RpcDictationError";
@@ -83,18 +82,9 @@ export class RpcDictationBridge {
 		const model = this.#resolveModel();
 		if (!model) {
 			throw new RpcDictationError(
-				"No speech-to-text model is available: log in to Groq or set the dictation model role",
+				"No cloud speech-to-text model is available: log in to Groq (or another transcription provider)",
 				"no_dictation_model",
 			);
-		}
-		if (model.api === "local-inference" && !options.allowDownload) {
-			const spec = resolveSttModelSpec(model.id);
-			if (!(await isSttModelCached(spec.key))) {
-				throw new RpcDictationError(
-					`The local speech model ${spec.label} (${spec.sizeHint}) must be downloaded first`,
-					"model_download_required",
-				);
-			}
 		}
 		this.#committed = "";
 		this.#volatile = "";
@@ -103,7 +93,7 @@ export class RpcDictationBridge {
 		this.#controller ??= this.#createController(this.#session);
 		this.#stepping = true;
 		try {
-			await this.#controller.start(this.#target(), this.#callbacks(), { language: options.language });
+			await this.#controller.start(this.#target(), this.#callbacks(), { language: options.language, model });
 		} finally {
 			this.#stepping = false;
 		}
@@ -147,10 +137,13 @@ export class RpcDictationBridge {
 		}
 	}
 
-	#resolveModel() {
+	/** The first cloud transcription model of the `dictation` role chain; local models are skipped. */
+	#resolveModel(): Model<Api> | undefined {
 		const settings = this.#session.settings;
 		const pool = roleCandidatePool("dictation", settings, this.#session.modelRegistry);
-		return resolveRoleChain("dictation", settings, pool)[0]?.model;
+		return resolveRoleChain("dictation", settings, pool).find(
+			candidate => candidate.model.api === "openai-transcriptions",
+		)?.model;
 	}
 
 	#text(): string {

@@ -207,11 +207,11 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 	},
 	{
 		name: "dictation_start",
-		doc: 'Start recording the default microphone for dictation with the `dictation` model role; returns the speech model in use once recording. `language` overrides `stt.language` for this capture (`""` detects it). A local model that is not downloaded yet is refused with code `model_download_required` unless `allowDownload` is set; no usable model fails with `no_dictation_model`.',
-		params: { "language?": "string", "allowDownload?": "boolean" },
+		doc: 'Start recording the default microphone for dictation, transcribed by the first cloud transcription model (`openai-transcriptions`) of the `dictation` role; local models are never used. Returns that model once recording. `language` overrides `stt.language` for this capture (`""` detects it). Fails with `no_dictation_model` when no cloud model is usable (no Groq key).',
+		params: { "language?": "string" },
 		result: { model: "string" },
 		unwrap: "model",
-		timeoutMs: 600_000,
+		timeoutMs: 120_000,
 	},
 	{
 		name: "dictation_stop",

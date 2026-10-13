@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.1]
+
+### Changed
+
+- Voice input always transcribes through Groq's API: the option to download and run a local speech model is gone, and without a Groq key the microphone button only offers to sign in to Groq. Needs omp v18.9.1-custom.15 or later
+
 ## [0.6.0]
 
 ### Added

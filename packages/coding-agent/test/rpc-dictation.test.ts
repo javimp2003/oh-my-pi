@@ -165,12 +165,32 @@ describe("RpcDictationBridge", () => {
 		expect(bridge.active).toBe(false);
 	});
 
-	it("asks before downloading a local speech model", async () => {
+	it("never falls back to a local speech model", async () => {
 		const local = getBundledModel("local", "parakeet-tdt-0.6b-v3");
-		const { bridge } = track(harness({ available: [local] }));
-		vi.spyOn(downloader, "isSttModelCached").mockResolvedValue(false);
+		const { bridge, mic } = track(harness({ available: [local] }));
+		const cached = vi.spyOn(downloader, "isSttModelCached");
 
-		await expect(bridge.start()).rejects.toMatchObject({ code: "model_download_required" });
+		await expect(bridge.start()).rejects.toMatchObject({ code: "no_dictation_model" });
+		expect(mic.onAudio).toBeUndefined();
+		expect(cached).not.toHaveBeenCalled();
 		expect(bridge.active).toBe(false);
+	});
+
+	it("uses the cloud model even when the dictation role names a local one first", async () => {
+		const local = getBundledModel("local", "parakeet-tdt-0.6b-v3");
+		const { bridge, mic } = track(
+			harness({
+				available: [local, groqTurbo()],
+				settings: { modelRoles: { dictation: "local/parakeet-tdt-0.6b-v3" } },
+			}),
+		);
+		const transcribe = vi
+			.spyOn(transcription, "transcribeAudio")
+			.mockResolvedValue({ text: "hola", usage: ZERO_USAGE });
+
+		expect(await bridge.start()).toEqual({ model: "groq/whisper-large-v3-turbo" });
+		mic.onAudio?.(null, new Float32Array(160));
+		expect(await bridge.stop()).toEqual({ text: "hola", submit: false });
+		expect(transcribe.mock.calls[0]![0].provider).toBe("groq");
 	});
 });

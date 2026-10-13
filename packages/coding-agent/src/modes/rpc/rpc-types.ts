@@ -78,7 +78,7 @@ export type RpcCommand =
 	| { id?: string; type: "live_start"; voice?: string; instructions?: string }
 	| { id?: string; type: "live_stop" }
 	| { id?: string; type: "live_mute"; muted?: boolean }
-	| { id?: string; type: "dictation_start"; language?: string; allowDownload?: boolean }
+	| { id?: string; type: "dictation_start"; language?: string }
 	| { id?: string; type: "dictation_stop" }
 	| { id?: string; type: "dictation_cancel" }
 

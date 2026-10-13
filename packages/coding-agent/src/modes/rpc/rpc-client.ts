@@ -891,15 +891,12 @@ export class RpcClient {
 	}
 
 	/**
-	 * Start dictating from the default microphone with the `dictation` model role; resolves with
-	 * the speech model once recording. `language` overrides `stt.language` (`""` detects it).
+	 * Start dictating from the default microphone, transcribed by the first cloud model of the
+	 * `dictation` role; resolves with that model once recording. `language` overrides
+	 * `stt.language` (`""` detects it).
 	 */
-	async dictationStart(options?: { language?: string; allowDownload?: boolean }): Promise<{ model: string }> {
-		const response = await this.#send({
-			type: "dictation_start",
-			language: options?.language,
-			allowDownload: options?.allowDownload,
-		});
+	async dictationStart(options?: { language?: string }): Promise<{ model: string }> {
+		const response = await this.#send({ type: "dictation_start", language: options?.language });
 		return this.#getData(response);
 	}
 

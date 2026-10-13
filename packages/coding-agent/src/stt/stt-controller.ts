@@ -111,12 +111,20 @@ export class STTController {
 
 	/** Start dictating into `editor`, reporting to `options` until the capture ends. A no-op while a
 	 *  capture is starting, recording, or transcribing. `language` overrides `stt.language` for this
-	 *  capture (`""` lets the model detect it). */
-	async start(editor: SttTarget, options: SttCallbacks, overrides?: { language?: string }): Promise<void> {
+	 *  capture (`""` lets the model detect it); `model` pins the speech model instead of the
+	 *  `dictation` role. */
+	async start(
+		editor: SttTarget,
+		options: SttCallbacks,
+		overrides?: { language?: string; model?: Model<Api> },
+	): Promise<void> {
 		if (this.#state === "transcribing") options.showStatus("Transcription in progress...");
 		if (this.#toggling || this.#state !== "idle") return;
 		this.#captureLanguage = overrides?.language;
-		await this.#transition(options, () => this.#start(editor, options));
+		const model = overrides?.model;
+		await this.#transition(options, () =>
+			model ? this.#startPinned(editor, options, model) : this.#start(editor, options),
+		);
 	}
 
 	/** Stop the running capture and transcribe it. A capture still starting stops as soon as it is
@@ -208,6 +216,12 @@ export class STTController {
 				error: err instanceof Error ? err.message : String(err),
 			});
 		});
+	}
+
+	/** Start a capture on a given model: a cloud transcription API only, no local download. */
+	async #startPinned(editor: SttTarget, options: SttCallbacks, model: Model<Api>): Promise<void> {
+		if (model.api === "openai-transcriptions") this.#startBuffered(editor, options, model);
+		else options.showWarning(`Unsupported speech-to-text API: ${model.api}`);
 	}
 
 	async #start(editor: SttTarget, options: SttCallbacks): Promise<void> {

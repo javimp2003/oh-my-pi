@@ -1658,7 +1658,6 @@ export interface LiveMuteResult {
 
 export interface DictationStartParams {
 	language?: string;
-	allowDownload?: boolean;
 }
 
 export interface DictationStartResult {

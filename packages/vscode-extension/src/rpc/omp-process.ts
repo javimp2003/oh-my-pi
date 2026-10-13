@@ -59,7 +59,7 @@ interface ChunkFrame {
 
 /**
  * Commands answered only when long work finishes (a whole OAuth flow, a shell
- * command, a compaction, the OS microphone prompt or a speech model download).
+ * command, a compaction, the OS microphone permission prompt).
  */
 const UNBOUNDED_COMMANDS: Record<string, true> = {
 	login: true,

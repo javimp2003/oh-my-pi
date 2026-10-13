@@ -420,13 +420,13 @@ export class AgentHost implements vscode.Disposable {
 	}
 
 	/**
-	 * Start recording the microphone for dictation (omp records and transcribes);
-	 * resolves with the speech model once recording. `language` is an ISO code,
-	 * or `""` to let the model detect it. Unbounded: opening the microphone can
-	 * wait for the OS permission prompt, and a local model for its download.
+	 * Start recording the microphone for dictation (omp records, and transcribes
+	 * through a cloud API such as Groq's Whisper); resolves with the speech model
+	 * once recording. `language` is an ISO code, or `""` to let the model detect
+	 * it. Unbounded: opening the microphone can wait for the OS permission prompt.
 	 */
-	async dictationStart(language: string, allowDownload: boolean): Promise<string> {
-		const { model } = await this.#requireProcess().request("dictation_start", { language, allowDownload });
+	async dictationStart(language: string): Promise<string> {
+		const { model } = await this.#requireProcess().request("dictation_start", { language });
 		this.#dictating = true;
 		return model;
 	}

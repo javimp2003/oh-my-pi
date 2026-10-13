@@ -2189,11 +2189,7 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 					return error(id, "dictation_start", "End the live voice session before dictating", "dictation_busy");
 				}
 				try {
-					return success(
-						id,
-						"dictation_start",
-						await dictation.start({ language: command.language, allowDownload: command.allowDownload }),
-					);
+					return success(id, "dictation_start", await dictation.start({ language: command.language }));
 				} catch (err) {
 					return error(id, "dictation_start", toError(err).message, dictationErrorCode(err));
 				}

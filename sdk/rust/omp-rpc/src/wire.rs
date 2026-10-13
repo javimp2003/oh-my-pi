@@ -5333,8 +5333,6 @@ pub struct LiveMuteResult {
 pub struct DictationStartParams {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub language: Option<String>,
-	#[serde(rename = "allowDownload", default, skip_serializing_if = "Option::is_none")]
-	pub allow_download: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6523,18 +6521,16 @@ impl Command for LiveMuteCommand {
 	}
 }
 
-/// Start recording the default microphone for dictation with the `dictation` model role; returns the speech model in use once recording. `language` overrides `stt.language` for this capture (`""` detects it). A local model that is not downloaded yet is refused with code `model_download_required` unless `allowDownload` is set; no usable model fails with `no_dictation_model`.
+/// Start recording the default microphone for dictation, transcribed by the first cloud transcription model (`openai-transcriptions`) of the `dictation` role; local models are never used. Returns that model once recording. `language` overrides `stt.language` for this capture (`""` detects it). Fails with `no_dictation_model` when no cloud model is usable (no Groq key).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct DictationStartCommand {
 	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub language: Option<String>,
-	#[serde(rename = "allowDownload", default, skip_serializing_if = "Option::is_none")]
-	pub allow_download: Option<bool>,
 }
 
 impl Command for DictationStartCommand {
 	const NAME: &'static str = "dictation_start";
-	const TIMEOUT_MS: Option<u64> = Some(600000);
+	const TIMEOUT_MS: Option<u64> = Some(120000);
 	type Output = String;
 
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
