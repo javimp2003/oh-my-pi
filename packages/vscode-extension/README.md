@@ -27,7 +27,7 @@ omp must be installed. By default the extension runs `omp` from your `PATH` (`om
 | `ompCustom.executable` | Program to run: a full path to `omp`/`omp.exe`, or `bun` for a source checkout |
 | `ompCustom.args` | Arguments before omp's flags, e.g. `["/path/to/oh-my-pi/packages/coding-agent/src/cli.ts"]` with `bun` |
 | `ompCustom.extraArgs` | Extra omp flags for the chat agent (`--model`, `--profile`, …) |
-| `ompCustom.env` | Extra environment variables (proxy, certificates, API keys) |
+| `ompCustom.env` | Extra environment variables (proxy, certificates, API keys). omp already trusts the certificates of the OS store (the Windows certificate store, or roots added to the macOS keychain), so a company network that re-signs HTTPS works without setup; `NODE_EXTRA_CA_CERTS` here replaces that with your own `.pem` |
 | `ompCustom.resumeLastSession` | Continue the workspace's latest session when the chat opens (default on) |
 | `ompCustom.sendWhileBusy` | `steer` (deliver mid-turn, default) or `followUp` (queue until the turn ends) |
 | `ompCustom.fileCheckpoints` | Snapshot the workspace's git repositories around each turn so editing a prompt can restore files (default on) |

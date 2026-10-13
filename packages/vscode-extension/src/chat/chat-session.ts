@@ -65,7 +65,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 		surface.webview.html = webviewHtml(surface.webview, extensionUri, "chat");
 		this.#disposables.push(
 			surface.webview.onDidReceiveMessage((request: ChatRequest) => {
-				void this.#handle(request).catch(error => this.#notice("error", errorMessage(error)));
+				void this.#handle(request).catch(error => this.#notice("error", explainError(errorMessage(error))));
 			}),
 			// Running/finished marks in the history panel follow every session of the window.
 			pool.onDidChangeActivity(() => this.post({ type: "sessionActivity", activity: pool.activities() })),
@@ -546,6 +546,16 @@ async function confirmEdit(
 	);
 	if (picked === undefined) return undefined;
 	return { restore: { overwrite: picked.map(item => item.file) } };
+}
+
+/**
+ * A certificate failure means the network re-signs HTTPS with a root omp does
+ * not trust: the OS store is already handed to omp, so say where to add one
+ * that is not there.
+ */
+function explainError(message: string): string {
+	if (!/certificate/i.test(message)) return message;
+	return `${message}. Your network re-signs HTTPS with its own certificate, which the OS certificate store does not hold: set NODE_EXTRA_CA_CERTS in the ompCustom.env setting to that certificate's .pem file (ask IT for it), then restart the chat.`;
 }
 
 /** Up to six workspace-relative paths, then "and N more". */

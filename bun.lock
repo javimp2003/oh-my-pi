@@ -306,7 +306,7 @@
     },
     "packages/vscode-extension": {
       "name": "omp-custom-vscode",
-      "version": "0.6.1",
+      "version": "0.6.2",
       "devDependencies": {
         "@oh-my-pi/pi-coding-agent": "catalog:",
         "@types/bun": "catalog:",

@@ -2,6 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { OmpCommand } from "./rpc/omp-process";
+import { systemCaEnv } from "./system-ca";
 
 /** The `ompCustom.*` settings, read fresh on every use so edits apply to the next process. */
 export function readConfig() {
@@ -40,8 +41,9 @@ export function workspaceRoots(): string[] {
 
 export function ompCommand(cwd: string): OmpCommand {
 	const { executable, args, env } = readConfig();
-	// Keep session titles (RPC skips them by default) so the sessions list reads well.
-	return { executable, args, env: { PI_RPC_AUTO_TITLE: "1", ...env }, cwd };
+	// Keep session titles (RPC skips them by default) so the sessions list reads well. The OS store's
+	// certificates let omp reach HTTPS services through a network that re-signs TLS (see system-ca.ts).
+	return { executable, args, env: { PI_RPC_AUTO_TITLE: "1", ...systemCaEnv(env), ...env }, cwd };
 }
 
 /** omp's agent directory (`PI_CODING_AGENT_DIR`, default `~/.omp/agent`), honoring `ompCustom.env`. */

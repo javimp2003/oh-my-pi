@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.2]
+
+### Fixed
+
+- Behind a company network that re-signs HTTPS with its own root certificate, omp failed with "self signed certificate in certificate chain" (for example signing in to Groq for voice input) even though the root is installed in the system. The extension now hands omp the certificates of the OS store (the Windows certificate store, or roots added to the macOS keychain) as `NODE_EXTRA_CA_CERTS`, unless you set that variable yourself; a certificate error that remains says how to add the company's certificate
+
 ## [0.6.1]
 
 ### Changed
