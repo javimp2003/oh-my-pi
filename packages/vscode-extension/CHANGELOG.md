@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.4]
+
+### Fixed
+
+- Editing a prompt in a session that changed no files no longer offers to restore files another session (or you) changed while it was answering. Only turns in which the session's own file tools ran (edit, write, ast_edit, notebook, an applied LSP rename or code action) are restored; turns that only talked or ran shell commands are left out, so changes made only through commands are no longer offered for restore
+
 ## [0.5.3]
 
 ### Added

@@ -20,6 +20,11 @@ export interface Checkpoint {
 	/** `timestamp` of the user message that started the turn (as stored in the session). */
 	promptTimestamp: number;
 	repos: RepoCheckpoint[];
+	/**
+	 * Whether the session's own file tools (edit, write…) ran during the turn.
+	 * Absent in checkpoints saved before it was tracked.
+	 */
+	editedFiles?: boolean;
 }
 
 export class CheckpointStore {

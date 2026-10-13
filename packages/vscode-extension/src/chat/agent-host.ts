@@ -123,7 +123,7 @@ export class AgentHost implements vscode.Disposable {
 	#finishedUnseen = false;
 	#refreshTimer: NodeJS.Timeout | undefined;
 	/** The turn being checkpointed: snapshots taken before its prompt was sent. */
-	#turn: { sessionFile: string; repos: RepoCheckpoint[]; promptTimestamp?: number } | undefined;
+	#turn: { sessionFile: string; repos: RepoCheckpoint[]; promptTimestamp?: number; editedFiles: boolean } | undefined;
 	/** Checkpoint snapshots and writes, in order; awaited before anything reads them. */
 	#checkpointWork: Promise<void> = Promise.resolve();
 	readonly #views = new Set<HostView>();
@@ -486,22 +486,30 @@ export class AgentHost implements vscode.Disposable {
 					),
 				),
 			);
-			this.#turn = { sessionFile, repos: repos.filter(repo => repo !== undefined) };
+			this.#turn = { sessionFile, repos: repos.filter(repo => repo !== undefined), editedFiles: false };
 		} catch (error) {
 			this.log.appendLine(`[checkpoint] ${errorMessage(error)}`);
 		}
 	}
 
-	/** Track the turn's checkpoint through its events: keyed by its prompt, closed by `agent_end`. */
+	/**
+	 * Track the turn's checkpoint through its events: keyed by its prompt,
+	 * marked when one of the session's own file tools runs, closed by `agent_end`.
+	 */
 	#trackCheckpoint(frame: RpcNotification): void {
 		const turn = this.#turn;
 		const store = this.checkpoints;
 		if (!turn || !store) return;
-		if ((frame.type === "message_start" || frame.type === "message_end") && turn.promptTimestamp === undefined) {
+		if (frame.type === "tool_execution_start") {
+			if (editsFiles(frame.toolName, frame.args)) turn.editedFiles = true;
+		} else if (
+			(frame.type === "message_start" || frame.type === "message_end") &&
+			turn.promptTimestamp === undefined
+		) {
 			const message = frame.message;
 			if (message.role !== "user" || message.synthetic) return;
 			turn.promptTimestamp = message.timestamp;
-			const checkpoint = { promptTimestamp: message.timestamp, repos: turn.repos };
+			const checkpoint = { promptTimestamp: message.timestamp, repos: turn.repos, editedFiles: turn.editedFiles };
 			this.#queueCheckpointWork(() => store.put(turn.sessionFile, checkpoint));
 		} else if (frame.type === "agent_end") {
 			this.#turn = undefined;
@@ -514,7 +522,7 @@ export class AgentHost implements vscode.Disposable {
 						after: await snapshotTree(repo.root).catch(() => undefined),
 					})),
 				);
-				await store.put(turn.sessionFile, { promptTimestamp, repos });
+				await store.put(turn.sessionFile, { promptTimestamp, repos, editedFiles: turn.editedFiles });
 			});
 		}
 	}
@@ -527,8 +535,11 @@ export class AgentHost implements vscode.Disposable {
 
 	/**
 	 * Per repository, the snapshots of the turns started by `timestamps` (a
-	 * prompt and the later ones on the branch), or undefined when the first of
-	 * them has no checkpoint. Repositories the first checkpoint lacks are skipped.
+	 * prompt and the later ones on the branch) in which the session edited files
+	 * with its own file tools, or undefined when the first prompt has no
+	 * checkpoint. Turns that edited nothing are left out, so what changed during
+	 * them (other sessions, the user) is never restored. Repositories the first
+	 * checkpoint lacks are skipped.
 	 */
 	async #repoTurns(
 		timestamps: readonly number[],
@@ -540,9 +551,14 @@ export class AgentHost implements vscode.Disposable {
 		const byPrompt = new Map((await this.checkpoints.load(sessionFile)).map(entry => [entry.promptTimestamp, entry]));
 		const start = byPrompt.get(first);
 		if (!start) return undefined;
+		// Checkpoints saved before this was tracked have no flag: they count as editing.
+		const editing = timestamps.flatMap(timestamp => {
+			const checkpoint = byPrompt.get(timestamp);
+			return checkpoint && checkpoint.editedFiles !== false ? [checkpoint] : [];
+		});
 		return start.repos.map(({ root }) => ({
 			root,
-			turns: timestamps.flatMap(timestamp => byPrompt.get(timestamp)?.repos.find(repo => repo.root === root) ?? []),
+			turns: editing.flatMap(checkpoint => checkpoint.repos.find(repo => repo.root === root) ?? []),
 		}));
 	}
 
@@ -778,6 +794,22 @@ export class AgentHost implements vscode.Disposable {
 
 export function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+/** omp's tools that write files directly; the `lsp` tool only when it applies a rename or code action. */
+const FILE_EDIT_TOOLS: Record<string, true> = { edit: true, write: true, ast_edit: true, notebook: true };
+const LSP_EDIT_ACTIONS: Record<string, true> = { rename: true, rename_file: true, code_actions: true };
+
+/**
+ * Whether a tool call edits files directly (edit, write, ast_edit, notebook,
+ * an applied LSP rename/code action). Shell and code tools do not count: what
+ * they change cannot be told apart from other sessions' work.
+ */
+export function editsFiles(toolName: string, args: unknown): boolean {
+	if (FILE_EDIT_TOOLS[toolName]) return true;
+	if (toolName !== "lsp" || !args || typeof args !== "object" || !("action" in args)) return false;
+	const apply = "apply" in args ? args.apply : undefined;
+	return typeof args.action === "string" && LSP_EDIT_ACTIONS[args.action] === true && apply !== false;
 }
 
 /**
