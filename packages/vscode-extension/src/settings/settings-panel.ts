@@ -12,8 +12,8 @@ import type { SettingEntry, SettingsRequest, SettingsUpdate } from "../protocol"
 import { webviewHtml } from "../webview-html";
 
 /** Run `omp <args>` and resolve with stdout; rejects with omp's own error text. */
-export function runOmp(args: readonly string[]): Promise<string> {
-	const command = ompCommand(workspaceCwd());
+export async function runOmp(args: readonly string[]): Promise<string> {
+	const command = await ompCommand(workspaceCwd());
 	const { promise, resolve, reject } = Promise.withResolvers<string>();
 	execFile(
 		command.executable,

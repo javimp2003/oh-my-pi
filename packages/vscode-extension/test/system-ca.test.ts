@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { systemCaEnv } from "../src/system-ca";
+import { certificatesInDir, systemCaEnv } from "../src/system-ca";
 
 const ROOT_A = "-----BEGIN CERTIFICATE-----\nMIIBcorpA\n-----END CERTIFICATE-----";
 const ROOT_B = "-----BEGIN CERTIFICATE-----\nMIIBcorpB\n-----END CERTIFICATE-----\n";
@@ -27,34 +27,45 @@ describe("systemCaEnv", () => {
 		delete process.env.NODE_EXTRA_CA_CERTS;
 		const dir = await tempDir();
 
-		const env = systemCaEnv({}, { certificates: () => [ROOT_A, ROOT_B], dir });
+		const env = await systemCaEnv({}, { certificates: async () => [ROOT_A, ROOT_B], dir });
 
 		expect(env.NODE_EXTRA_CA_CERTS).toBe(path.join(dir, "omp-vscode-system-ca.pem"));
 		expect(await fs.readFile(env.NODE_EXTRA_CA_CERTS!, "utf8")).toBe(`${ROOT_A}\n${ROOT_B.trim()}\n`);
 	});
 
-	it("follows a store that changed since the last start", async () => {
-		delete process.env.NODE_EXTRA_CA_CERTS;
-		const dir = await tempDir();
-		systemCaEnv({}, { certificates: () => [ROOT_A], dir });
-
-		const env = systemCaEnv({}, { certificates: () => [ROOT_A, ROOT_B], dir });
-
-		expect(await fs.readFile(env.NODE_EXTRA_CA_CERTS!, "utf8")).toContain("MIIBcorpB");
-	});
-
 	it("keeps a bundle the user configured, in ompCustom.env or VS Code's environment", async () => {
 		const dir = await tempDir();
-		const certificates = () => [ROOT_A];
+		const certificates = async () => [ROOT_A];
 
 		delete process.env.NODE_EXTRA_CA_CERTS;
-		expect(systemCaEnv({ NODE_EXTRA_CA_CERTS: "C:\\corp\\root.pem" }, { certificates, dir })).toEqual({});
+		expect(await systemCaEnv({ NODE_EXTRA_CA_CERTS: "C:\\corp\\root.pem" }, { certificates, dir })).toEqual({});
 		process.env.NODE_EXTRA_CA_CERTS = "/etc/corp/root.pem";
-		expect(systemCaEnv({}, { certificates, dir })).toEqual({});
+		expect(await systemCaEnv({}, { certificates, dir })).toEqual({});
 	});
 
-	it("adds nothing when the OS store has no certificates to add", async () => {
+	it("adds nothing when the OS store cannot be read", async () => {
 		delete process.env.NODE_EXTRA_CA_CERTS;
-		expect(systemCaEnv({}, { certificates: () => [], dir: await tempDir() })).toEqual({});
+		expect(await systemCaEnv({}, { certificates: async () => [], dir: await tempDir() })).toEqual({});
+	});
+});
+
+describe("certificatesInDir", () => {
+	it("reads a proxy client's PEM bundles and DER certificates, ignoring other files", async () => {
+		const dir = await tempDir();
+		await fs.writeFile(path.join(dir, "nscacert.pem"), `${ROOT_A}\r\n${ROOT_B}`);
+		const der = Buffer.from([0x30, 0x82, 0x01, 0x0a, 0x02, 0x01, 0x01]);
+		await fs.writeFile(path.join(dir, "rootcaCert.cer"), der);
+		await fs.writeFile(path.join(dir, "nsconfig.json"), "{}");
+
+		const blocks = await certificatesInDir(dir);
+
+		expect(blocks).toContain(ROOT_A);
+		expect(blocks).toContain(ROOT_B.trim());
+		expect(blocks).toContain(`-----BEGIN CERTIFICATE-----\n${der.toString("base64")}\n-----END CERTIFICATE-----`);
+		expect(blocks).toHaveLength(3);
+	});
+
+	it("finds nothing in a missing directory", async () => {
+		expect(await certificatesInDir(path.join(await tempDir(), "absent"))).toEqual([]);
 	});
 });

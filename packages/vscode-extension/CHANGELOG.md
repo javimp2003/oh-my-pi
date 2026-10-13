@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.6.3]
+
+### Fixed
+
+- The company certificate is found on more machines: the OS store is read with the OS's own tools (PowerShell's certificate drive on Windows, the system keychain on macOS) instead of Node inside VS Code, which could return nothing, and the Netskope client's own CA files are added. The output channel logs how many certificates omp trusts this way. A remaining certificate error also names the last resort, `NODE_TLS_REJECT_UNAUTHORIZED: "0"` in `ompCustom.env`
+
 ## [0.6.2]
 
 ### Fixed

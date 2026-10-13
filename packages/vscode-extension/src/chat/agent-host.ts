@@ -28,6 +28,7 @@ import {
 } from "../checkpoints/snapshots";
 import type { CheckpointStore, RepoCheckpoint } from "../checkpoints/store";
 import { ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
+import { lastSystemCa } from "../system-ca";
 import { DialogBridge } from "../dialogs";
 import type { AgentStatus, ChatUpdate, ModelChoice } from "../protocol";
 import { OmpCommandError, OmpProcess, type OmpResult } from "../rpc/omp-process";
@@ -219,7 +220,13 @@ export class AgentHost implements vscode.Disposable {
 	async start(target: SessionTarget): Promise<void> {
 		await this.#stopProcess();
 		const cwd = workspaceCwd();
-		const process = new OmpProcess(ompCommand(cwd));
+		const command = await ompCommand(cwd);
+		if (lastSystemCa) {
+			this.log.appendLine(
+				`[start] trusting ${lastSystemCa.certificates} certificates of the OS store (${lastSystemCa.file})`,
+			);
+		}
+		const process = new OmpProcess(command);
 		this.#process = process;
 		this.#busy = false;
 		this.#settled = true;

@@ -550,12 +550,12 @@ async function confirmEdit(
 
 /**
  * A certificate failure means the network re-signs HTTPS with a root omp does
- * not trust: the OS store is already handed to omp, so say where to add one
- * that is not there.
+ * not trust: the OS store and the proxy client's certificates are already
+ * handed to omp, so say how to add one that is not there, or to stop checking.
  */
 function explainError(message: string): string {
 	if (!/certificate/i.test(message)) return message;
-	return `${message}. Your network re-signs HTTPS with its own certificate, which the OS certificate store does not hold: set NODE_EXTRA_CA_CERTS in the ompCustom.env setting to that certificate's .pem file (ask IT for it), then restart the chat.`;
+	return `${message}. Your network re-signs HTTPS with a certificate omp did not find: set NODE_EXTRA_CA_CERTS in the ompCustom.env setting to that certificate's .pem file (ask IT for it), or as a last resort set NODE_TLS_REJECT_UNAUTHORIZED to "0" there to stop checking certificates; then restart the chat.`;
 }
 
 /** Up to six workspace-relative paths, then "and N more". */

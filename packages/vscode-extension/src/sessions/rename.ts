@@ -10,7 +10,7 @@ export async function renameStoredSession(sessionFile: string, name: string, log
 	await vscode.window.withProgress(
 		{ location: vscode.ProgressLocation.Notification, title: "omp: renaming session…" },
 		async () => {
-			const process = new OmpProcess(ompCommand(workspaceCwd()));
+			const process = new OmpProcess(await ompCommand(workspaceCwd()));
 			process.on("stderr", text => log.append(text));
 			try {
 				await process.start(["--resume", sessionFile]);

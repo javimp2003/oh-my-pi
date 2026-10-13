@@ -39,11 +39,11 @@ export function workspaceRoots(): string[] {
 	return folders.length > 0 ? folders : [workspaceCwd()];
 }
 
-export function ompCommand(cwd: string): OmpCommand {
+export async function ompCommand(cwd: string): Promise<OmpCommand> {
 	const { executable, args, env } = readConfig();
 	// Keep session titles (RPC skips them by default) so the sessions list reads well. The OS store's
 	// certificates let omp reach HTTPS services through a network that re-signs TLS (see system-ca.ts).
-	return { executable, args, env: { PI_RPC_AUTO_TITLE: "1", ...systemCaEnv(env), ...env }, cwd };
+	return { executable, args, env: { PI_RPC_AUTO_TITLE: "1", ...(await systemCaEnv(env)), ...env }, cwd };
 }
 
 /** omp's agent directory (`PI_CODING_AGENT_DIR`, default `~/.omp/agent`), honoring `ompCustom.env`. */
