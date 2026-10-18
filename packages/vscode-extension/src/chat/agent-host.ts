@@ -83,6 +83,21 @@ const PREDICT_TIMEOUT_MS = 155_000;
 /** What a new process should open. */
 export type SessionTarget = { kind: "continue" } | { kind: "new" } | { kind: "resume"; sessionFile: string };
 
+/** A turn's file checkpoint while it runs. */
+interface TurnCheckpoint {
+	sessionFile: string;
+	/** The snapshots before the turn, once `snapshot` settled. */
+	repos: RepoCheckpoint[];
+	/** Settles (never rejects) when the snapshots before the turn are taken. */
+	snapshot: Promise<void>;
+	/** `snapshot` settled. */
+	ready: boolean;
+	/** No usable snapshots: git is missing, or a tool started before they were done (they might hold its changes). */
+	discarded: boolean;
+	promptTimestamp?: number;
+	editedFiles: boolean;
+}
+
 /** Files involved in editing a prompt (absolute paths). */
 export interface EditPlan {
 	/** Whether the prompt has a file checkpoint (it started a turn while file checkpoints were on). */
@@ -130,8 +145,8 @@ export class AgentHost implements vscode.Disposable {
 	/** A turn finished while no view was attached; cleared when a view shows the session. */
 	#finishedUnseen = false;
 	#refreshTimer: NodeJS.Timeout | undefined;
-	/** The turn being checkpointed: snapshots taken before its prompt was sent. */
-	#turn: { sessionFile: string; repos: RepoCheckpoint[]; promptTimestamp?: number; editedFiles: boolean } | undefined;
+	/** The turn being checkpointed: snapshots taken (in the background) as its prompt was sent. */
+	#turn: TurnCheckpoint | undefined;
 	/** Checkpoint snapshots and writes, in order; awaited before anything reads them. */
 	#checkpointWork: Promise<void> = Promise.resolve();
 	readonly #views = new Set<HostView>();
@@ -300,10 +315,13 @@ export class AgentHost implements vscode.Disposable {
 		await this.#sendSnapshot(process, this.#views);
 	}
 
-	/** Send a prompt. One that starts a turn first snapshots the workspace's repositories (file checkpoints). */
+	/**
+	 * Send a prompt. One that starts a turn also snapshots the workspace's
+	 * repositories (file checkpoints), in the background: the prompt does not wait.
+	 */
 	async prompt(text: string, images: ImageContent[] | undefined): Promise<void> {
 		const process = this.#requireProcess();
-		if (!this.#busy) await this.#beginTurnCheckpoint();
+		if (!this.#busy) this.#beginTurnCheckpoint();
 		await process.request("prompt", {
 			message: text,
 			...(images?.length ? { images } : {}),
@@ -534,12 +552,36 @@ export class AgentHost implements vscode.Disposable {
 		throw new Error("That message is no longer in this session. Reopen the chat and try again.");
 	}
 
-	/** Snapshot the repositories before a turn starts; the prompt that starts it keys the checkpoint. */
-	async #beginTurnCheckpoint(): Promise<void> {
+	/**
+	 * Start snapshotting the repositories for a turn that starts now; the prompt
+	 * that starts it keys the checkpoint. The prompt is sent without waiting:
+	 * omp changes no file before the model answers and asks for a tool, and a
+	 * tool starting before the snapshots are done discards them (see `#trackCheckpoint`).
+	 */
+	#beginTurnCheckpoint(): void {
 		this.#turn = undefined;
 		const sessionFile = this.sessionFile;
-		if (!this.checkpoints || !sessionFile || !readConfig().fileCheckpoints || !(await gitAvailable())) return;
+		if (!this.checkpoints || !sessionFile || !readConfig().fileCheckpoints) return;
+		const turn: TurnCheckpoint = {
+			sessionFile,
+			repos: [],
+			snapshot: Promise.resolve(),
+			ready: false,
+			discarded: false,
+			editedFiles: false,
+		};
+		turn.snapshot = this.#snapshotRepos().then(repos => {
+			if (repos) turn.repos = repos;
+			else turn.discarded = true;
+			turn.ready = true;
+		});
+		this.#turn = turn;
+	}
+
+	/** Snapshot every repository of the workspace; undefined without git or when they cannot be listed. */
+	async #snapshotRepos(): Promise<RepoCheckpoint[] | undefined> {
 		try {
+			if (!(await gitAvailable())) return undefined;
 			const roots = await discoverRepos(workspaceRoots());
 			const repos = await Promise.all(
 				roots.map(root =>
@@ -552,21 +594,30 @@ export class AgentHost implements vscode.Disposable {
 					),
 				),
 			);
-			this.#turn = { sessionFile, repos: repos.filter(repo => repo !== undefined), editedFiles: false };
+			return repos.filter(repo => repo !== undefined);
 		} catch (error) {
 			this.log.appendLine(`[checkpoint] ${errorMessage(error)}`);
+			return undefined;
 		}
 	}
 
 	/**
 	 * Track the turn's checkpoint through its events: keyed by its prompt,
 	 * marked when one of the session's own file tools runs, closed by `agent_end`.
+	 * Saving waits for the turn's snapshots; a turn whose first tool started
+	 * before they were done saves nothing (its prompt offers no file restore).
 	 */
 	#trackCheckpoint(frame: RpcNotification): void {
 		const turn = this.#turn;
 		const store = this.checkpoints;
 		if (!turn || !store) return;
 		if (frame.type === "tool_execution_start") {
+			if (!turn.ready && !turn.discarded) {
+				turn.discarded = true;
+				this.log.appendLine(
+					`[checkpoint] ${frame.toolName} started before the file snapshot was done; this prompt has no file checkpoint`,
+				);
+			}
 			if (editsFiles(frame.toolName, frame.args)) turn.editedFiles = true;
 		} else if (
 			(frame.type === "message_start" || frame.type === "message_end") &&
@@ -574,14 +625,20 @@ export class AgentHost implements vscode.Disposable {
 		) {
 			const message = frame.message;
 			if (message.role !== "user" || message.synthetic) return;
-			turn.promptTimestamp = message.timestamp;
-			const checkpoint = { promptTimestamp: message.timestamp, repos: turn.repos, editedFiles: turn.editedFiles };
-			this.#queueCheckpointWork(() => store.put(turn.sessionFile, checkpoint));
+			const promptTimestamp = message.timestamp;
+			turn.promptTimestamp = promptTimestamp;
+			this.#queueCheckpointWork(async () => {
+				await turn.snapshot;
+				if (turn.discarded) return;
+				await store.put(turn.sessionFile, { promptTimestamp, repos: turn.repos, editedFiles: turn.editedFiles });
+			});
 		} else if (frame.type === "agent_end") {
 			this.#turn = undefined;
 			const promptTimestamp = turn.promptTimestamp;
 			if (promptTimestamp === undefined) return;
 			this.#queueCheckpointWork(async () => {
+				await turn.snapshot;
+				if (turn.discarded) return;
 				const repos = await Promise.all(
 					turn.repos.map(async repo => ({
 						...repo,

@@ -2,7 +2,7 @@
 	"name": "omp-custom-vscode",
 	"displayName": "omp (custom)",
 	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.9.1",
+	"version": "0.9.2",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",

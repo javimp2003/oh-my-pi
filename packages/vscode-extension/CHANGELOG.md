@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.2]
+
+### Changed
+
+- Sending a prompt no longer waits for the file checkpoint's git snapshot (a few git runs, slow on Windows with antivirus): the prompt goes to omp at once and the snapshot is taken alongside. If a tool starts before the snapshot is done, the snapshot is dropped and that prompt offers no file restore, so a checkpoint never holds omp's own changes
+
 ## [0.9.1]
 
 ### Changed
