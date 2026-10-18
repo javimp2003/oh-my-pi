@@ -5,6 +5,7 @@ import { errorMessage } from "./chat/agent-host";
 import type { ChatSession } from "./chat/chat-session";
 import { ChatRegistry } from "./chat/chat-views";
 import { agentDir, readConfig, workspaceCwd } from "./config";
+import { bindNoWorkspaceState } from "./no-workspace";
 import { renameStoredSession } from "./sessions/rename";
 import { guessSessionDir, sessionLabel, sessionPaths } from "./sessions/session-store";
 import { SessionItem, SessionsTree, pickSession } from "./sessions/sessions-tree";
@@ -12,6 +13,7 @@ import { SettingsPanel, openConfigFile } from "./settings/settings-panel";
 
 export function activate(context: vscode.ExtensionContext): void {
 	const log = vscode.window.createOutputChannel("omp (custom)");
+	bindNoWorkspaceState(context.globalState);
 	const checkpoints = new CheckpointStore(path.join(context.globalStorageUri.fsPath, "checkpoints"));
 	const chats: ChatRegistry = new ChatRegistry(
 		context.extensionUri,
@@ -29,7 +31,8 @@ export function activate(context: vscode.ExtensionContext): void {
 	statusBar.command = "ompCustom.focusChat";
 
 	const updateActive = async (session: ChatSession | undefined) => {
-		const sessionFile = session?.state?.sessionFile;
+		// The Sessions view lists the workspace's sessions: a chat without a workspace does not move it.
+		const sessionFile = session?.host?.noWorkspace ? undefined : session?.state?.sessionFile;
 		const dir = sessionFile
 			? path.dirname(sessionFile)
 			: await guessSessionDir(path.join(agentDir(), "sessions"), workspaceCwd());

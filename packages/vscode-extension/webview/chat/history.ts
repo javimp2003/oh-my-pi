@@ -1,9 +1,9 @@
 /**
- * Session history overlay: a searchable list of the workspace's sessions
- * covering the transcript. Opening it asks the host for `listSessions`;
- * picking a row posts `openSession`, its pencil renames it in place
- * (`renameSession`). Sessions working in the window show a spinner, those that
- * finished unseen a green dot.
+ * Session history overlay: a searchable list of the workspace's sessions, then
+ * (under their own heading) the chats without a workspace, covering the
+ * transcript. Opening it asks the host for `listSessions`; picking a row posts
+ * `openSession`, its pencil renames it in place (`renameSession`). Sessions
+ * working in the window show a spinner, those that finished unseen a green dot.
  */
 import type { ChatRequest, SessionActivity, SessionListItem } from "../../src/protocol";
 import { h, iconButton } from "../dom";
@@ -121,8 +121,19 @@ export class HistoryPanel {
 			return;
 		}
 		this.#selected = Math.min(this.#selected, this.#matches.length - 1);
-		this.#list.replaceChildren(...this.#matches.map((item, index) => this.#row(item, index)));
-		this.#list.children[this.#selected]?.scrollIntoView({ block: "nearest" });
+		const rows = this.#matches.map((item, index) => this.#row(item, index));
+		const split = this.#matches.findIndex(item => item.noWorkspace);
+		if (split < 0) this.#list.replaceChildren(...rows);
+		else {
+			// Headings only when there are chats without a workspace to set apart.
+			const heading = (text: string) => h("div", { className: "history-section" }, text);
+			this.#list.replaceChildren(
+				...(split > 0 ? [heading("This workspace"), ...rows.slice(0, split)] : []),
+				heading("No workspace"),
+				...rows.slice(split),
+			);
+		}
+		rows[this.#selected]?.scrollIntoView({ block: "nearest" });
 		this.#list.querySelector<HTMLInputElement>(".history-rename")?.focus();
 	}
 

@@ -38,8 +38,9 @@ export class AgentPool implements vscode.Disposable {
 		readonly checkpoints: CheckpointStore,
 	) {}
 
-	create(): AgentHost {
-		const host = new AgentHost(this.log, this.checkpoints);
+	/** A new host; one for a chat without a workspace runs in the no-workspace folder and takes no file checkpoints. */
+	create(noWorkspace = false): AgentHost {
+		const host = new AgentHost(this.log, noWorkspace ? undefined : this.checkpoints, noWorkspace);
 		this.#hosts.add(host);
 		host.onDidChange(() => this.#update(host));
 		host.onNeedsAttention(() => this.#onNeedsAttention.fire(host));

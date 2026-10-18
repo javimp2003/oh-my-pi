@@ -28,6 +28,7 @@ import {
 } from "../checkpoints/snapshots";
 import type { CheckpointStore, RepoCheckpoint } from "../checkpoints/store";
 import { ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
+import { ensureNoWorkspaceFolder, rememberNoWorkspaceSession } from "../no-workspace";
 import { lastSystemCa } from "../system-ca";
 import { DialogBridge } from "../dialogs";
 import type { AgentStatus, ChatUpdate, ModelChoice } from "../protocol";
@@ -163,7 +164,10 @@ export class AgentHost implements vscode.Disposable {
 
 	constructor(
 		readonly log: vscode.OutputChannel,
+		/** Absent for chats without a workspace: they have no repositories to snapshot. */
 		private readonly checkpoints?: CheckpointStore,
+		/** Runs omp in the no-workspace folder instead of the workspace (see no-workspace.ts). */
+		readonly noWorkspace = false,
 	) {
 		this.#dialogs = new DialogBridge({
 			respond: response => this.#process?.respond(response),
@@ -236,7 +240,7 @@ export class AgentHost implements vscode.Disposable {
 	/** Start (or restart) omp on `target`; resolves once the first snapshot reached the views. */
 	async start(target: SessionTarget): Promise<void> {
 		await this.#stopProcess();
-		const cwd = workspaceCwd();
+		const cwd = this.noWorkspace ? await ensureNoWorkspaceFolder() : workspaceCwd();
 		const command = await ompCommand(cwd);
 		if (lastSystemCa) {
 			this.log.appendLine(
@@ -857,6 +861,7 @@ export class AgentHost implements vscode.Disposable {
 		if (this.#process !== process) return;
 		const fileChanged = state.sessionFile !== this.#state?.sessionFile;
 		this.#state = state;
+		if (this.noWorkspace && state.sessionFile) rememberNoWorkspaceSession(state.sessionFile);
 		if (state.isSettled !== undefined) this.#settled = state.isSettled && !this.#busy;
 		if (state.sessionName) this.#title = state.sessionName;
 		else if (fileChanged) this.#title = undefined;
@@ -866,6 +871,7 @@ export class AgentHost implements vscode.Disposable {
 			stats,
 			title: this.#title,
 			busySince: this.#busy ? this.#busySince : undefined,
+			noWorkspace: this.noWorkspace,
 		});
 		this.#onDidChange.fire(this);
 	}

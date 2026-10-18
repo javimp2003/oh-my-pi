@@ -356,6 +356,12 @@ export class Transcript {
 	#prompts: PromptMark[] = [];
 	/** The latest prompt scrolled out at the top, pinned above the conversation. */
 	#pinnedPrompt = h("button", { type: "button", className: "pinned-prompt", hidden: true });
+	/** Lays the pinned prompt out like the messages column, so it sits where its bubble does. */
+	#pinnedRow = h(
+		"div",
+		{ className: "pinned-prompt-row" },
+		h("div", { className: "pinned-prompt-lane" }, this.#pinnedPrompt),
+	);
 	#pinnedMark: PromptMark | undefined;
 	#layoutFrame = 0;
 	#timelineStale = false;
@@ -384,7 +390,7 @@ export class Transcript {
 			h("div", { className: "examples" }, ...chips),
 		);
 		this.#scroller.append(this.#empty, this.#list, this.#working);
-		this.element = h("div", { className: "transcript-wrap" }, this.#scroller, this.#pinnedPrompt, this.#pill);
+		this.element = h("div", { className: "transcript-wrap" }, this.#scroller, this.#pinnedRow, this.#pill);
 		this.#pinnedPrompt.addEventListener("click", () => {
 			const mark = this.#pinnedMark;
 			if (!mark?.el.isConnected) return;
@@ -833,6 +839,8 @@ export class Transcript {
 			setTooltip(this.#pinnedPrompt, mark && "Scroll to this prompt");
 		}
 		this.#pinnedPrompt.hidden = !mark;
+		// The messages column centers within the scroller minus its scrollbar; the row must too.
+		if (mark) this.#pinnedRow.style.right = `${this.#scroller.offsetWidth - this.#scroller.clientWidth}px`;
 	}
 
 	#onClick(event: MouseEvent): void {

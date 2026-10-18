@@ -17,6 +17,8 @@ export function readConfig() {
 		fileCheckpoints: config.get<boolean>("fileCheckpoints", true),
 		/** Spoken language for voice input as an ISO 639-1 code; `""` lets the speech model detect it. */
 		voiceLanguage: voiceLanguage(config.get<string>("voiceLanguage", "auto")),
+		/** Folder chats without a workspace run in (see no-workspace.ts); may start with `~`. */
+		noWorkspaceFolder: config.get<string>("noWorkspaceFolder", "~/omp-sin-workspace").trim() || "~/omp-sin-workspace",
 	};
 }
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.10.0]
+
+### Added
+
+- Chats without a workspace: a globe `+` in the chat header opens a chat for general tasks that runs omp in its own folder (`ompCustom.noWorkspaceFolder`, default `~/omp-sin-workspace`) instead of the workspace, so the project's file tree, `AGENTS.md` and memory stay out of it. An `AGENTS.md` written there on first use (never overwritten) tells omp these chats are for general tasks. The header marks such a chat "No workspace"; the History lists these chats under their own heading, the same in every window; they take no file checkpoints; the Sessions view keeps listing the workspace's sessions
+
+### Fixed
+
+- The pinned prompt has the shape of its bubble: on the right, as wide as its text (up to the bubble's 85%) and with the same rounded corners, instead of a box stretched across the whole chat
+
 ## [0.9.2]
 
 ### Changed

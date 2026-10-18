@@ -2,7 +2,7 @@
 	"name": "omp-custom-vscode",
 	"displayName": "omp (custom)",
 	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.9.2",
+	"version": "0.10.0",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",
@@ -377,6 +377,11 @@
 					"type": "boolean",
 					"default": true,
 					"description": "Before each prompt that starts a turn, snapshot the git repositories of the workspace (without touching branches, the index or history), so editing that prompt can restore the files omp changed since. Git-ignored files and files outside git repositories are not covered. Needs git on the PATH."
+				},
+				"ompCustom.noWorkspaceFolder": {
+					"type": "string",
+					"default": "~/omp-sin-workspace",
+					"description": "Folder that chats without a workspace (the globe \"+\" in the chat header) run in, created on first use. Their sessions, memory and the files they write without a path live there, shared by every window; an AGENTS.md written there on first use tells omp these chats are for general tasks (edit it to change that). `~` is your home folder."
 				},
 				"ompCustom.voiceLanguage": {
 					"type": "string",

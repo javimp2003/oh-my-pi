@@ -1,6 +1,11 @@
-/** Top bar: π mark, session title (renamable in place), and New chat / History / Settings icon buttons. */
+/**
+ * Top bar: π mark, session title (renamable in place), a "No workspace" badge on
+ * chats without a workspace, and New chat / New chat without workspace / History /
+ * Settings icon buttons.
+ */
 import type { ChatRequest, SessionState, SessionStats } from "../../src/protocol";
 import { h, iconButton } from "../dom";
+import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
 
 type Post = (request: ChatRequest) => void;
@@ -16,6 +21,16 @@ export class Header {
 	#historyOpen = false;
 	/** A session is open (omp answered `get_state`), so it can be renamed. */
 	#hasSession = false;
+	#noWorkspace = h(
+		"span",
+		{
+			className: "no-workspace-badge",
+			hidden: true,
+			dataset: { tooltip: "A chat without a workspace: omp runs in its own folder, not in this project" },
+		},
+		icon("globe"),
+		"No workspace",
+	);
 
 	constructor(
 		private readonly post: Post,
@@ -45,10 +60,14 @@ export class Header {
 			this.#title,
 			this.#input,
 			this.#rename,
+			this.#noWorkspace,
 			h(
 				"div",
 				{ className: "header-actions" },
 				iconButton("plus", "New chat", () => post({ type: "newSession" })),
+				iconButton("plusGlobe", "New chat without workspace (general tasks, not this project)", () =>
+					post({ type: "newSession", noWorkspace: true }),
+				),
 				this.#history,
 				this.#back,
 				iconButton("settings", "Settings", () => post({ type: "openSettings" })),
@@ -57,9 +76,15 @@ export class Header {
 		this.#render();
 	}
 
-	setState(state: SessionState, _stats: SessionStats | undefined, title: string | undefined): void {
+	setState(
+		state: SessionState,
+		_stats: SessionStats | undefined,
+		title: string | undefined,
+		noWorkspace: boolean,
+	): void {
 		this.#hasSession = true;
 		this.#sessionTitle = title || state.sessionName || "New chat";
+		this.#noWorkspace.dataset.on = String(noWorkspace);
 		this.#render();
 	}
 
@@ -105,6 +130,7 @@ export class Header {
 		this.#title.textContent = text;
 		this.#title.hidden = !this.#input.hidden;
 		this.#rename.hidden = !this.#canRename() || !this.#input.hidden;
+		this.#noWorkspace.hidden = this.#noWorkspace.dataset.on !== "true" || this.#historyOpen || !this.#input.hidden;
 		setTooltip(this.#title, this.#canRename() ? `${text}\nDouble-click to rename` : text);
 	}
 }

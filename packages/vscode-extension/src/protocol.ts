@@ -62,6 +62,8 @@ export interface SessionListItem {
 	age: string;
 	active: boolean;
 	activity?: SessionActivity;
+	/** A chat without a workspace (listed in the history panel's own section). */
+	noWorkspace: boolean;
 }
 
 /** Lifecycle of the omp process behind a chat view. */
@@ -90,8 +92,16 @@ export type ChatUpdate =
 	/**
 	 * Session snapshot; re-sent after every turn, model change, or session switch.
 	 * `busySince` is when the session's running turn started (epoch ms), absent while idle.
+	 * `noWorkspace`: a chat without a workspace (runs in the no-workspace folder).
 	 */
-	| { type: "state"; state: SessionState; stats?: SessionStats; title?: string; busySince?: number }
+	| {
+			type: "state";
+			state: SessionState;
+			stats?: SessionStats;
+			title?: string;
+			busySince?: number;
+			noWorkspace: boolean;
+	  }
 	| { type: "models"; models: ModelChoice[] }
 	| { type: "thinkingLevels"; levels: ThinkingLevel[] }
 	/** Slash commands for composer completion. */
@@ -118,7 +128,7 @@ export type ChatUpdate =
 	| { type: "dictationText"; text: string; submit: boolean }
 	/** The "Toggle Voice Input" command: start dictating, or stop and transcribe. */
 	| { type: "toggleDictation" }
-	/** Sessions of the workspace, newest first (answer to `listSessions`). */
+	/** Sessions of the workspace and then those without a workspace, each newest first (answer to `listSessions`). */
 	| { type: "sessions"; sessions: SessionListItem[] }
 	/** Activity of every session that is running or finished unseen, by session file; sent when it changes. */
 	| { type: "sessionActivity"; activity: Record<string, SessionActivity> }
@@ -143,8 +153,9 @@ export type ChatRequest =
 	 */
 	| { type: "editMessage"; fromEnd: number; original: string; text: string }
 	| { type: "abort" }
-	| { type: "newSession" }
-	/** List the workspace's sessions for the history panel; the host answers with `sessions`. */
+	/** Start a new chat; `noWorkspace` starts one without a workspace (see no-workspace.ts). */
+	| { type: "newSession"; noWorkspace?: boolean }
+	/** List the sessions for the history panel; the host answers with `sessions`. */
 	| { type: "listSessions" }
 	| { type: "openSession"; path: string }
 	/** Rename the session at `path`, or the open one when `path` is absent; the host re-sends `sessions`. */

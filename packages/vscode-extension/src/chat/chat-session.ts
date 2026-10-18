@@ -16,6 +16,7 @@ import type { AgentStatus, ChatRequest, ChatUpdate, ModelChoice } from "../proto
 import { OmpCommandError, type OmpProcess } from "../rpc/omp-process";
 import { renameStoredSession } from "../sessions/rename";
 import { guessSessionDir, listSessions, relativeTime, sessionLabel } from "../sessions/session-store";
+import { isNoWorkspaceSession, noWorkspaceSessionDir } from "../no-workspace";
 import { webviewHtml } from "../webview-html";
 import {
 	type AgentHost,
@@ -98,8 +99,11 @@ export class ChatSession implements vscode.Disposable, HostView {
 		return this.#host?.statusTexts ?? NO_STATUS_TEXTS;
 	}
 
-	/** Show `target` in a new process; joins the existing process instead when that session is already open. */
-	async open(target: SessionTarget): Promise<void> {
+	/**
+	 * Show `target` in a new process (a chat without a workspace when `noWorkspace`);
+	 * joins the existing process instead when that session is already open.
+	 */
+	async open(target: SessionTarget, noWorkspace = false): Promise<void> {
 		if (target.kind === "resume") {
 			const existing = this.pool.find(target.sessionFile);
 			if (existing) {
@@ -107,7 +111,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 				return;
 			}
 		}
-		const host = this.pool.create();
+		const host = this.pool.create(noWorkspace);
 		this.showHost(host);
 		await host.start(target);
 		// `--continue` picks the newest session, which another view may already have open:
@@ -133,8 +137,9 @@ export class ChatSession implements vscode.Disposable, HostView {
 
 	/**
 	 * Show the session in `sessionFile`. A session already open in this window is
-	 * joined; an idle process this view alone uses switches in place; a busy one keeps
-	 * running in the background while a new process opens the session.
+	 * joined; an idle process this view alone uses switches in place when it runs in
+	 * the same place (the workspace, or the no-workspace folder); otherwise a new
+	 * process opens the session and a busy one keeps running in the background.
 	 */
 	async switchSession(sessionFile: string): Promise<void> {
 		const current = this.#host;
@@ -144,22 +149,26 @@ export class ChatSession implements vscode.Disposable, HostView {
 			this.showHost(existing);
 			return;
 		}
-		if (current && this.#ownsIdle(current)) {
+		const noWorkspace = await isNoWorkspaceSession(sessionFile);
+		if (current && current.noWorkspace === noWorkspace && this.#ownsIdle(current)) {
 			await current.switchSession(sessionFile);
 			this.pool.seen(sessionFile);
 			return;
 		}
-		await this.open({ kind: "resume", sessionFile });
+		await this.open({ kind: "resume", sessionFile }, noWorkspace);
 	}
 
-	/** Start a new session: in this view's process when it is idle and not shared, else in a new one. */
-	async newSession(): Promise<void> {
+	/**
+	 * Start a new session (without a workspace when `noWorkspace`): in this view's
+	 * process when it is idle, not shared and runs in the same place, else in a new one.
+	 */
+	async newSession(noWorkspace = false): Promise<void> {
 		const current = this.#host;
-		if (current && this.#ownsIdle(current)) {
+		if (current && current.noWorkspace === noWorkspace && this.#ownsIdle(current)) {
 			await current.newSession();
 			return;
 		}
-		await this.open({ kind: "new" });
+		await this.open({ kind: "new" }, noWorkspace);
 	}
 
 	async restart(): Promise<void> {
@@ -339,26 +348,41 @@ export class ChatSession implements vscode.Disposable, HostView {
 		}
 	}
 
-	/** The workspace's sessions for the history panel, newest first, with what each is doing. */
+	/**
+	 * The history panel's sessions, newest first: the workspace's, then the chats
+	 * without a workspace, with what each is doing.
+	 */
 	async #postSessions(): Promise<void> {
 		const current = this.state?.sessionFile;
-		const dir = current
-			? path.dirname(current)
-			: await guessSessionDir(path.join(agentDir(), "sessions"), workspaceCwd());
-		const sessions = await listSessions(dir);
+		const currentDir = current && path.dirname(current);
+		const sessionsRoot = path.join(agentDir(), "sessions");
+		const [workspaceDir, noWorkspaceDir] = await Promise.all([
+			currentDir && !this.#host?.noWorkspace ? currentDir : guessSessionDir(sessionsRoot, workspaceCwd()),
+			currentDir && this.#host?.noWorkspace ? currentDir : noWorkspaceSessionDir(),
+		]);
+		const groups = await Promise.all(
+			[workspaceDir, noWorkspaceDir].map(async (dir, index) => ({
+				noWorkspace: index === 1,
+				// Both are the same when the workspace is the no-workspace folder itself: list its chats once.
+				sessions: index === 1 && dir === workspaceDir ? [] : await listSessions(dir),
+			})),
+		);
 		const activity = this.pool.activities();
 		this.post({
 			type: "sessions",
-			sessions: sessions.map(session => ({
-				path: session.path,
-				label: sessionLabel(session),
-				firstPrompt: session.firstMessage,
-				lastPrompt: session.singlePrompt ? undefined : session.lastMessage,
-				singlePrompt: session.singlePrompt,
-				age: relativeTime(session.modified),
-				active: session.path === current,
-				activity: activity[session.path],
-			})),
+			sessions: groups.flatMap(({ noWorkspace, sessions }) =>
+				sessions.map(session => ({
+					path: session.path,
+					label: sessionLabel(session),
+					firstPrompt: session.firstMessage,
+					lastPrompt: session.singlePrompt ? undefined : session.lastMessage,
+					singlePrompt: session.singlePrompt,
+					age: relativeTime(session.modified),
+					active: session.path === current,
+					activity: activity[session.path],
+					noWorkspace,
+				})),
+			),
 		});
 	}
 
@@ -382,7 +406,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 				await this.abort();
 				return;
 			case "newSession":
-				await this.newSession();
+				await this.newSession(request.noWorkspace);
 				return;
 			case "listSessions":
 				await this.#postSessions();

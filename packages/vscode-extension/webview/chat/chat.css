@@ -263,6 +263,29 @@ code {
 	opacity: 1;
 }
 
+/* On a chat without a workspace: omp runs in its own folder, not in the open project. */
+.no-workspace-badge {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1px 6px;
+	border-radius: 9999px;
+	border: 1px solid var(--c-border-heavy);
+	color: var(--c-fg-2);
+	font-size: var(--fs-sm);
+	white-space: nowrap;
+}
+
+.no-workspace-badge[hidden] {
+	display: none;
+}
+
+.no-workspace-badge .icon {
+	width: 12px;
+	height: 12px;
+}
+
 .title-input {
 	flex: 1;
 	min-width: 0;
@@ -691,17 +714,34 @@ code {
 /*
  * The prompt of the turn in view, pinned above the conversation once its
  * bubble scrolls out at the top (transcript.ts); click to go back to it.
+ * The row and lane repeat the .messages column, so the box keeps the bubble's
+ * place and shape (right side, sized to its text up to 85%), on one line.
  */
-.pinned-prompt {
+.pinned-prompt-row {
 	position: absolute;
 	z-index: 10;
 	top: 6px;
-	left: 50%;
-	transform: translateX(-50%);
-	width: min(calc(var(--thread-max) - 2 * var(--gutter)), calc(100% - 2 * var(--gutter)));
-	padding: 5px 10px;
+	left: 0;
+	right: 0;
+	pointer-events: none;
+}
+
+.pinned-prompt-lane {
+	display: flex;
+	justify-content: flex-end;
+	max-width: var(--thread-max);
+	margin-inline: auto;
+	padding-inline: var(--gutter);
+}
+
+.pinned-prompt {
+	pointer-events: auto;
+	min-width: 0;
+	max-width: 85%;
+	/* The bubble's 8px 12px, less the border. */
+	padding: 7px 11px;
 	border: 1px solid var(--c-border-heavy);
-	border-radius: var(--r-lg);
+	border-radius: var(--r-2xl);
 	background: linear-gradient(var(--c-user), var(--c-user)), var(--c-bg);
 	box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
 	color: var(--c-fg);
@@ -1655,6 +1695,14 @@ code {
 .history-empty {
 	padding: 6px 8px;
 	color: var(--c-fg-3);
+}
+
+/* "This workspace" / "No workspace" headings, shown when there are chats without a workspace. */
+.history-section {
+	padding: 10px 8px 4px;
+	color: var(--c-fg-3);
+	font-size: var(--fs-sm);
+	font-weight: 500;
 }
 
 /* ---- Dock: notices, queue, composer ---- */
