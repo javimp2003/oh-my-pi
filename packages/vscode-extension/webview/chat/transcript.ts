@@ -15,6 +15,7 @@ import type {
 } from "../../src/protocol";
 import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
+import { setTooltip } from "../tooltip";
 import { fileLink, parseFileRef, thumbnail } from "./content";
 import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./markdown";
@@ -32,6 +33,10 @@ const EXAMPLE_PROMPTS = [
 	"Write tests for the file I have open",
 ];
 const PIN_THRESHOLD_PX = 32;
+/** Blocks of an assistant message that are steps of the turn's timeline (a dot on its rail). */
+const STEP_SELECTOR = ".markdown, .thinking, .activity, .thumbs, .msg-footer";
+/** How far the pinned prompt reaches down over the conversation: a bubble ending under it counts as scrolled out. */
+const PINNED_PROMPT_COVER_PX = 40;
 /** The TUI's braille activity spinner (packages/tui/src/status-line/segments.ts `brandSpinnerFrame`). */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
@@ -150,14 +155,19 @@ function isPrompt(message: AgentMessage): message is Extract<AgentMessage, { rol
 	return message.role === "custom" && message.customType === "skill-prompt";
 }
 
+/** The draft of a skill invocation as submitted, `/skill:<name>` token in place. */
+function skillDraft(details: SkillPromptDetails): string {
+	const token = `/skill:${details.name}`;
+	return details.prompt ?? (details.args ? `${token} ${details.args}` : token);
+}
+
 /**
  * A skill invocation as the user wrote it: the draft with each `/skill:name`
  * token as a chip, and the loaded SKILL.md (the message content sent to the
  * model) folded below, as the terminal shows it.
  */
 function skillBubble(details: SkillPromptDetails, skillText: string): HTMLElement {
-	const token = `/skill:${details.name}`;
-	const draft = details.prompt ?? (details.args ? `${token} ${details.args}` : token);
+	const draft = skillDraft(details);
 	const text = h("div", { className: "bubble-text" });
 	for (const part of draft.split(/(\/skill:[\w.:-]+)/)) {
 		if (!part) continue;
@@ -172,12 +182,19 @@ function skillBubble(details: SkillPromptDetails, skillText: string): HTMLElemen
 		h("summary", null, `Skill ${details.name} · ${lines} ${lines === 1 ? "line" : "lines"}`),
 		prompt,
 	);
-	return h(
-		"div",
-		{ className: "msg user" },
-		h("div", { className: "bubble" }, text, folded),
-		messageActions(details.prompt ?? draft),
-	);
+	return h("div", { className: "msg user" }, h("div", { className: "bubble" }, text, folded), messageActions(draft));
+}
+
+/** A visible timeline step among an assistant message's blocks; hidden and empty blocks have no dot. */
+function isStep(el: Element): el is HTMLElement {
+	if (!(el instanceof HTMLElement) || el.hidden || !el.matches(STEP_SELECTOR)) return false;
+	return !el.classList.contains("msg-footer") || el.childElementCount > 0;
+}
+
+/** A prompt bubble in the transcript and its text, for the pinned prompt above the conversation. */
+interface PromptMark {
+	el: HTMLElement;
+	text: string;
 }
 
 interface Slot {
@@ -335,6 +352,13 @@ export class Transcript {
 	/** Prompts (non-synthetic user messages) in the transcript; each bubble knows its ordinal. */
 	#promptCount = 0;
 	#editor: MessageEditor | undefined;
+	/** Prompt bubbles in document order, for the pinned prompt. */
+	#prompts: PromptMark[] = [];
+	/** The latest prompt scrolled out at the top, pinned above the conversation. */
+	#pinnedPrompt = h("button", { type: "button", className: "pinned-prompt", hidden: true });
+	#pinnedMark: PromptMark | undefined;
+	#layoutFrame = 0;
+	#timelineStale = false;
 
 	/** The conversation's messages, which find-in-chat searches. */
 	get searchRoot(): HTMLElement {
@@ -360,12 +384,20 @@ export class Transcript {
 			h("div", { className: "examples" }, ...chips),
 		);
 		this.#scroller.append(this.#empty, this.#list, this.#working);
-		this.element = h("div", { className: "transcript-wrap" }, this.#scroller, this.#pill);
+		this.element = h("div", { className: "transcript-wrap" }, this.#scroller, this.#pinnedPrompt, this.#pill);
+		this.#pinnedPrompt.addEventListener("click", () => {
+			const mark = this.#pinnedMark;
+			if (!mark?.el.isConnected) return;
+			// Land the bubble just below where the pinned box sits, so it shows in full and unpins.
+			const offset = mark.el.getBoundingClientRect().top - this.#scroller.getBoundingClientRect().top;
+			this.#scroller.scrollTop += offset - PINNED_PROMPT_COVER_PX / 2;
+		});
 
 		this.#scroller.addEventListener("scroll", () => {
 			const distance = this.#scroller.scrollHeight - this.#scroller.scrollTop - this.#scroller.clientHeight;
 			this.#pinned = distance < PIN_THRESHOLD_PX;
 			if (this.#pinned) this.#pill.hidden = true;
+			this.#scheduleLayout(false);
 		});
 		this.#pill.addEventListener("click", () => {
 			this.#pinned = true;
@@ -413,6 +445,7 @@ export class Transcript {
 		this.#compactionNote = undefined;
 		this.#editor = undefined;
 		this.#promptCount = 0;
+		this.#prompts = [];
 		this.#list.replaceChildren();
 		// A turn starts at a prompt that is not steering an unfinished turn (the last answer did not
 		// stop for tool calls) and ends at its last answer; finished turns get their "Worked for" line.
@@ -648,6 +681,7 @@ export class Transcript {
 				const ordinal = this.#promptCount++;
 				const text = contentText(message.content);
 				const prompt = bubble(text, contentImages(message.content), () => this.#editPrompt(prompt, ordinal, text));
+				this.#prompts.push({ el: prompt, text });
 				el = prompt;
 				break;
 			}
@@ -656,12 +690,16 @@ export class Transcript {
 				if (!message.display) return undefined;
 				// Only a skill invocation is something the user wrote; the rest (background job results,
 				// process exits, extension notices) comes from omp and must not look like a prompt.
-				el =
+				if (
 					message.role === "custom" &&
 					message.customType === "skill-prompt" &&
 					isSkillPromptDetails(message.details)
-						? skillBubble(message.details, contentText(message.content))
-						: noticeElement(message.customType, contentText(message.content), message.details);
+				) {
+					el = skillBubble(message.details, contentText(message.content));
+					this.#prompts.push({ el, text: skillDraft(message.details) });
+				} else {
+					el = noticeElement(message.customType, contentText(message.content), message.details);
+				}
 				break;
 			case "toolResult":
 				this.#applyToolResult(message);
@@ -722,6 +760,79 @@ export class Transcript {
 		} else {
 			this.#pill.hidden = false;
 		}
+		this.#scheduleLayout(true);
+	}
+
+	/** Redraw the timeline (after content changed) and the pinned prompt on the next frame. */
+	#scheduleLayout(content: boolean): void {
+		this.#timelineStale ||= content;
+		this.#layoutFrame ||= requestAnimationFrame(() => {
+			this.#layoutFrame = 0;
+			if (this.#timelineStale) {
+				this.#timelineStale = false;
+				this.#layoutTimeline();
+			}
+			this.#layoutPinnedPrompt();
+		});
+	}
+
+	/**
+	 * Mark each turn's steps (thinking, tool rows, answers) as dots on a vertical
+	 * rail, like Claude Code: consecutive steps are joined by a line, and anything
+	 * else in the conversation (a prompt, a notice, "Worked for") ends the run.
+	 * Each link reaches down to the next step's dot, measured across the gap.
+	 */
+	#layoutTimeline(): void {
+		let previous: HTMLElement | undefined;
+		const link = (next: HTMLElement | undefined) => {
+			if (!previous) return;
+			const gap = next ? Math.round(next.getBoundingClientRect().top - previous.getBoundingClientRect().bottom) : -1;
+			previous.classList.toggle("step-link", gap >= 0);
+			if (gap >= 0 && previous.style.getPropertyValue("--step-gap") !== `${gap}px`) {
+				previous.style.setProperty("--step-gap", `${gap}px`);
+			}
+		};
+		for (const child of this.#list.children) {
+			const steps = child.classList.contains("assistant")
+				? Array.from(child.children).filter(isStep)
+				: child.matches("details.activity")
+					? [child as HTMLElement]
+					: undefined;
+			if (!steps) {
+				link(undefined);
+				previous = undefined;
+				continue;
+			}
+			for (const step of steps) {
+				step.classList.add("step");
+				link(step);
+				previous = step;
+			}
+		}
+		link(undefined);
+	}
+
+	/**
+	 * Pin the prompt of the turn in view above the conversation once its bubble
+	 * scrolls out at the top: at the bottom of the chat that is the latest prompt.
+	 */
+	#layoutPinnedPrompt(): void {
+		const top = this.#scroller.getBoundingClientRect().top;
+		// Prompts are in document order: find the last one whose bubble ends above the view.
+		let low = 0;
+		let high = this.#prompts.length;
+		while (low < high) {
+			const middle = (low + high) >> 1;
+			if (this.#prompts[middle]!.el.getBoundingClientRect().bottom <= top + PINNED_PROMPT_COVER_PX) low = middle + 1;
+			else high = middle;
+		}
+		const mark = low > 0 ? this.#prompts[low - 1] : undefined;
+		if (mark !== this.#pinnedMark) {
+			this.#pinnedMark = mark;
+			this.#pinnedPrompt.textContent = mark?.text.trim() ?? "";
+			setTooltip(this.#pinnedPrompt, mark && "Scroll to this prompt");
+		}
+		this.#pinnedPrompt.hidden = !mark;
 	}
 
 	#onClick(event: MouseEvent): void {

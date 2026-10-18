@@ -614,6 +614,113 @@ code {
 	margin-top: -8px;
 }
 
+/*
+ * Timeline: each step of a turn (thinking, tool row, answer) hangs from a dot
+ * on a vertical rail, like Claude Code. Green: the tool succeeded; red: it
+ * failed; accent, pulsing: still running; grey: thinking, text, stopped.
+ * transcript.ts marks steps and sets `--step-gap` (the space to the next step)
+ * on those joined to the next one (`.step-link`).
+ */
+.step {
+	--dot-y: 12px;
+	--dot: var(--c-fg-3);
+	position: relative;
+	padding-left: 20px;
+}
+
+.step.markdown {
+	--dot-y: calc(var(--fs) * 0.75);
+}
+
+.step::before {
+	content: "";
+	position: absolute;
+	z-index: 1;
+	left: 3px;
+	top: calc(var(--dot-y) - 3.5px);
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	/* Opaque over the rail even when the theme's colour is translucent. */
+	background: linear-gradient(var(--dot), var(--dot)), var(--c-bg);
+	box-shadow: 0 0 0 2px var(--c-bg);
+}
+
+/* Down to the next step's dot (its top plus 12px), which covers the end. */
+.step.step-link::after {
+	content: "";
+	position: absolute;
+	left: 6px;
+	width: 1px;
+	top: var(--dot-y);
+	bottom: calc(-1 * (var(--step-gap, 6px) + 12px));
+	background: var(--c-border-heavy);
+}
+
+.step.activity[data-status="done"] {
+	--dot: var(--c-add);
+}
+
+.step.activity[data-status="error"],
+.step.msg-footer:has(.error-block) {
+	--dot: var(--c-del);
+}
+
+.step.activity:is([data-status="pending"], [data-status="running"]),
+.step.thinking.live {
+	--dot: var(--omp-accent);
+}
+
+.step.activity:is([data-status="pending"], [data-status="running"])::before,
+.step.thinking.live::before {
+	animation: step-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes step-pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.step::before {
+		animation: none !important;
+	}
+}
+
+/*
+ * The prompt of the turn in view, pinned above the conversation once its
+ * bubble scrolls out at the top (transcript.ts); click to go back to it.
+ */
+.pinned-prompt {
+	position: absolute;
+	z-index: 10;
+	top: 6px;
+	left: 50%;
+	transform: translateX(-50%);
+	width: min(calc(var(--thread-max) - 2 * var(--gutter)), calc(100% - 2 * var(--gutter)));
+	padding: 5px 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-lg);
+	background: linear-gradient(var(--c-user), var(--c-user)), var(--c-bg);
+	box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+	color: var(--c-fg);
+	font: inherit;
+	text-align: left;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+}
+
+.pinned-prompt[hidden] {
+	display: none;
+}
+
+.pinned-prompt:hover {
+	border-color: var(--vscode-focusBorder, var(--c-border-heavy));
+}
+
 .markdown > :first-child {
 	margin-top: 0;
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0]
+
+### Added
+
+- Timeline, as in Claude Code: the steps of each turn (thinking, tool calls, the answer) hang from dots on a vertical line: green when a tool succeeded, red when it failed (or the reply ended in an error), pulsing amber while it runs, grey for thinking and text
+- Pinned prompt: once a prompt's bubble scrolls out at the top, it stays pinned above the conversation, so the top shows the prompt of the turn in view (at the bottom, the latest one), the composer sits below, and the turn scrolls in between. Clicking it scrolls back to the prompt
+
 ## [0.8.2]
 
 ### Fixed
