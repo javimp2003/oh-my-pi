@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.1]
+
+### Changed
+
+- Bash and shell tool rows (and background bash jobs) show the Bash logo instead of the `>_` terminal icon
+
 ## [0.9.0]
 
 ### Added

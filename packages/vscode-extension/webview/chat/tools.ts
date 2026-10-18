@@ -20,7 +20,7 @@ import { fileLink, thumbnail } from "./content";
 
 const MAX_LINES = 200;
 const FAMILY_ICONS: Record<ToolFamily, IconName> = {
-	run: "terminal",
+	run: "bash",
 	code: "python",
 	read: "file",
 	edit: "pencil",

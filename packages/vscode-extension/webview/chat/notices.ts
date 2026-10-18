@@ -19,7 +19,7 @@ interface NoticeRow {
 	body?: string;
 }
 
-const JOB_ICONS: Record<string, IconName> = { bash: "terminal", eval: "python", task: "bot" };
+const JOB_ICONS: Record<string, IconName> = { bash: "bash", eval: "python", task: "bot" };
 
 /** The element for a displayed custom message of type `customType`. */
 export function noticeElement(customType: string, text: string, details: unknown): HTMLElement {
