@@ -59,6 +59,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 			openSettings(): void;
 			login(session: ChatSession): void;
 			attachFiles(session: ChatSession): void;
+			/** Asks for confirmation; resolves once the session is deleted or the user declined. */
+			deleteSession(sessionFile: string, label: string): Promise<void>;
 		},
 		readonly pool: AgentPool,
 	) {
@@ -424,6 +426,10 @@ export class ChatSession implements vscode.Disposable, HostView {
 				await this.#postSessions();
 				return;
 			}
+			case "deleteSession":
+				await this.commands.deleteSession(request.path, request.label);
+				await this.#postSessions();
+				return;
 			case "attachFiles":
 				this.commands.attachFiles(this);
 				return;

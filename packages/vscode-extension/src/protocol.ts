@@ -160,6 +160,8 @@ export type ChatRequest =
 	| { type: "openSession"; path: string }
 	/** Rename the session at `path`, or the open one when `path` is absent; the host re-sends `sessions`. */
 	| { type: "renameSession"; path?: string; name: string }
+	/** Delete the session at `path` (named `label` in the confirmation); the host re-sends `sessions`. */
+	| { type: "deleteSession"; path: string; label: string }
 	/** Pick files with the open dialog and insert them as `@path` mentions. */
 	| { type: "attachFiles" }
 	| { type: "setModel"; provider: string; modelId: string }

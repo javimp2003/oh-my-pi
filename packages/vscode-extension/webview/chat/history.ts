@@ -1,9 +1,11 @@
 /**
- * Session history overlay: a searchable list of the workspace's sessions, then
- * (under their own heading) the chats without a workspace, covering the
- * transcript. Opening it asks the host for `listSessions`; picking a row posts
- * `openSession`, its pencil renames it in place (`renameSession`). Sessions
- * working in the window show a spinner, those that finished unseen a green dot.
+ * Session history overlay: a searchable list of chats covering the transcript,
+ * filtered by two tabs: the workspace's sessions or the chats without a
+ * workspace (it opens on the open chat's group). Opening it asks the host for
+ * `listSessions`; picking a row posts `openSession`, its pencil renames it in
+ * place (`renameSession`), its trash deletes it after the host's confirmation
+ * (`deleteSession`). Sessions working in the window show a spinner, those that
+ * finished unseen a green dot.
  */
 import type { ChatRequest, SessionActivity, SessionListItem } from "../../src/protocol";
 import { h, iconButton } from "../dom";
@@ -20,23 +22,48 @@ export class HistoryPanel {
 		ariaLabel: "Search chats",
 	});
 	#list = h("div", { className: "history-list", role: "listbox" });
+	#workspaceTab = h("button", { type: "button", className: "history-tab", role: "tab" });
+	#noWorkspaceTab = h("button", { type: "button", className: "history-tab", role: "tab" });
 	/** Undefined until the host answers `listSessions`. */
 	#sessions: SessionListItem[] | undefined;
 	#matches: SessionListItem[] = [];
 	#selected = 0;
 	/** Path of the row whose name is being edited. */
 	#editing: string | undefined;
+	/** The tab shown: chats without a workspace, else the workspace's. */
+	#noWorkspace = false;
+	/** Whether this opening picked its tab yet (from the first `sessions` answer). */
+	#tabPicked = false;
 
 	constructor(
 		private readonly post: Post,
 		private readonly onModeChange: (open: boolean) => void,
 	) {
-		this.element = h("div", { className: "history-panel", hidden: true }, this.#search, this.#list);
+		const tabs = h(
+			"div",
+			{ className: "history-tabs", role: "tablist", ariaLabel: "Chats to show" },
+			this.#workspaceTab,
+			this.#noWorkspaceTab,
+		);
+		this.element = h("div", { className: "history-panel", hidden: true }, this.#search, tabs, this.#list);
 		this.#search.addEventListener("input", () => {
 			this.#selected = 0;
 			this.#render();
 		});
 		this.#search.addEventListener("keydown", event => this.#onKeyDown(event));
+		for (const [tab, noWorkspace] of [
+			[this.#workspaceTab, false],
+			[this.#noWorkspaceTab, true],
+		] as const) {
+			// Keep focus in the search box, as the rows do.
+			tab.addEventListener("mousedown", event => event.preventDefault());
+			tab.addEventListener("click", () => {
+				if (this.#noWorkspace === noWorkspace) return;
+				this.#noWorkspace = noWorkspace;
+				this.#selected = 0;
+				this.#render();
+			});
+		}
 	}
 
 	get isOpen(): boolean {
@@ -56,6 +83,7 @@ export class HistoryPanel {
 		}
 		this.element.hidden = false;
 		this.#sessions = undefined;
+		this.#tabPicked = false;
 		this.#search.value = "";
 		this.#selected = 0;
 		this.#render();
@@ -72,10 +100,18 @@ export class HistoryPanel {
 
 	setSessions(items: SessionListItem[]): void {
 		this.#sessions = items;
-		this.#selected = Math.max(
-			0,
-			items.findIndex(item => item.active),
-		);
+		if (!this.#tabPicked) {
+			// Open on the open chat's group; on the other one when that group has no chats.
+			this.#tabPicked = true;
+			const active = items.find(item => item.active);
+			this.#noWorkspace = active
+				? active.noWorkspace
+				: !items.some(item => !item.noWorkspace) && items.some(item => item.noWorkspace);
+			this.#selected = Math.max(
+				0,
+				items.filter(item => item.noWorkspace === this.#noWorkspace).findIndex(item => item.active),
+			);
+		}
 		this.#render();
 	}
 
@@ -108,33 +144,42 @@ export class HistoryPanel {
 	#render(): void {
 		if (this.#sessions === undefined) {
 			this.#matches = [];
+			this.#renderTabs(undefined);
 			this.#list.replaceChildren(h("div", { className: "history-empty" }, "Loading…"));
 			return;
 		}
 		const needle = this.#search.value.trim().toLowerCase();
-		this.#matches = this.#sessions.filter(item =>
+		const found = this.#sessions.filter(item =>
 			`${item.label} ${item.firstPrompt ?? ""} ${item.lastPrompt ?? ""}`.toLowerCase().includes(needle),
 		);
+		this.#renderTabs(found);
+		this.#matches = found.filter(item => item.noWorkspace === this.#noWorkspace);
 		if (this.#matches.length === 0) {
-			const text = this.#sessions.length === 0 ? "No chats yet" : "No matches";
-			this.#list.replaceChildren(h("div", { className: "history-empty" }, text));
+			const empty = this.#noWorkspace ? "No chats without a workspace yet" : "No chats in this workspace yet";
+			const inGroup = this.#sessions.some(item => item.noWorkspace === this.#noWorkspace);
+			this.#list.replaceChildren(h("div", { className: "history-empty" }, inGroup ? "No matches" : empty));
 			return;
 		}
 		this.#selected = Math.min(this.#selected, this.#matches.length - 1);
 		const rows = this.#matches.map((item, index) => this.#row(item, index));
-		const split = this.#matches.findIndex(item => item.noWorkspace);
-		if (split < 0) this.#list.replaceChildren(...rows);
-		else {
-			// Headings only when there are chats without a workspace to set apart.
-			const heading = (text: string) => h("div", { className: "history-section" }, text);
-			this.#list.replaceChildren(
-				...(split > 0 ? [heading("This workspace"), ...rows.slice(0, split)] : []),
-				heading("No workspace"),
-				...rows.slice(split),
-			);
-		}
+		this.#list.replaceChildren(...rows);
 		rows[this.#selected]?.scrollIntoView({ block: "nearest" });
 		this.#list.querySelector<HTMLInputElement>(".history-rename")?.focus();
+	}
+
+	/** Tab labels with how many chats of each group match the search (no count while loading). */
+	#renderTabs(found: SessionListItem[] | undefined): void {
+		for (const [tab, noWorkspace, label] of [
+			[this.#workspaceTab, false, "This workspace"],
+			[this.#noWorkspaceTab, true, "No workspace"],
+		] as const) {
+			const count = found?.filter(item => item.noWorkspace === noWorkspace).length;
+			tab.replaceChildren(
+				label,
+				count === undefined ? "" : h("span", { className: "history-tab-count" }, String(count)),
+			);
+			tab.ariaSelected = String(noWorkspace === this.#noWorkspace);
+		}
 	}
 
 	#row(item: SessionListItem, index: number): HTMLElement {
@@ -145,7 +190,13 @@ export class HistoryPanel {
 			this.#editing = item.path;
 			this.#render();
 		});
-		rename.classList.add("history-rename-button");
+		// The host asks for confirmation, then re-sends the list without it.
+		const remove = iconButton("trash", "Delete", event => {
+			event.stopPropagation();
+			this.post({ type: "deleteSession", path: item.path, label: item.label });
+		});
+		rename.classList.add("history-row-button");
+		remove.classList.add("history-row-button");
 		const row = h(
 			"div",
 			{
@@ -161,6 +212,7 @@ export class HistoryPanel {
 				label,
 				editing ? null : h("span", { className: "history-age" }, item.age),
 				editing ? null : rename,
+				editing ? null : remove,
 			),
 			editing ? null : this.#prompts(item),
 		);

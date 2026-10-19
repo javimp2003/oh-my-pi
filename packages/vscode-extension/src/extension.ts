@@ -22,6 +22,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			openSettings: () => SettingsPanel.show(context.extensionUri),
 			login: session => void login(session),
 			attachFiles: session => void attachFiles(session),
+			deleteSession: (sessionFile, label) => deleteSession(sessionFile, label),
 		},
 		checkpoints,
 	);
@@ -148,20 +149,20 @@ export function activate(context: vscode.ExtensionContext): void {
 		tree.refresh();
 	};
 
-	const deleteSession = async (item?: SessionItem) => {
-		if (!item) return;
-		const label = sessionLabel(item.session);
+	/** Delete a session after a modal confirmation; every chat showing it moves to a new session first. */
+	const deleteSession = async (sessionFile: string, label: string): Promise<void> => {
 		const choice = await vscode.window.showWarningMessage(
 			`Delete the omp session "${label}"?`,
 			{ modal: true, detail: "The session file and its artifacts move to the trash." },
 			"Delete",
 		);
 		if (choice !== "Delete") return;
-		const chat = chats.active;
-		if (chat?.process && chat.state?.sessionFile === item.session.path) await chat.newSession();
-		await chats.pool.stopSession(item.session.path);
-		await checkpoints.remove(item.session.path);
-		for (const file of sessionPaths(item.session.path)) {
+		for (const chat of chats.all) {
+			if (chat.process && chat.state?.sessionFile === sessionFile) await chat.newSession(chat.host?.noWorkspace);
+		}
+		await chats.pool.stopSession(sessionFile);
+		await checkpoints.remove(sessionFile);
+		for (const file of sessionPaths(sessionFile)) {
 			await vscode.workspace.fs
 				.delete(vscode.Uri.file(file), { recursive: true, useTrash: true })
 				.then(undefined, (error: unknown) => {
@@ -281,7 +282,10 @@ export function activate(context: vscode.ExtensionContext): void {
 			}),
 		),
 		vscode.commands.registerCommand("ompCustom.renameSession", run(renameSession)),
-		vscode.commands.registerCommand("ompCustom.deleteSession", run(deleteSession)),
+		vscode.commands.registerCommand(
+			"ompCustom.deleteSession",
+			run((item?: SessionItem) => item && deleteSession(item.session.path, sessionLabel(item.session))),
+		),
 		vscode.commands.registerCommand(
 			"ompCustom.revealSessionFile",
 			run((item: SessionItem) =>

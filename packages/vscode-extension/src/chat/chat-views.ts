@@ -45,6 +45,11 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 		return this.#active ?? this.#sidebar;
 	}
 
+	/** Every open chat: the sidebar and the editor tabs. */
+	get all(): ChatSession[] {
+		return this.#sidebar ? [this.#sidebar, ...this.#panels] : [...this.#panels];
+	}
+
 	resolveWebviewView(view: vscode.WebviewView): void {
 		this.#sidebarView = view;
 		const session = this.#createView({

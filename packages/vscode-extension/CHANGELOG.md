@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0]
+
+### Added
+
+- Delete chats from the History: each row has a trash button next to its pencil; after a confirmation, the session file and its artifacts move to the trash, and a chat showing that session starts a new one
+- History filter: two tabs under the search box, "This workspace" and "No workspace", each with how many chats match, show one group at a time instead of both lists; it opens on the open chat's group
+
 ## [0.10.1]
 
 ### Fixed

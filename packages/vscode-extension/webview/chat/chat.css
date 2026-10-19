@@ -1642,23 +1642,27 @@ code {
 	flex: none;
 }
 
-/* Rename pencil of a history row, shown on hover or when the row is selected. */
-.history-rename-button {
+/* Rename pencil and delete trash of a history row, shown on hover or when the row is selected. */
+.history-row-button {
 	width: 20px;
 	height: 20px;
 	margin: -2px -4px -2px 0;
 	opacity: 0;
 }
 
-.history-rename-button .icon {
+.history-row-button .icon {
 	width: 13px;
 	height: 13px;
 }
 
-.history-row:hover .history-rename-button,
-.history-row[aria-selected="true"] .history-rename-button,
-.history-rename-button:focus-visible {
+.history-row:hover .history-row-button,
+.history-row[aria-selected="true"] .history-row-button,
+.history-row-button:focus-visible {
 	opacity: 1;
+}
+
+.history-row-button:has(.icon-trash):hover {
+	color: var(--c-del);
 }
 
 .history-rename {
@@ -1701,12 +1705,62 @@ code {
 	color: var(--c-fg-3);
 }
 
-/* "This workspace" / "No workspace" headings, shown when there are chats without a workspace. */
-.history-section {
-	padding: 10px 8px 4px;
+/* "This workspace" / "No workspace" filter: a segmented control under the search box. */
+.history-tabs {
+	flex: none;
+	display: flex;
+	gap: 2px;
+	width: 100%;
+	max-width: var(--thread-max);
+	margin: 0 auto 8px;
+	padding: 2px;
+	border-radius: var(--r-md);
+	border: 1px solid var(--c-border);
+	background: var(--c-user);
+}
+
+.history-tab {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 24px;
+	padding: 0 8px;
+	border: none;
+	border-radius: var(--r-sm);
+	background: transparent;
 	color: var(--c-fg-3);
+	font: inherit;
 	font-size: var(--fs-sm);
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.history-tab:hover {
+	color: var(--c-fg);
+}
+
+.history-tab[aria-selected="true"] {
+	background: var(--c-hover);
+	color: var(--c-fg);
 	font-weight: 500;
+}
+
+.history-tab:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+}
+
+.history-tab-count {
+	min-width: 16px;
+	padding: 0 5px;
+	border-radius: 9999px;
+	background: var(--c-border);
+	color: var(--c-fg-2);
+	font-size: 10px;
+	font-weight: 400;
+	line-height: 16px;
 }
 
 /* ---- Dock: notices, queue, composer ---- */
