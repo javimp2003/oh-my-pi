@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.1]
+
+### Changed
+
+- History tabs: "This workspace" and "No workspace" are two separate buttons, and the selected one is highlighted in the accent color
+
+### Fixed
+
+- The pinned prompt of the open chat no longer shows on top of the History or the "Starting omp…" panel
+
 ## [0.11.0]
 
 ### Added

@@ -721,7 +721,8 @@ code {
  */
 .pinned-prompt-row {
 	position: absolute;
-	z-index: 10;
+	/* Above the messages (.step::before is 1), below the panels that cover the transcript (history, status: 5). */
+	z-index: 2;
 	top: 0;
 	left: 0;
 	right: 0;
@@ -1705,18 +1706,14 @@ code {
 	color: var(--c-fg-3);
 }
 
-/* "This workspace" / "No workspace" filter: a segmented control under the search box. */
+/* "This workspace" / "No workspace" filter: two separate tabs; the selected one carries the accent. */
 .history-tabs {
 	flex: none;
 	display: flex;
-	gap: 2px;
+	gap: 8px;
 	width: 100%;
 	max-width: var(--thread-max);
-	margin: 0 auto 8px;
-	padding: 2px;
-	border-radius: var(--r-md);
-	border: 1px solid var(--c-border);
-	background: var(--c-user);
+	margin: 0 auto 10px;
 }
 
 .history-tab {
@@ -1726,10 +1723,10 @@ code {
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
-	height: 24px;
-	padding: 0 8px;
-	border: none;
-	border-radius: var(--r-sm);
+	height: 28px;
+	padding: 0 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-md);
 	background: transparent;
 	color: var(--c-fg-3);
 	font: inherit;
@@ -1739,13 +1736,20 @@ code {
 }
 
 .history-tab:hover {
+	background: var(--c-hover);
 	color: var(--c-fg);
 }
 
 .history-tab[aria-selected="true"] {
-	background: var(--c-hover);
+	border-color: var(--omp-accent);
+	background: color-mix(in srgb, var(--omp-accent) 14%, transparent);
 	color: var(--c-fg);
-	font-weight: 500;
+	font-weight: 600;
+}
+
+.history-tab[aria-selected="true"] .history-tab-count {
+	background: color-mix(in srgb, var(--omp-accent) 35%, transparent);
+	color: var(--c-fg);
 }
 
 .history-tab:focus-visible {
