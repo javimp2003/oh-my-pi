@@ -716,13 +716,17 @@ code {
  * bubble scrolls out at the top (transcript.ts); click to go back to it.
  * The row and lane repeat the .messages column, so the box keeps the bubble's
  * place and shape (right side, sized to its text up to 85%), on one line.
+ * The next prompt pushes the box up; the row clips it there (the bottom
+ * padding leaves room for the shadow).
  */
 .pinned-prompt-row {
 	position: absolute;
 	z-index: 10;
-	top: 6px;
+	top: 0;
 	left: 0;
 	right: 0;
+	padding: 6px 0 12px;
+	overflow: hidden;
 	pointer-events: none;
 }
 

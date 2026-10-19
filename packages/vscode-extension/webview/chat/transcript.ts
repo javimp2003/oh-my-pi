@@ -35,8 +35,6 @@ const EXAMPLE_PROMPTS = [
 const PIN_THRESHOLD_PX = 32;
 /** Blocks of an assistant message that are steps of the turn's timeline (a dot on its rail). */
 const STEP_SELECTOR = ".markdown, .thinking, .activity, .thumbs, .msg-footer";
-/** How far the pinned prompt reaches down over the conversation: a bubble ending under it counts as scrolled out. */
-const PINNED_PROMPT_COVER_PX = 40;
 /** The TUI's braille activity spinner (packages/tui/src/status-line/segments.ts `brandSpinnerFrame`). */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
@@ -394,9 +392,9 @@ export class Transcript {
 		this.#pinnedPrompt.addEventListener("click", () => {
 			const mark = this.#pinnedMark;
 			if (!mark?.el.isConnected) return;
-			// Land the bubble just below where the pinned box sits, so it shows in full and unpins.
+			// Land the bubble where the pinned box sits: it shows in full, unpins, and pushes the previous prompt's box out.
 			const offset = mark.el.getBoundingClientRect().top - this.#scroller.getBoundingClientRect().top;
-			this.#scroller.scrollTop += offset - PINNED_PROMPT_COVER_PX / 2;
+			this.#scroller.scrollTop += offset - this.#pinnedPrompt.offsetTop;
 		});
 
 		this.#scroller.addEventListener("scroll", () => {
@@ -824,12 +822,13 @@ export class Transcript {
 	 */
 	#layoutPinnedPrompt(): void {
 		const top = this.#scroller.getBoundingClientRect().top;
-		// Prompts are in document order: find the last one whose bubble ends above the view.
+		// Prompts are in document order: find the last one whose bubble is wholly above the view, so the box
+		// never shows a prompt over its own bubble.
 		let low = 0;
 		let high = this.#prompts.length;
 		while (low < high) {
 			const middle = (low + high) >> 1;
-			if (this.#prompts[middle]!.el.getBoundingClientRect().bottom <= top + PINNED_PROMPT_COVER_PX) low = middle + 1;
+			if (this.#prompts[middle]!.el.getBoundingClientRect().bottom <= top) low = middle + 1;
 			else high = middle;
 		}
 		const mark = low > 0 ? this.#prompts[low - 1] : undefined;
@@ -839,8 +838,15 @@ export class Transcript {
 			setTooltip(this.#pinnedPrompt, mark && "Scroll to this prompt");
 		}
 		this.#pinnedPrompt.hidden = !mark;
+		if (!mark) return;
 		// The messages column centers within the scroller minus its scrollbar; the row must too.
-		if (mark) this.#pinnedRow.style.right = `${this.#scroller.offsetWidth - this.#scroller.clientWidth}px`;
+		this.#pinnedRow.style.right = `${this.#scroller.offsetWidth - this.#scroller.clientWidth}px`;
+		// The next prompt never slides under the box: reaching it, it pushes the box up out of the row.
+		const next = this.#prompts[low];
+		const gap = this.#pinnedPrompt.offsetTop;
+		const room = next ? next.el.getBoundingClientRect().top - top - gap : Infinity;
+		const push = Math.min(0, room - (gap + this.#pinnedPrompt.offsetHeight));
+		this.#pinnedPrompt.style.transform = push < 0 ? `translateY(${push}px)` : "";
 	}
 
 	#onClick(event: MouseEvent): void {

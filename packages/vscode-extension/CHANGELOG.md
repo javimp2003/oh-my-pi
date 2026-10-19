@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.10.1]
+
+### Fixed
+
+- The pinned prompt no longer overlaps prompts under it: the next prompt pushes it up and out as it reaches the top, and a prompt is pinned only once its bubble has left the view
+
 ## [0.10.0]
 
 ### Added
