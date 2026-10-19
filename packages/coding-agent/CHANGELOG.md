@@ -19,6 +19,8 @@
 
 ### Changed
 
+- Changed the agent to scale effort to the request: questions get answers without edits, todos, subagents, or verification runs; context gathering stops once it can act; verification is proportional to risk; scope stays what was asked; subagents are reserved for large independent work and never used to double-check
+- Changed the default `defaultThinkingLevel` from `high` to `medium`
 - Reduced interactive startup memory usage for new sessions by initializing syntax highlighting only when needed; resumed sessions still prepare highlighting in the background so the restored transcript paints without delay ([#15299](https://github.com/can1357/oh-my-pi/pull/15299) by [@iliaal](https://github.com/iliaal))
 - Compacted Read directory listings by replacing alignment padding with single-space separators while retaining file sizes and relative modification times ([#9062](https://github.com/can1357/oh-my-pi/pull/9062) by [@MikeeI](https://github.com/MikeeI), [#15352](https://github.com/can1357/oh-my-pi/pull/15352) by [@iliaal](https://github.com/iliaal)).
 - RPC mode now emits `session_info_update` whenever the session title changes (auto-titling, `set_session_name`), not only after builtin slash commands

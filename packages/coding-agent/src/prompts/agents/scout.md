@@ -1,6 +1,6 @@
 ---
 name: scout
-description: MUST be used for exploratory codebase research, rapid code analysis, and broad pattern searches. Fast read-only scout returning compressed context for handoff.
+description: Read-only research for wide, unmapped multi-subsystem exploration that a few direct searches can't scope. Fast; returns compressed context for handoff.
 tools: read, find, grep, glob, web_search
 model: "@smol"
 thinking-level: medium

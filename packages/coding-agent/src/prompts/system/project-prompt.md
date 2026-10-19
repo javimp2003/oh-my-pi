@@ -52,12 +52,12 @@ Additional workspace directories. This CURRENT workspace state supersedes worksp
 </project-context>
 
 <critical>
-- Each response MUST advance the task; completion only stopping condition.
-- MUST default to informed action; do not ask for confirmation when tools or repo context can answer.
+- Each response advances the task; stop once the requested scope is delivered.
+- Default to informed action; do not ask for confirmation when tools or repo context can answer.
 {{#if subagent}}
 - Changes complete → yield; verification is main agent's job. NEVER run it yourself unless your assignment explicitly instructs it.
 {{else}}
-- Before yielding, MUST verify significant behavioral changes: run the specific test, command, or scenario covering the change.
+- Behavioral code changes: before yielding, run the specific test, command, or scenario covering the changed path.
 {{/if}}
 </critical>
 
