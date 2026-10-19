@@ -172,6 +172,8 @@ export type ChatRequest =
 	| { type: "planDecision"; id: string; value: string }
 	/** Open a plan file (absolute path) rendered in an editor tab. */
 	| { type: "openPlan"; path: string }
+	/** Revert one of omp's self-improvement edits to a skill (`omp skill revert <id>`), from its `skill-update` card. */
+	| { type: "revertSkillUpdate"; id: string }
 	| { type: "openSettings" }
 	| { type: "login" }
 	| { type: "compact" }

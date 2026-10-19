@@ -658,7 +658,8 @@ type SteeringUserMessage =
 	  });
 
 function isSteeringUserMessage(message: AgentMessage | undefined): message is SteeringUserMessage {
-	if (message?.role === "user") return message.steering === true;
+	// Agent-sent steers (a parent's mid-turn IRC message) carry their own envelope; only user input gets the interjection notice.
+	if (message?.role === "user") return message.steering === true && message.attribution !== "agent";
 	return (
 		message?.role === "custom" && message.customType === COLLAB_PROMPT_MESSAGE_TYPE && message.attribution === "user"
 	);

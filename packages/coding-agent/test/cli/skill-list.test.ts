@@ -60,6 +60,8 @@ describe("runSkillsCommand", () => {
 			expect(reviewer?.baseDir).toBe(path.join(skillsRoot, "second", "reviewer"));
 			expect(reviewer?.source).toBe("custom:user");
 			expect(reviewer?.hide).toBe(false);
+			// Custom-directory skills are the user's own: curation may edit them.
+			expect(reviewer?.selfImprovable).toBe(true);
 			// The public shape is fixed: internal `_source`/`containRoot` stay out.
 			expect(Object.keys(reviewer ?? {}).sort()).toEqual([
 				"baseDir",
@@ -67,6 +69,7 @@ describe("runSkillsCommand", () => {
 				"filePath",
 				"hide",
 				"name",
+				"selfImprovable",
 				"source",
 			]);
 		} finally {

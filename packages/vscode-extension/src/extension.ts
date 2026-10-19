@@ -9,7 +9,8 @@ import { bindNoWorkspaceState } from "./no-workspace";
 import { renameStoredSession } from "./sessions/rename";
 import { guessSessionDir, sessionLabel, sessionPaths } from "./sessions/session-store";
 import { SessionItem, SessionsTree, pickSession } from "./sessions/sessions-tree";
-import { SettingsPanel, openConfigFile } from "./settings/settings-panel";
+import { SettingsPanel, openConfigFile, runOmp } from "./settings/settings-panel";
+import { type HistoryEntry, SkillsTree, type SkillsNode } from "./skills/skills-tree";
 
 export function activate(context: vscode.ExtensionContext): void {
 	const log = vscode.window.createOutputChannel("omp (custom)");
@@ -28,6 +29,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	);
 	// Running and finished-unseen marks for every session with a process in this window.
 	const tree = new SessionsTree(() => chats.pool.activities());
+	const skillsTree = new SkillsTree(log);
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 	statusBar.command = "ompCustom.focusChat";
 
@@ -248,12 +250,14 @@ export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push(
 		log,
 		tree,
+		skillsTree,
 		chats,
 		statusBar,
 		vscode.window.registerWebviewViewProvider(ChatRegistry.viewId, chats, {
 			webviewOptions: { retainContextWhenHidden: true },
 		}),
 		vscode.window.createTreeView("ompCustom.sessions", { treeDataProvider: tree, showCollapseAll: false }),
+		vscode.window.createTreeView("ompCustom.skills", { treeDataProvider: skillsTree }),
 		chats.onDidChangeActive(session => void updateActive(session)),
 		chats.pool.onDidChangeActivity(() => tree.refresh()),
 		vscode.commands.registerCommand(
@@ -342,6 +346,27 @@ export function activate(context: vscode.ExtensionContext): void {
 					iconPath: vscode.Uri.joinPath(context.extensionUri, "media", "icon.png"),
 				});
 				terminal.show();
+			}),
+		),
+		vscode.commands.registerCommand(
+			"ompCustom.refreshSkills",
+			run(() => skillsTree.refresh()),
+		),
+		vscode.commands.registerCommand(
+			"ompCustom.showSkillChange",
+			run(async (entry: HistoryEntry) =>
+				vscode.window.showTextDocument(
+					await vscode.workspace.openTextDocument({ content: entry.diff, language: "diff" }),
+				),
+			),
+		),
+		vscode.commands.registerCommand(
+			"ompCustom.revertSkillChange",
+			run(async (node: SkillsNode) => {
+				if (node.kind !== "entry") return;
+				await runOmp(["skill", "revert", node.entry.id]);
+				void vscode.window.showInformationMessage(`Reverted ${node.entry.skill}`);
+				await skillsTree.refresh();
 			}),
 		),
 		vscode.commands.registerCommand("ompCustom.showLog", () => log.show()),

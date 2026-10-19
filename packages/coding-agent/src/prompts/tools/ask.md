@@ -1,4 +1,4 @@
-Ask only for materially different tradeoffs the user must decide. Default: act using code/config/docs/history and conventions. Several viable choices: pick conservative/standard, proceed, state choice.
+Ask only for materially different tradeoffs the user must decide, or to confirm destructive/irreversible actions that neither the user's request nor a loaded skill authorizes. Default: act using code/config/docs/history, skills and conventions. Several viable choices: pick conservative/standard, proceed, state choice.
 
 <instruction>
 - Batch related questions; 2–5 distinct options each; short labels, tradeoffs in `description`.

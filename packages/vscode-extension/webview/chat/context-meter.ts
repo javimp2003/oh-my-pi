@@ -21,8 +21,9 @@ function formatCost(cost: number): string {
 }
 
 function formatTokens(tokens: number): string {
-	if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-	if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`;
+	// From 999,950 the one-decimal "k" form would round up to "1000.0k".
+	if (tokens >= 999_950) return `${(tokens / 1_000_000).toFixed(1)}M`;
+	if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;
 	return String(tokens);
 }
 

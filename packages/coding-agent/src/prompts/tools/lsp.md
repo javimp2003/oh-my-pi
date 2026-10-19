@@ -12,8 +12,7 @@ Symbol-aware code intelligence from language servers — navigation, refactors, 
 </operations>
 
 <critical>
-- Symbol-aware work (rename, references, definition, code actions) MUST use `lsp` whenever a server is available.
-  It follows shadowing, re-exports, and cross-file usages text tools miss.
-- NEVER do a cross-file rename with `ast_edit`/`sed`/hand edits when `lsp` `rename`/`rename_file` can — text renames silently drop callsites.
-- Reach for `code_actions` on imports, quick-fixes, and server-known refactors before editing by hand.
+- Cross-file rename/move: use `rename`/`rename_file`, not `ast_edit`/`sed`/hand edits — text renames silently drop callsites.
+- References before changing an exported symbol, and imports/quick-fixes via `code_actions`: prefer `lsp`; it follows shadowing and re-exports text tools miss.
+- Quick lookup of a known symbol: plain search is fine.
 </critical>

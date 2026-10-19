@@ -204,13 +204,14 @@ function parseOptionalField(section: string, label: string): string | null | und
 	const match = section.match(regex);
 	if (!match) return undefined;
 	const value = match[1].trim();
-	return value.length > 0 ? value : null;
+	return value.length > 0 && value !== "N/A" ? value : null;
 }
 
+// Exa MCP labels the body `Text:` (older payloads) or `Highlights:` (current), and separates results with `---`.
 function parseTextField(section: string): string | null | undefined {
-	const match = section.match(/(?:^|\n)Text:\s*([\s\S]*)$/);
+	const match = section.match(/(?:^|\n)(?:Text|Highlights):\s*([\s\S]*)$/);
 	if (!match) return undefined;
-	const value = match[1].trim();
+	const value = match[1].replace(/\n-{3,}\s*$/, "").trim();
 	return value.length > 0 ? value : null;
 }
 
@@ -233,7 +234,7 @@ function parseExaMcpTextPayload(payload: unknown): ExaSearchResponse | null {
 
 	const sections = textBlocks
 		.join("\n\n")
-		.split(/\n{2,}(?=Title:\s*[^\n]*(?:\n(?:URL|Author|Published Date|Text):))/)
+		.split(/\n{2,}(?=Title:\s*[^\n]*(?:\n(?:URL|Author|Published(?: Date)?|Text|Highlights):))/)
 		.map(section => section.trim())
 		.filter(section => section.startsWith("Title:"));
 
@@ -242,7 +243,7 @@ function parseExaMcpTextPayload(payload: unknown): ExaSearchResponse | null {
 		const title = parseOptionalField(section, "Title");
 		const url = parseOptionalField(section, "URL");
 		const author = parseOptionalField(section, "Author");
-		const publishedDate = parseOptionalField(section, "Published Date");
+		const publishedDate = parseOptionalField(section, "Published Date") ?? parseOptionalField(section, "Published");
 		const text = parseTextField(section);
 
 		if (!title && !url && !text) continue;

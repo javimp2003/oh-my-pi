@@ -43,11 +43,8 @@ import { cfgProvidersAntigravityEndpoint, cfgProvidersWebSearchTimeoutSeconds } 
 /** Web search tool parameters schema */
 export const webSearchSchema = type({
 	query: "string",
-	recency: "'day' | 'week' | 'month' | 'year'?",
-	limit: "number?",
-	max_tokens: "number?",
-	temperature: "number?",
-	num_search_results: "number?",
+	"recency?": type("'day' | 'week' | 'month' | 'year'").describe("Only results from the last day/week/month/year"),
+	"limit?": type("number").describe("Max sources to return"),
 });
 
 export type SearchToolParams = typeof webSearchSchema.infer;
@@ -249,9 +246,6 @@ async function executeSearch(
 				limit: params.limit,
 				recency: params.recency,
 				systemPrompt: webSearchSystemPrompt,
-				maxOutputTokens: params.max_tokens,
-				numSearchResults: params.num_search_results,
-				temperature: params.temperature,
 				signal,
 				timeoutMs,
 				authStorage,

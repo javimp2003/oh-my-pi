@@ -1,4 +1,4 @@
-Use `read` for static web; browser only if needed.
+Read files, directories, documents, archives, and databases. Also the web fetcher for known URLs: use it instead of `curl`/browser for static pages; line ranges work on pages and `grep` accepts URLs.
 
 Put line ranges in `path`, never a separate range/offset/limit parameter: `{"path":"notes.txt:450-455"}` reads lines 450-455; `{"path":"notes.txt:-5"}` reads the last 5. Include the selector on every ranged call; repeating a bare path does not advance through the file.
 

@@ -27,6 +27,8 @@ const inFlight = new Map<string, Promise<void>>();
 const compressionSlots = new Semaphore(4);
 
 export type SkillDescriptionCompressor = (name: string, description: string, request: string) => Promise<string>;
+/** `full`: descriptions as written; `compressed`: model-written routing hints of at most 12 words. */
+export type SkillDescriptionMode = "full" | "compressed";
 
 /**
  * Resolve the configured fast role for each background request, without using the foreground model.
@@ -259,16 +261,28 @@ export class SkillDescriptionStore {
 export class SkillDescriptionCatalog {
 	readonly #store: SkillDescriptionStore | undefined;
 	readonly #compress?: SkillDescriptionCompressor;
+	readonly #mode: SkillDescriptionMode;
 	readonly #snapshot = new Map<string, string>();
 
-	/** `store` defaults to {@link sharedSkillDescriptionStore}; without one, prompts keep previews. */
-	constructor(options: { store?: SkillDescriptionStore; compress?: SkillDescriptionCompressor } = {}) {
-		this.#store = options.store ?? sharedSkillDescriptionStore();
+	/** `store` defaults to {@link sharedSkillDescriptionStore}; without one, compressed prompts keep previews. */
+	constructor(
+		options: {
+			store?: SkillDescriptionStore;
+			compress?: SkillDescriptionCompressor;
+			mode?: SkillDescriptionMode;
+		} = {},
+	) {
+		this.#mode = options.mode ?? "full";
+		this.#store = this.#mode === "compressed" ? (options.store ?? sharedSkillDescriptionStore()) : undefined;
 		this.#compress = options.compress;
 	}
 
 	/** Read the session's frozen prompt hints without starting new model work. */
 	snapshot(skills: readonly Skill[]): Array<Skill & { description: string }> {
+		// Full descriptions stay on one line: the prompt lists one skill per line.
+		if (this.#mode === "full") {
+			return skills.map(skill => ({ ...skill, description: skill.description.replace(/\s+/g, " ").trim() }));
+		}
 		return skills.map(skill => ({
 			...skill,
 			description: this.#snapshot.get(keyFor(skill)) ?? previewSkillDescription(skill.description),
@@ -277,6 +291,7 @@ export class SkillDescriptionCatalog {
 
 	render(skills: readonly Skill[]): Array<Skill & { description: string }> {
 		if (skills.length === 0) return [];
+		if (this.#mode === "full") return this.snapshot(skills);
 		const store = this.#store;
 		return skills.map(skill => {
 			const key = keyFor(skill);

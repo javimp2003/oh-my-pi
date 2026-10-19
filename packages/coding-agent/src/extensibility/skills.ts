@@ -49,6 +49,17 @@ export interface Skill {
 	_source?: SourceMeta;
 }
 
+/**
+ * Whether skill curation may edit this skill in place: the user's and the
+ * project's own `.omp` skills and `skills.customDirectories`. Plugin, registry,
+ * managed and foreign (`.claude`/`.agents`/`.codex`/`.github`) skills are never
+ * edited — their owners or the next update would overwrite the change.
+ */
+export function isSelfImprovableSkill(skill: Skill): boolean {
+	const provider = skill._source?.provider;
+	return provider === "native" || provider === CUSTOM_DIR_PROVIDER_ID;
+}
+
 export interface SkillWarning {
 	skillPath: string;
 	message: string;

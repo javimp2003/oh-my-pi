@@ -1262,6 +1262,13 @@ code {
 	color: var(--c-fg-3);
 }
 
+/* Revert button under the diff of a `skill-update` notice. */
+.skill-update-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 6px;
+}
+
 .diff-add {
 	color: var(--c-add);
 }

@@ -604,7 +604,7 @@ const ARG_SCHEMAS: Record<string, ArgSchema> = {
 	task: argSchema("op context tasks name task agent solutionSpace tools isolated schemaMode"),
 	todo: argSchema("op items task phase list reason tasks content status phase_note"),
 	wait: argSchema("ids timeout#"),
-	web_search: argSchema("query limit# recency num_search_results# max_tokens# temperature#"),
+	web_search: argSchema("query limit# recency"),
 	ask: argSchema("questions id question options label description recommended# header preview multi"),
 	ast_grep: argSchema("pat path lang skip# limit#"),
 	ast_edit: argSchema("pat out ops paths path lang"),

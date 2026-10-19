@@ -1,6 +1,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { CompletionSoundMode } from "./completion-sound";
 import type { OmpCommand } from "./rpc/omp-process";
 import { systemCaEnv } from "./system-ca";
 
@@ -15,6 +16,7 @@ export function readConfig() {
 		resumeLastSession: config.get<boolean>("resumeLastSession", true),
 		sendWhileBusy: config.get<"steer" | "followUp">("sendWhileBusy", "steer"),
 		fileCheckpoints: config.get<boolean>("fileCheckpoints", true),
+		completionSound: config.get<CompletionSoundMode>("completionSound", "always"),
 		/** Spoken language for voice input as an ISO 639-1 code; `""` lets the speech model detect it. */
 		voiceLanguage: voiceLanguage(config.get<string>("voiceLanguage", "auto")),
 		/** Folder chats without a workspace run in (see no-workspace.ts); may start with `~`. */

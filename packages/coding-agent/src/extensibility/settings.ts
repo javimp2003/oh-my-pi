@@ -40,6 +40,40 @@ export const cfgSkillsEnableSkillCommands = register({
 	},
 });
 
+export const cfgSkillsDescriptions = register({
+	id: "skills.descriptions",
+	type: "enum",
+	values: ["full", "compressed"] as const,
+	default: "full",
+	ui: {
+		tab: "tasks",
+		group: "Commands & Skills",
+		label: "Skill Descriptions",
+		description: "How skill descriptions appear in the system prompt",
+		options: [
+			{ value: "full", label: "Full", description: "The description as written in SKILL.md" },
+			{
+				value: "compressed",
+				label: "Compressed",
+				description: "A model-written hint of at most 12 words (fewer tokens with many skills)",
+			},
+		],
+	},
+});
+
+export const cfgSkillsSelfImprove = register({
+	id: "skills.selfImprove",
+	type: "boolean",
+	default: true,
+	ui: {
+		tab: "tasks",
+		group: "Commands & Skills",
+		label: "Skill Self-Improvement",
+		description:
+			"After a task that tripped while using your skills, omp corrects those skills in place (history and revert kept)",
+	},
+});
+
 export const cfgSkillsEnableCodexUser = register({ id: "skills.enableCodexUser", type: "boolean", default: false });
 
 export const cfgSkillsEnableClaudeUser = register({ id: "skills.enableClaudeUser", type: "boolean", default: false });

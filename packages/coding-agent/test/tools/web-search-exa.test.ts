@@ -651,6 +651,62 @@ describe("searchExa", () => {
 		]);
 	});
 
+	it("keeps the page highlights from the current Exa MCP text format", async () => {
+		delete process.env.EXA_API_KEY;
+		const text = [
+			"Title: N/A",
+			"URL: https://react.dev/blog/2024/12/05/react-19",
+			"Published: 2024-12-05T00:00:00.000Z",
+			"Author: N/A",
+			"Highlights:",
+			"### `ref` as a prop",
+			"",
+			"New function components will no longer need `forwardRef`.",
+			"",
+			"---",
+			"",
+			"Title: Releases · oven-sh/bun",
+			"URL: https://github.com/oven-sh/bun/releases",
+			"Published: N/A",
+			"Author: N/A",
+			"Highlights:",
+			"## Bun v1.4.3",
+		].join("\n");
+		const fetchMock: FetchImpl = (_url, init) => {
+			const request = parsePostedMcpRequest(init?.body);
+			return Promise.resolve(
+				new Response(
+					JSON.stringify({ jsonrpc: "2.0", id: request.id, result: { content: [{ type: "text", text }] } }),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+		};
+
+		const result = await searchExa({ query: "react 19 refs", fetch: fetchMock });
+
+		expect(result.sources).toEqual([
+			{
+				title: "https://react.dev/blog/2024/12/05/react-19",
+				url: "https://react.dev/blog/2024/12/05/react-19",
+				snippet: "### `ref` as a prop\n\nNew function components will no longer need `forwardRef`.",
+				publishedDate: "2024-12-05T00:00:00.000Z",
+				ageSeconds: expect.any(Number),
+				author: undefined,
+			},
+			{
+				title: "Releases · oven-sh/bun",
+				url: "https://github.com/oven-sh/bun/releases",
+				snippet: "## Bun v1.4.3",
+				publishedDate: undefined,
+				ageSeconds: undefined,
+				author: undefined,
+			},
+		]);
+	});
+
 	it("uses AuthStorage credentials when EXA_API_KEY is unset", async () => {
 		delete process.env.EXA_API_KEY;
 		let receivedKey: string | undefined;

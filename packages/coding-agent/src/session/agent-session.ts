@@ -976,8 +976,8 @@ export class AgentSession implements SettingsScope {
 	/** OAuth account pools enforced on this session's key lookups; lifted on dispose. */
 	#accountPoolScope: SessionAccountPoolScope | undefined;
 	#inheritedProviderPromptCacheKey: string | undefined;
-	#autolearnCaptureAbortController: AbortController | undefined;
-	#autolearnCaptureTask: Promise<void> | undefined;
+	#privateCaptureAbortController: AbortController | undefined;
+	#privateCaptureTask: Promise<void> | undefined;
 	#isDisposed = false;
 	#modelDiscoveryAbortController = new AbortController();
 	/** Process-wide by default (double-spend safety across sessions); injectable for tests. */
@@ -5425,41 +5425,46 @@ export class AgentSession implements SettingsScope {
 		}
 	}
 
-	/** Run one abortable auto-learn capture outside the primary agent loop. */
-	async runAutolearnCapture(capture: (signal: AbortSignal) => Promise<void>): Promise<void> {
-		if (this.#autolearnCaptureTask || this.#isDisposed) return;
+	/**
+	 * Run one abortable private capture (auto-learn capture, skill curation) outside the
+	 * primary agent loop. Captures run one at a time: a capture requested while another
+	 * runs waits for it.
+	 */
+	async runPrivateCapture(capture: (signal: AbortSignal) => Promise<void>): Promise<void> {
+		while (this.#privateCaptureTask) await this.#privateCaptureTask.catch(() => {});
+		if (this.#isDisposed) return;
 		const controller = new AbortController();
-		this.#autolearnCaptureAbortController = controller;
+		this.#privateCaptureAbortController = controller;
 		const task = (async () => {
 			try {
 				await capture(controller.signal);
 			} catch (error) {
 				if (!controller.signal.aborted) throw error;
 			} finally {
-				if (this.#autolearnCaptureAbortController === controller) {
-					this.#autolearnCaptureAbortController = undefined;
+				if (this.#privateCaptureAbortController === controller) {
+					this.#privateCaptureAbortController = undefined;
 				}
 			}
 		})();
-		this.#autolearnCaptureTask = task;
+		this.#privateCaptureTask = task;
 		try {
 			await task;
 		} finally {
-			if (this.#autolearnCaptureTask === task) this.#autolearnCaptureTask = undefined;
+			if (this.#privateCaptureTask === task) this.#privateCaptureTask = undefined;
 		}
 	}
 
-	#abortAutolearnCapture(): void {
-		this.#autolearnCaptureAbortController?.abort();
+	#abortPrivateCapture(): void {
+		this.#privateCaptureAbortController?.abort();
 	}
 
-	async #drainAutolearnCapture(): Promise<void> {
-		const task = this.#autolearnCaptureTask;
+	async #drainPrivateCapture(): Promise<void> {
+		const task = this.#privateCaptureTask;
 		if (!task) return;
 		try {
-			await withTimeout(task, 3_000, "Timed out draining auto-learn capture during dispose");
+			await withTimeout(task, 3_000, "Timed out draining private capture during dispose");
 		} catch (error) {
-			logger.warn("Auto-learn capture did not settle during dispose", { error: String(error) });
+			logger.warn("Private capture did not settle during dispose", { error: String(error) });
 		}
 	}
 
@@ -5499,7 +5504,7 @@ export class AgentSession implements SettingsScope {
 		}
 		this.#memory.cancelLocalMemoryStartup();
 		this.#titleGenerationAbortController.abort();
-		this.#abortAutolearnCapture();
+		this.#abortPrivateCapture();
 		this.#irc.flushPending();
 		this.yieldQueue.clear();
 		this.agent.setAsideMessageProvider(undefined);
@@ -5688,7 +5693,7 @@ export class AgentSession implements SettingsScope {
 		} catch (error) {
 			logger.warn("Post-prompt tasks still draining at dispose deadline", { error: String(error) });
 		}
-		await this.#drainAutolearnCapture();
+		await this.#drainPrivateCapture();
 		await this.#memory.transition;
 
 		const hindsightState = this.getHindsightSessionState();
@@ -9712,7 +9717,7 @@ export class AgentSession implements SettingsScope {
 		try {
 			this.#titleGenerationAbortController.abort();
 			if (!this.#isDisposed) this.#titleGenerationAbortController = new AbortController();
-			this.#abortAutolearnCapture();
+			this.#abortPrivateCapture();
 			for (const controller of this.#usagePreflightAbortControllers) controller.abort();
 			for (const controller of this.#imageDescriptionAbortControllers) controller.abort(options?.reason);
 			this.abortRetry();
@@ -9755,7 +9760,7 @@ export class AgentSession implements SettingsScope {
 			// Do not let abort-and-replace callers start a new prompt before that cleanup
 			// finishes, or the replacement turn's events are neither forwarded nor persisted.
 			await manualCompactionCleanup;
-			await this.#drainAutolearnCapture();
+			await this.#drainPrivateCapture();
 			await this.#goalRuntime.onTaskAborted({ reason: options?.goalReason ?? "interrupted" });
 			// Clear prompt-in-flight state: waitForIdle resolves when the agent loop's finally
 			// block runs, but nested prompt setup/finalizers may still be unwinding. Without this,
@@ -11859,8 +11864,8 @@ export class AgentSession implements SettingsScope {
 
 		const bashTransition = this.#bash.beginSessionTransition();
 		this.#cancelOwnAsyncJobs();
-		this.#abortAutolearnCapture();
-		await this.#drainAutolearnCapture();
+		this.#abortPrivateCapture();
+		await this.#drainPrivateCapture();
 
 		let sessionTransitioned = false;
 		let advisorRecordersDetached = false;
@@ -11977,8 +11982,8 @@ export class AgentSession implements SettingsScope {
 		await this.sessionManager.flush();
 		const bashTransition = this.#bash.beginSessionTransition();
 		this.#cancelOwnAsyncJobs();
-		this.#abortAutolearnCapture();
-		await this.#drainAutolearnCapture();
+		this.#abortPrivateCapture();
+		await this.#drainPrivateCapture();
 
 		let sessionTransitioned = false;
 		let advisorRecordersDetached = false;

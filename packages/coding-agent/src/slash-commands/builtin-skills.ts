@@ -11,8 +11,9 @@ import {
 	type SkillInstallHooks,
 	updateSkillPackages,
 } from "../skillshare/installer";
+import { formatSkillHistory, listSkillHistory, revertSkillHistoryEntry } from "../skill-curation/history";
 import { clearSubmittedText } from "./helpers/draft";
-import { errorMessage, parseSubcommand } from "./helpers/parse";
+import { commandConsumed, errorMessage, parseSubcommand, usage } from "./helpers/parse";
 import type { SlashCommandSpec } from "./types";
 
 const USAGE = [
@@ -59,6 +60,17 @@ async function reportChanges(ctx: InteractiveModeContext, changes: SkillChange[]
 	}
 	await ctx.refreshSkillState();
 	ctx.showStatus(formatSkillChanges(changes));
+}
+
+/** `/skill-history [skill]` lists recent skill self-improvement edits; `/skill-history revert <id>` undoes one. */
+async function runSkillHistory(args: string): Promise<string> {
+	const { verb, rest } = parseSubcommand(args);
+	if (verb === "revert") {
+		if (!rest) throw new Error("Usage: /skill-history revert <id>");
+		const entry = await revertSkillHistoryEntry(rest);
+		return `Reverted ${entry.skill}: ${entry.files.map(file => file.relativePath).join(", ")}`;
+	}
+	return formatSkillHistory(await listSkillHistory({ skill: args.trim() || undefined, limit: 10 }));
 }
 
 export const BUILTIN_SKILLS_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
@@ -141,6 +153,29 @@ export const BUILTIN_SKILLS_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 				}
 			} catch (error) {
 				ctx.showError(`Skills: ${errorMessage(error)}`);
+			}
+		},
+	},
+	{
+		name: "skill-history",
+		icon: "skill",
+		description: "List or revert omp's self-improvement edits to skills",
+		subcommands: [{ name: "revert", description: "Undo one skill edit", usage: "<id>" }],
+		allowArgs: true,
+		handle: async (command, runtime) => {
+			try {
+				await runtime.output(await runSkillHistory(command.args));
+				return commandConsumed();
+			} catch (error) {
+				return usage(errorMessage(error), runtime);
+			}
+		},
+		handleTui: async (command, runtime) => {
+			clearSubmittedText(runtime);
+			try {
+				runtime.ctx.showStatus(await runSkillHistory(command.args));
+			} catch (error) {
+				runtime.ctx.showError(errorMessage(error));
 			}
 		},
 	},

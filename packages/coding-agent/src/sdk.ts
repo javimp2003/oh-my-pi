@@ -48,6 +48,7 @@ import {
 } from "./advisor";
 import { AsyncJobManager } from "./async";
 import { AutoLearnController, buildAutoLearnInstructions } from "./autolearn/controller";
+import { SkillCurationController } from "./skill-curation/controller";
 import { createAutoresearchExtension } from "./autoresearch";
 import { loadCapability, reset as resetCapabilities } from "./capability";
 import {
@@ -362,6 +363,7 @@ import {
 	cfgDisabledExtensions,
 	cfgExtensions,
 	cfgSkills,
+	cfgSkillsDescriptions,
 	type SkillsSettings,
 } from "./extensibility/settings";
 import { cfgTtsr } from "./export/ttsr-settings";
@@ -1569,7 +1571,7 @@ function buildMCPPromptCommands(manager: MCPManager): LoadedCustomCommand[] {
 	return commands;
 }
 
-/** Dependencies used to construct an isolated auto-learn capture agent. */
+/** Dependencies used to construct an isolated capture agent (auto-learn capture, skill curation). */
 export interface AutoLearnCaptureRunnerOptions {
 	sourceAgent: Agent;
 	/** Resolves the capture tools per run, so live `autolearn.enabled` / backend changes apply. */
@@ -1578,6 +1580,14 @@ export interface AutoLearnCaptureRunnerOptions {
 	onPayload?: SimpleStreamOptions["onPayload"];
 	onResponse?: SimpleStreamOptions["onResponse"];
 	createSessionId?: () => string;
+	/** `customType` of the hidden request message (default `autolearn-nudge`). */
+	customType?: string;
+	/**
+	 * `clone` (default): the capture sees the session's conversation. `none`: it starts
+	 * from the request alone, so its own tool set never reads as a mid-conversation tool
+	 * change against the session's recorded one (the request must carry what it needs).
+	 */
+	history?: "clone" | "none";
 }
 
 /** Build a private capture runner over a detached message snapshot and provider session. */
@@ -1592,15 +1602,18 @@ export function createAutoLearnCaptureRunner(
 
 		const captureSessionId = options.createSessionId?.() ?? Bun.randomUUIDv7();
 		const captureProviderSessionState = new Map<string, ProviderSessionState>();
-		const captureMessages = options.sourceAgent.state.messages.map((message): AgentMessage => {
-			if (message.role === "assistant") {
-				return { ...message, responseId: undefined, providerPayload: undefined };
-			}
-			if (message.role === "user" || message.role === "developer") {
-				return { ...message, providerPayload: undefined };
-			}
-			return message;
-		});
+		const captureMessages =
+			options.history === "none"
+				? []
+				: options.sourceAgent.state.messages.map((message): AgentMessage => {
+						if (message.role === "assistant") {
+							return { ...message, responseId: undefined, providerPayload: undefined };
+						}
+						if (message.role === "user" || message.role === "developer") {
+							return { ...message, providerPayload: undefined };
+						}
+						return message;
+					});
 		const captureAgent = options.createAgent({
 			initialState: {
 				systemPrompt: [...options.sourceAgent.state.systemPrompt],
@@ -1620,7 +1633,7 @@ export function createAutoLearnCaptureRunner(
 		captureAgent.setMetadataResolver(provider => options.sourceAgent.metadataForProvider(provider));
 		const captureMessage: CustomMessage = {
 			role: "custom",
-			customType: "autolearn-nudge",
+			customType: options.customType ?? "autolearn-nudge",
 			content,
 			display: false,
 			attribution: "agent",
@@ -3726,13 +3739,16 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// constructed) and refreshed on every later rebuild via
 		// `setAdvisorMemoryPrompt`.
 		let advisorMemoryPrompt: string | undefined;
-		// The process agent dir uses the process-wide store; a session rooted in
-		// another agent dir keeps its own, closed when the session is disposed.
+		// Compressed descriptions are cached in SQLite: the process agent dir uses the
+		// process-wide store; a session rooted in another agent dir keeps its own,
+		// closed when the session is disposed. Full descriptions need no store.
+		const skillDescriptionMode = cfgSkillsDescriptions.get(settings);
 		const ownedSkillDescriptionStore =
-			path.resolve(agentDir) === path.resolve(getAgentDir())
+			skillDescriptionMode === "full" || path.resolve(agentDir) === path.resolve(getAgentDir())
 				? undefined
 				: openSessionSkillDescriptionStore(agentDir);
 		const skillDescriptions = new SkillDescriptionCatalog({
+			mode: skillDescriptionMode,
 			store: ownedSkillDescriptionStore,
 			// Like the other one-shot model calls, each compression request resolves
 			// its own telemetry handle, so its usage stays out of the run summary.
@@ -5149,6 +5165,60 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			});
 		};
 
+		const createCaptureAgent = (captureOptions: AgentOptions): Agent => {
+			const captureModel = captureOptions.initialState?.model;
+			const captureSessionId = captureOptions.sessionId;
+			if (!captureModel || !captureSessionId) throw new Error("Capture agent identity is incomplete");
+			const captureDateCwdReminder = new DateCwdReminderInjector();
+			return new Agent({
+				...captureOptions,
+				cwd: sessionManager.getCwd(),
+				cwdResolver: () => sessionManager.getCwd(),
+				convertToLlm: convertToLlmFinal,
+				transformContext: async messages => wrapSteeringForModel(messages),
+				transformProviderContext: async (context, transformModel) => {
+					let transformed = obfuscator ? obfuscateProviderContext(obfuscator, context) : context;
+					transformed = clampProviderContextImages(transformed, transformModel);
+					transformed = await normalizeProviderContextImagesForModel(transformed, transformModel);
+					transformed = await dropUnreadableContextImages(transformed, transformModel);
+					transformed = await blobBroker.decorateContext(transformed, transformModel);
+					transformed = clampProviderContextImageBytes(transformed, transformModel);
+					return captureDateCwdReminder.transform(
+						transformed,
+						formatLocalCalendarDate(),
+						normalizePromptPath(sessionManager.getCwd()),
+					);
+				},
+				temperature: agent.temperature,
+				topP: agent.topP,
+				topK: agent.topK,
+				minP: agent.minP,
+				presencePenalty: agent.presencePenalty,
+				repetitionPenalty: agent.repetitionPenalty,
+				serviceTierResolver: agent.serviceTierResolver,
+				hideThinkingSummary: agent.hideThinkingSummary,
+				maxRetryDelayMs: agent.maxRetryDelayMs,
+				getToolContext: toolCall => toolContextStore.getContext(toolCall),
+				streamFn: primaryStreamFn,
+				transformToolCallArguments,
+				// No fallback resolver. Capture agents advertise only their own
+				// capture tools, which stay top-level and never mount as devices,
+				// so they have nothing legitimate to recover — while the primary
+				// session's resolver is bound to the primary agent's tools and
+				// would have let a capture response reach a main-session MCP tool,
+				// side effects included. A hallucinated call from here correctly
+				// stays `not found`, and suggesting session devices it cannot call
+				// would only mislead it.
+				intentTracing: agent.intentTracing,
+				pruneToolDescriptions: agent.pruneToolDescriptions,
+				dialect: resolveDialect(cfgToolsFormat.get(settings), captureModel),
+				abortOnFabricatedToolResult: cfgToolsAbortOnFabricatedResult.get(settings),
+				appendOnlyContext: shouldEnableAppendOnlyContext(cfgProviderAppendOnlyContext.get(settings), captureModel)
+					? new AppendOnlyContextManager()
+					: undefined,
+			});
+		};
+
 		const runAutoLearnCapture = createAutoLearnCaptureRunner({
 			sourceAgent: agent,
 			captureTools: () =>
@@ -5157,62 +5227,21 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 					.filter((tool): tool is AgentTool => tool !== undefined),
 			onPayload,
 			onResponse,
-			createAgent: captureOptions => {
-				const captureModel = captureOptions.initialState?.model;
-				const captureSessionId = captureOptions.sessionId;
-				if (!captureModel || !captureSessionId) throw new Error("Auto-learn capture identity is incomplete");
-				const captureDateCwdReminder = new DateCwdReminderInjector();
-				return new Agent({
-					...captureOptions,
-					cwd: sessionManager.getCwd(),
-					cwdResolver: () => sessionManager.getCwd(),
-					convertToLlm: convertToLlmFinal,
-					transformContext: async messages => wrapSteeringForModel(messages),
-					transformProviderContext: async (context, transformModel) => {
-						let transformed = obfuscator ? obfuscateProviderContext(obfuscator, context) : context;
-						transformed = clampProviderContextImages(transformed, transformModel);
-						transformed = await normalizeProviderContextImagesForModel(transformed, transformModel);
-						transformed = await dropUnreadableContextImages(transformed, transformModel);
-						transformed = await blobBroker.decorateContext(transformed, transformModel);
-						transformed = clampProviderContextImageBytes(transformed, transformModel);
-						return captureDateCwdReminder.transform(
-							transformed,
-							formatLocalCalendarDate(),
-							normalizePromptPath(sessionManager.getCwd()),
-						);
-					},
-					temperature: agent.temperature,
-					topP: agent.topP,
-					topK: agent.topK,
-					minP: agent.minP,
-					presencePenalty: agent.presencePenalty,
-					repetitionPenalty: agent.repetitionPenalty,
-					serviceTierResolver: agent.serviceTierResolver,
-					hideThinkingSummary: agent.hideThinkingSummary,
-					maxRetryDelayMs: agent.maxRetryDelayMs,
-					getToolContext: toolCall => toolContextStore.getContext(toolCall),
-					streamFn: primaryStreamFn,
-					transformToolCallArguments,
-					// No fallback resolver. The capture agent advertises only
-					// `learn`/`manage_skill`, both of which stay top-level and never
-					// mount as devices, so it has nothing legitimate to recover — while
-					// the primary session's resolver is bound to the primary agent's
-					// tools and would have let a capture response reach a main-session
-					// MCP tool, side effects included. A hallucinated call from here
-					// correctly stays `not found`, and suggesting session devices it
-					// cannot call would only mislead it.
-					intentTracing: agent.intentTracing,
-					pruneToolDescriptions: agent.pruneToolDescriptions,
-					dialect: resolveDialect(cfgToolsFormat.get(settings), captureModel),
-					abortOnFabricatedToolResult: cfgToolsAbortOnFabricatedResult.get(settings),
-					appendOnlyContext: shouldEnableAppendOnlyContext(
-						cfgProviderAppendOnlyContext.get(settings),
-						captureModel,
-					)
-						? new AppendOnlyContextManager()
-						: undefined,
-				});
-			},
+			createAgent: createCaptureAgent,
+		});
+
+		// Skill curation runs on the same private capture path; its tools are set per run
+		// (the capture slot runs one capture at a time). Its request carries the task's
+		// transcript, so it needs no conversation clone.
+		let curationTools: AgentTool[] = [];
+		const runCurationTurn = createAutoLearnCaptureRunner({
+			sourceAgent: agent,
+			captureTools: () => curationTools,
+			customType: "skill-curation",
+			history: "none",
+			onPayload,
+			onResponse,
+			createAgent: createCaptureAgent,
 		});
 
 		// Auto-learn can immediately trigger a private capture after the first real
@@ -5238,7 +5267,20 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				new AutoLearnController({
 					session,
 					settings,
-					capture: content => session.runAutolearnCapture(signal => runAutoLearnCapture(content, signal)),
+					capture: content => session.runPrivateCapture(signal => runAutoLearnCapture(content, signal)),
+				});
+				new SkillCurationController({
+					session,
+					settings,
+					runTurn: (content, tools) =>
+						session.runPrivateCapture(async signal => {
+							curationTools = tools;
+							try {
+								await runCurationTurn(content, signal);
+							} finally {
+								curationTools = [];
+							}
+						}),
 				});
 			}
 		}

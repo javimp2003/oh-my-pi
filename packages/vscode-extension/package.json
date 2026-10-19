@@ -2,7 +2,7 @@
 	"name": "omp-custom-vscode",
 	"displayName": "omp (custom)",
 	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.11.1",
+	"version": "0.12.0",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",
@@ -68,6 +68,11 @@
 					"id": "ompCustom.sessions",
 					"name": "Sessions",
 					"icon": "media/activity.svg"
+				},
+				{
+					"id": "ompCustom.skills",
+					"name": "Skills",
+					"icon": "media/activity.svg"
 				}
 			]
 		},
@@ -123,6 +128,23 @@
 				"command": "ompCustom.revealSessionFile",
 				"title": "Reveal Session File",
 				"category": "omp"
+			},
+			{
+				"command": "ompCustom.refreshSkills",
+				"title": "Refresh Skills",
+				"category": "omp",
+				"icon": "$(refresh)"
+			},
+			{
+				"command": "ompCustom.showSkillChange",
+				"title": "Show Skill Change",
+				"category": "omp"
+			},
+			{
+				"command": "ompCustom.revertSkillChange",
+				"title": "Revert Skill Change",
+				"category": "omp",
+				"icon": "$(discard)"
 			},
 			{
 				"command": "ompCustom.selectModel",
@@ -233,6 +255,11 @@
 					"command": "ompCustom.focusChat",
 					"when": "view == ompCustom.sessions",
 					"group": "navigation@0"
+				},
+				{
+					"command": "ompCustom.refreshSkills",
+					"when": "view == ompCustom.skills",
+					"group": "navigation@1"
 				}
 			],
 			"view/item/context": [
@@ -265,6 +292,11 @@
 					"command": "ompCustom.deleteSession",
 					"when": "view == ompCustom.sessions && viewItem =~ /^session/",
 					"group": "3_delete@1"
+				},
+				{
+					"command": "ompCustom.revertSkillChange",
+					"when": "view == ompCustom.skills && viewItem == skillHistory",
+					"group": "inline"
 				}
 			],
 			"editor/context": [
@@ -300,6 +332,14 @@
 				},
 				{
 					"command": "ompCustom.revealSessionFile",
+					"when": "false"
+				},
+				{
+					"command": "ompCustom.showSkillChange",
+					"when": "false"
+				},
+				{
+					"command": "ompCustom.revertSkillChange",
 					"when": "false"
 				}
 			]
@@ -377,6 +417,21 @@
 					"type": "boolean",
 					"default": true,
 					"description": "Before each prompt that starts a turn, snapshot the git repositories of the workspace (without touching branches, the index or history), so editing that prompt can restore the files omp changed since. Git-ignored files and files outside git repositories are not covered. Needs git on the PATH."
+				},
+				"ompCustom.completionSound": {
+					"type": "string",
+					"enum": [
+						"always",
+						"windowUnfocused",
+						"off"
+					],
+					"enumDescriptions": [
+						"Every time omp finishes a task",
+						"Only while the VS Code window does not have focus (you are in another app)",
+						"Never"
+					],
+					"default": "always",
+					"description": "Play a short system sound on the machine running omp when it finishes a task (not when you stop it or it fails)."
 				},
 				"ompCustom.noWorkspaceFolder": {
 					"type": "string",

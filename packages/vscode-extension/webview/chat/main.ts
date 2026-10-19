@@ -20,7 +20,11 @@ const vscode = getVsCodeApi<ChatRequest, ChatViewState>();
 const post = (request: ChatRequest) => vscode.postMessage(request);
 
 const header = new Header(post, () => history.toggle());
-const history = new HistoryPanel(post, open => header.setHistoryMode(open));
+// The History replaces the chat: the composer (with its queue and notices) has nothing to send to there.
+const history = new HistoryPanel(post, open => {
+	header.setHistoryMode(open);
+	composer.element.hidden = open;
+});
 const composer = new Composer(post, draft => vscode.setState({ draft }), vscode.getState()?.draft ?? "", {
 	// TUI commands without an RPC handler, run by the chat itself.
 	localCommands: [

@@ -20,7 +20,7 @@ import { fileLink, parseFileRef, thumbnail } from "./content";
 import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./markdown";
 import { MessageEditor } from "./message-editor";
-import { noticeElement } from "./notices";
+import { isSkillUpdateDetails, noticeElement, skillUpdateElement } from "./notices";
 import { PlanCard } from "./plan-card";
 import { ToolCard, truncatedPre } from "./tools";
 
@@ -701,6 +701,13 @@ export class Transcript {
 				) {
 					el = skillBubble(message.details, contentText(message.content));
 					this.#prompts.push({ el, text: skillDraft(message.details) });
+				} else if (
+					message.role === "custom" &&
+					message.customType === "skill-update" &&
+					isSkillUpdateDetails(message.details)
+				) {
+					const details = message.details;
+					el = skillUpdateElement(details, () => this.post({ type: "revertSkillUpdate", id: details.id }));
 				} else {
 					el = noticeElement(message.customType, contentText(message.content), message.details);
 				}

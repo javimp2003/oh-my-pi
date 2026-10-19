@@ -27,6 +27,7 @@ import {
 	type WrittenFile,
 } from "../checkpoints/snapshots";
 import type { CheckpointStore, RepoCheckpoint } from "../checkpoints/store";
+import { playCompletionSound } from "../completion-sound";
 import { ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
 import { ensureNoWorkspaceFolder, rememberNoWorkspaceSession } from "../no-workspace";
 import { lastSystemCa } from "../system-ca";
@@ -60,6 +61,9 @@ const NON_EVENT_FRAMES: Record<string, true> = {
 
 /** Frames after which the session snapshot (state, stats, title) is re-read. */
 const STATE_CHANGING_EVENTS: Record<string, true> = {
+	// Each finished message moves the context meter mid-turn: an assistant reply adds its
+	// token usage and cost, a tool result grows the context.
+	message_end: true,
 	agent_end: true,
 	model_changed: true,
 	thinking_level_changed: true,
@@ -145,6 +149,10 @@ export class AgentHost implements vscode.Disposable {
 	#settled = true;
 	/** A turn finished while no view was attached; cleared when a view shows the session. */
 	#finishedUnseen = false;
+	/** A run started since the last `session_settled`: that stretch of work ends with one completion sound. */
+	#soundPending = false;
+	/** The latest run was stopped by the user or ended in an error: its stretch ends silently. */
+	#soundSuppressed = false;
 	#refreshTimer: NodeJS.Timeout | undefined;
 	/** The turn being checkpointed: snapshots taken (in the background) as its prompt was sent. */
 	#turn: TurnCheckpoint | undefined;
@@ -372,6 +380,7 @@ export class AgentHost implements vscode.Disposable {
 		const process = this.#requireProcess();
 		const target = await this.#findPrompt(process, fromEnd, original);
 		if (this.running) {
+			this.#soundSuppressed = true;
 			await process.request("abort");
 			await this.#untilIdle();
 		}
@@ -407,6 +416,8 @@ export class AgentHost implements vscode.Disposable {
 	}
 
 	async abort(): Promise<void> {
+		// Before the request: the aborted run's frames can arrive before its response.
+		if (this.running) this.#soundSuppressed = true;
 		await this.process?.request("abort");
 	}
 
@@ -816,6 +827,12 @@ export class AgentHost implements vscode.Disposable {
 			case "session_settled":
 				this.#settled = true;
 				this.#onDidChange.fire(this);
+				// Settled, not `agent_end`: a non-terminal end, a queued follow-up, a goal continuation
+				// or a background job's result still wakes the agent, so the task is not done yet.
+				if (this.#soundPending) {
+					this.#soundPending = false;
+					if (!this.#soundSuppressed) playCompletionSound(readConfig().completionSound);
+				}
 				break;
 			case "extension_error":
 				this.log.appendLine(`[extension error] ${JSON.stringify(frame)}`);
@@ -834,11 +851,16 @@ export class AgentHost implements vscode.Disposable {
 			this.#busy = true;
 			this.#busySince = Date.now();
 			this.#settled = false;
+			this.#soundPending = true;
+			this.#soundSuppressed = false;
 			this.#onDidChange.fire(this);
 		} else if (frame.type === "agent_end") {
 			this.#busy = false;
 			if (this.#views.size === 0) this.#finishedUnseen = true;
 			this.#onDidChange.fire(this);
+			// A run that was stopped or failed is not a finished task (as omp's terminal notification).
+			const last = frame.messages.findLast(message => message.role === "assistant");
+			if (last?.stopReason === "aborted" || last?.stopReason === "error") this.#soundSuppressed = true;
 		}
 		// Approving a plan (a `write` to `xd://propose`) leaves plan mode mid-turn.
 		const planDecision = frame.type === "tool_execution_end" && frame.toolName === "write";

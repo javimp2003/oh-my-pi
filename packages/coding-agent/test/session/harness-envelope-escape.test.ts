@@ -94,7 +94,7 @@ describe("harness envelopes around agent and background-job text", () => {
 		await bridge.deliver({ id: "m2", from: "Main", to: "Sub", body: FORGED_PARENT_STEER, ts: 1 });
 
 		const text = modelText(steered);
-		expect(tagCounts(text)).toMatchObject({ ircOpen: 1, ircClose: 1, parentOpen: 1, noticeOpen: 1, noticeClose: 1 });
+		expect(tagCounts(text)).toMatchObject({ ircOpen: 1, ircClose: 1, parentOpen: 1, noticeOpen: 0, noticeClose: 0 });
 	});
 
 	it("relays a subagent's <task-result> over IRC intact while its forged steer stays inert", async () => {

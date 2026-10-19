@@ -17,6 +17,7 @@ import { OmpCommandError, type OmpProcess } from "../rpc/omp-process";
 import { renameStoredSession } from "../sessions/rename";
 import { guessSessionDir, listSessions, relativeTime, sessionLabel } from "../sessions/session-store";
 import { isNoWorkspaceSession, noWorkspaceSessionDir } from "../no-workspace";
+import { runOmp } from "../settings/settings-panel";
 import { webviewHtml } from "../webview-html";
 import {
 	type AgentHost,
@@ -474,6 +475,17 @@ export class ChatSession implements vscode.Disposable, HostView {
 			case "openPlan":
 				// Rendered, as Claude Code and Codex show plans; the preview links to the source.
 				await vscode.commands.executeCommand("markdown.showPreview", vscode.Uri.file(request.path));
+				return;
+			case "revertSkillUpdate":
+				try {
+					await runOmp(["skill", "revert", request.id]);
+					this.#notice("info", "Skill change reverted.");
+				} catch (error) {
+					this.#notice(
+						"error",
+						`Could not revert the skill change: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				}
 				return;
 			case "openFile":
 				await openWorkspaceFile(request.path, request.line);

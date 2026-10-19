@@ -148,7 +148,7 @@ describe("AgentSession.fork(entryId)", () => {
 		// A running auto-learn capture is old-session state the transition would abort.
 		const capture = Promise.withResolvers<void>();
 		let captureSignal: AbortSignal | undefined;
-		const captureRun = seeded.runAutolearnCapture(async signal => {
+		const captureRun = seeded.runPrivateCapture(async signal => {
 			captureSignal = signal;
 			await capture.promise;
 		});

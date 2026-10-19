@@ -16,16 +16,26 @@
 - Added `navigate_tree` to RPC: moves the session's leaf in place like the TUI's `/tree`; on a user message it rewinds past it and returns its text and images, so hosts can edit and resend any earlier prompt
 - Added dictation to RPC: `dictation_start`, `dictation_stop` and `dictation_cancel` record the microphone natively and transcribe it through a cloud transcription API (the first `openai-transcriptions` model of the `dictation` role, such as Groq's Whisper; local speech models are never used over RPC), returning the text to the host; `dictation_state` frames report the state
 - Added Groq's Whisper models (`groq/whisper-large-v3-turbo`, `groq/whisper-large-v3`) as speech-to-text models, and Groq to `/login` with an API key. The `dictation` role now prefers `groq/whisper-large-v3-turbo` when a Groq key is stored, before the local Parakeet model
+- Added skill self-improvement (`skills.selfImprove`, on by default): after a task that used your own skills (`~/.omp/agent/skills`, `.omp/skills`, `skills.customDirectories`) and hit tool errors, omp corrects those skills in place in a private follow-up turn and shows a "Skill updated" message; every edit is kept in a history (`omp skill history`, `/skill-history`) and can be undone (`omp skill revert <id>`, `/skill-history revert <id>`)
+- Added `skills.descriptions`: `full` (default) lists each skill's description as written; `compressed` keeps the previous 12-word hints
 
 ### Changed
 
+- Changed the agent's role from coding assistant to a technical agent for software, cloud infrastructure and platform operations: reviews query live systems instead of answering from memory, changes to external systems are read back to confirm them, and reviews lead with findings
+- Changed skill guidance: the agent reads every matching skill, carries out the operations a skill documents end to end instead of stopping at read-only, and follows the skill's own guardrails for confirmations instead of asking on its own
 - Changed the agent to scale effort to the request: questions get answers without edits, todos, subagents, or verification runs; context gathering stops once it can act; verification is proportional to risk; scope stays what was asked; subagents are reserved for large independent work and never used to double-check
 - Changed the default `defaultThinkingLevel` from `high` to `medium`
+- Changed the notice on messages sent while the agent works: it now says how to handle a correction, an addition, a question, or a stop, instead of treating every message as an override
+- Changed tool guidance so the agent searches the web with `web_search`, reads known URLs with `read`, and keeps `eval` for code work instead of fetching pages through `curl` or Python; `web_search` no longer exposes provider-internal `max_tokens`/`temperature`/`num_search_results` parameters
+- Clarified tool guidance: reproducing a user-reported bug is expected to prove the fix, `bash` allows redirecting into internal URLs (only trimming output is discouraged), `ask` covers confirming destructive actions, and `wait` works on the agent's own subagents
+- Changed effort guidance: the agent re-plans and digs for the root cause after a second failed fix or a surprise, finishes fast when a task turns out smaller, reads unfamiliar files as declaration outlines first, no longer spawns `workpool()` agents for small batches, and no longer needs a language-server round trip before every exported-symbol change
 - Reduced interactive startup memory usage for new sessions by initializing syntax highlighting only when needed; resumed sessions still prepare highlighting in the background so the restored transcript paints without delay ([#15299](https://github.com/can1357/oh-my-pi/pull/15299) by [@iliaal](https://github.com/iliaal))
 - Compacted Read directory listings by replacing alignment padding with single-space separators while retaining file sizes and relative modification times ([#9062](https://github.com/can1357/oh-my-pi/pull/9062) by [@MikeeI](https://github.com/MikeeI), [#15352](https://github.com/can1357/oh-my-pi/pull/15352) by [@iliaal](https://github.com/iliaal)).
 - RPC mode now emits `session_info_update` whenever the session title changes (auto-titling, `set_session_name`), not only after builtin slash commands
 ### Fixed
 
+- Fixed keyless Exa web search returning only titles and URLs: page excerpts from the current Exa MCP format are now included in results
+- Fixed a parent agent's mid-turn message to a subagent arriving labeled as a user interjection
 - Improved responsiveness when placing assistant text after tool calls in long transcripts ([#12178](https://github.com/can1357/oh-my-pi/issues/12178), [#14344](https://github.com/can1357/oh-my-pi/pull/14344) by [@F0Rextasy](https://github.com/F0Rextasy), [#15353](https://github.com/can1357/oh-my-pi/pull/15353) by [@iliaal](https://github.com/iliaal)).
 - Fixed `apply_patch` rejecting a hunk without context lines when its text occurs more than once ("Found 2 occurrences"); like Codex, each hunk now takes the first exact or whitespace-insensitive match at or after the previous hunk, while fuzzy matches must still be unique ([#15340](https://github.com/can1357/oh-my-pi/pull/15340) by [@Ikaleio](https://github.com/Ikaleio))
 

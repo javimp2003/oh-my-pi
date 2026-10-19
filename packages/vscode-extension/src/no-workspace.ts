@@ -30,9 +30,11 @@ const AGENTS_MD = `# Chats without a workspace
 This folder is the working directory of omp chats opened without a workspace
 (the globe "+" in the VS Code chat). It is not a code project.
 
-- Expect general tasks: diagnosing this machine or its network, running
-  commands and scripts, working with documents, answering questions. Do not
-  look for or assume a codebase here.
+- Expect platform and operations work as much as general tasks: checking and
+  changing cloud resources, dashboards, tickets, wiki pages, gateways and model
+  registries through the matching skills; diagnosing this machine or its network;
+  running commands and scripts; working with documents; answering questions.
+  Do not look for or assume a codebase here.
 - Save files the user asks for in this folder unless they give another path.
 
 (Written by the omp VS Code extension. Edit it to change how these chats behave;

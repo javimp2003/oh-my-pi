@@ -6,7 +6,7 @@ import { Settings } from "../config/settings";
 import type { EffectiveExtensionRoots } from "../capability/types";
 import { initializeWithSettings } from "../discovery";
 import { cfgDisabledExtensions, cfgExtensions, cfgSkills, type SkillsSettings } from "../extensibility/settings";
-import { loadSkills, type SkillWarning } from "../extensibility/skills";
+import { isSelfImprovableSkill, loadSkills, type SkillWarning } from "../extensibility/skills";
 
 /** Public skill listing entry: the fields a machine consumer may rely on. */
 export interface SkillSummary {
@@ -16,6 +16,8 @@ export interface SkillSummary {
 	baseDir: string;
 	source: string;
 	hide: boolean;
+	/** Skill curation may edit it in place (see `isSelfImprovableSkill`). */
+	selfImprovable: boolean;
 }
 
 export interface SkillsCommandResult {
@@ -79,6 +81,7 @@ export async function runSkillsCommand(
 			baseDir: skill.baseDir,
 			source: skill.source,
 			hide: skill.hide === true,
+			selfImprovable: isSelfImprovableSkill(skill),
 		})),
 		warnings,
 	};

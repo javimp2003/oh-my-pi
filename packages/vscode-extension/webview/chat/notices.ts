@@ -4,7 +4,7 @@
  * notices. They render as activity rows like tool calls, as the TUI shows
  * them, never as a user bubble; expanding a row shows the message text.
  */
-import { h } from "../dom";
+import { button, h } from "../dom";
 import { type IconName, icon } from "../icons";
 import { truncatedPre } from "./tools";
 
@@ -30,6 +30,62 @@ export function noticeElement(customType: string, text: string, details: unknown
 				? launchCompletionRows(text, details)
 				: [{ icon: "wrench" as const, verb: customType, body: text }];
 	return h("div", { className: "msg omp-notice" }, ...rows.map(noticeRow));
+}
+
+/** Details of a `skill-update` message: omp corrected one of the user's skills after a task. */
+export interface SkillUpdateDetails {
+	skill: string;
+	/** History entry id, passed to `omp skill revert`. */
+	id: string;
+	summary: string;
+	/** Paths relative to the skill directory. */
+	files: string[];
+	diff: string;
+}
+
+export function isSkillUpdateDetails(value: unknown): value is SkillUpdateDetails {
+	return (
+		record(value) &&
+		typeof value.skill === "string" &&
+		typeof value.id === "string" &&
+		typeof value.summary === "string" &&
+		typeof value.diff === "string" &&
+		Array.isArray(value.files) &&
+		value.files.every(file => typeof file === "string")
+	);
+}
+
+/** `skill-update`: an expandable row showing the diff omp applied, with a Revert button. */
+export function skillUpdateElement(details: SkillUpdateDetails, onRevert: () => void): HTMLElement {
+	const line = h(
+		"div",
+		{ className: "activity-line" },
+		h("span", { className: "activity-icon" }, icon("pencil")),
+		h("span", { className: "activity-verb" }, "Skill updated"),
+		h("span", { className: "activity-subject code" }, details.skill),
+		details.summary ? h("span", { className: "activity-label" }, details.summary) : null,
+		h("span", { className: "activity-chevron" }, icon("chevronRight")),
+	);
+	const revert = button("Revert", "secondary-button", () => {
+		revert.disabled = true;
+		revert.textContent = "Reverting…";
+		onRevert();
+	});
+	return h(
+		"div",
+		{ className: "msg omp-notice" },
+		h(
+			"details",
+			{ className: "activity" },
+			h("summary", { className: "activity-row" }, line),
+			h(
+				"div",
+				{ className: "activity-body" },
+				truncatedPre(details.diff, "activity-pre"),
+				h("div", { className: "skill-update-actions" }, revert),
+			),
+		),
+	);
 }
 
 function noticeRow(row: NoticeRow): HTMLElement {

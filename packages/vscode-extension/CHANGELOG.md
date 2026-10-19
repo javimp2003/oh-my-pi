@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.0]
+
+### Added
+
+- A short system sound plays when omp finishes a task, so a task left running is noticed (`ompCustom.completionSound`: `always`, `windowUnfocused`, `off`)
+- When omp corrects one of your skills after a task that tripped while using it, the chat shows a "Skill updated" row with the summary and diff, and a Revert button that undoes the edit (`omp skill revert`)
+- Skills view: every skill omp discovers, with its source and whether omp may correct it ("self-improving"); each skill lists omp's edits to it, newest first. Click an edit to see its diff, revert it from its inline button; the view refreshes when the skill history changes
+
+### Changed
+
+- The context ring and its popover show token counts with one decimal (`13.4k` instead of `13k`)
+- New chats without a workspace get an `AGENTS.md` that expects platform and operations work (cloud resources, dashboards, tickets, wiki pages, gateways, model registries through the matching skills) as much as general tasks
+
+### Fixed
+
+- The composer no longer shows below the History; it comes back with Back to chat or when a chat opens
+- The context ring and its popover (context used, input/output tokens, cost) update after every reply and tool result while omp works, not only when the task ends
+
 ## [0.11.1]
 
 ### Changed

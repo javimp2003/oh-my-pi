@@ -20,6 +20,7 @@ import { StencilCredential } from "../stencil/credential";
 import { parseSkillSpec, type SkillSpec, SkillshareClient, SkillshareError } from "../skillshare/client";
 import { installSkills, searchSkills, showSkillInfo, uninstallSkills, updateSkills } from "../skillshare/installer";
 import { bumpVersion, type PackResult, packSkill, SEMVER_RE } from "../skillshare/pack";
+import { formatSkillHistory, listSkillHistory, revertSkillHistoryEntry } from "../skill-curation/history";
 import { handleSkillList } from "./skill-list";
 
 export type SkillAction =
@@ -36,7 +37,9 @@ export type SkillAction =
 	| "uninstall"
 	| "search"
 	| "info"
-	| "list";
+	| "list"
+	| "history"
+	| "revert";
 
 export const SKILL_ACTIONS: readonly SkillAction[] = [
 	"publish",
@@ -53,6 +56,8 @@ export const SKILL_ACTIONS: readonly SkillAction[] = [
 	"search",
 	"info",
 	"list",
+	"history",
+	"revert",
 ];
 
 export interface SkillCommandArgs {
@@ -84,6 +89,8 @@ Install and discover:
   search <query> [--sort relevance|downloads|recent] [--json]
   info <@scope/name[@version]> [--json]
   list [dir] [--json]                             Skills a session in dir resolves, with warnings
+  history [name] [--json]                         Self-improvement edits, newest first
+  revert <id>                                     Undo one self-improvement edit
 
 Publish and manage:
   publish [dir] [--scope s] [--tag t] [--dry-run] [--allow-secrets]
@@ -505,6 +512,20 @@ async function dispatch(cmd: SkillCommandArgs): Promise<number> {
 			const spec = args[0];
 			if (!spec) throw new CliUsageError("usage: omp skill info <@scope/name[@version]>");
 			return showSkillInfo({ spec, json: flags.json === true });
+		}
+		case "history": {
+			const entries = await listSkillHistory({ skill: args[0], limit: 50 });
+			process.stdout.write(
+				flags.json ? `${JSON.stringify({ entries }, null, 2)}\n` : `${formatSkillHistory(entries)}\n`,
+			);
+			return 0;
+		}
+		case "revert": {
+			const id = args[0];
+			if (!id) throw new CliUsageError("usage: omp skill revert <id>");
+			const entry = await revertSkillHistoryEntry(id);
+			process.stdout.write(`Reverted ${entry.skill}: ${entry.files.map(file => file.relativePath).join(", ")}\n`);
+			return 0;
 		}
 	}
 }
