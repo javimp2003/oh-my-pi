@@ -23,6 +23,7 @@
 
 - Changed the agent's role from coding assistant to a technical agent for software, cloud infrastructure and platform operations: reviews query live systems instead of answering from memory, changes to external systems are read back to confirm them, and reviews lead with findings
 - Changed skill guidance: the agent reads every matching skill, carries out the operations a skill documents end to end instead of stopping at read-only, and follows the skill's own guardrails for confirmations instead of asking on its own
+- Changed the default system prompt so the agent replies entirely in the language of your message, without words or characters from other languages (code, paths, and identifiers stay verbatim)
 - Changed the agent to scale effort to the request: questions get answers without edits, todos, subagents, or verification runs; context gathering stops once it can act; verification is proportional to risk; scope stays what was asked; subagents are reserved for large independent work and never used to double-check
 - Changed the default `defaultThinkingLevel` from `high` to `medium`
 - Changed the notice on messages sent while the agent works: it now says how to handle a correction, an addition, a question, or a stop, instead of treating every message as an override

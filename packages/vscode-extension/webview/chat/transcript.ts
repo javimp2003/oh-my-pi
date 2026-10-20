@@ -13,6 +13,7 @@ import type {
 	RpcAgentEvent,
 	ToolResultMessage,
 } from "../../src/protocol";
+import { isSkillPromptDetails, isUserPrompt, type SkillPromptDetails, skillPromptDraft } from "../../src/protocol";
 import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
@@ -134,29 +135,10 @@ function summaryDivider(title: string, summary: string): HTMLElement {
 	return h("div", { className: "msg divider" }, details);
 }
 
-/** `details` of omp's `skill-prompt` custom message (packages/tui/src/chat/messages.ts `SkillPromptDetails`). */
-interface SkillPromptDetails {
-	name: string;
-	args?: string;
-	/** The draft as submitted, `/skill:<name>` token in place; absent on older sessions. */
-	prompt?: string;
-	lineCount?: number;
-}
-
-function isSkillPromptDetails(details: unknown): details is SkillPromptDetails {
-	return typeof details === "object" && details !== null && "name" in details && typeof details.name === "string";
-}
-
 /** Something the user sent that starts work: a prompt or a skill invocation. */
 function isPrompt(message: AgentMessage): message is Extract<AgentMessage, { role: "user" | "custom" }> {
 	if (message.role === "user") return !message.synthetic;
 	return message.role === "custom" && message.customType === "skill-prompt";
-}
-
-/** The draft of a skill invocation as submitted, `/skill:<name>` token in place. */
-function skillDraft(details: SkillPromptDetails): string {
-	const token = `/skill:${details.name}`;
-	return details.prompt ?? (details.args ? `${token} ${details.args}` : token);
 }
 
 /**
@@ -164,8 +146,8 @@ function skillDraft(details: SkillPromptDetails): string {
  * token as a chip, and the loaded SKILL.md (the message content sent to the
  * model) folded below, as the terminal shows it.
  */
-function skillBubble(details: SkillPromptDetails, skillText: string): HTMLElement {
-	const draft = skillDraft(details);
+function skillBubble(details: SkillPromptDetails, skillText: string, onEdit?: () => void): HTMLElement {
+	const draft = skillPromptDraft(details);
 	const text = h("div", { className: "bubble-text" });
 	for (const part of draft.split(/(\/skill:[\w.:-]+)/)) {
 		if (!part) continue;
@@ -180,7 +162,12 @@ function skillBubble(details: SkillPromptDetails, skillText: string): HTMLElemen
 		h("summary", null, `Skill ${details.name} · ${lines} ${lines === 1 ? "line" : "lines"}`),
 		prompt,
 	);
-	return h("div", { className: "msg user" }, h("div", { className: "bubble" }, text, folded), messageActions(draft));
+	return h(
+		"div",
+		{ className: "msg user" },
+		h("div", { className: "bubble" }, text, folded),
+		messageActions(draft, onEdit),
+	);
 }
 
 /** A visible timeline step among an assistant message's blocks; hidden and empty blocks have no dot. */
@@ -347,7 +334,7 @@ export class Transcript {
 	#anonymousCount = 0;
 	#retryNote: HTMLElement | undefined;
 	#compactionNote: HTMLElement | undefined;
-	/** Prompts (non-synthetic user messages) in the transcript; each bubble knows its ordinal. */
+	/** Editable prompts (`isUserPrompt`): each bubble knows its ordinal; counted like the host's `#findPrompt`. */
 	#promptCount = 0;
 	#editor: MessageEditor | undefined;
 	/** Prompt bubbles in document order, for the pinned prompt. */
@@ -699,8 +686,16 @@ export class Transcript {
 					message.customType === "skill-prompt" &&
 					isSkillPromptDetails(message.details)
 				) {
-					el = skillBubble(message.details, contentText(message.content));
-					this.#prompts.push({ el, text: skillDraft(message.details) });
+					const details = message.details;
+					const draft = skillPromptDraft(details);
+					const ordinal = isUserPrompt(message) ? this.#promptCount++ : undefined;
+					const skill: HTMLElement = skillBubble(
+						details,
+						contentText(message.content),
+						ordinal === undefined ? undefined : () => this.#editPrompt(skill, ordinal, draft),
+					);
+					el = skill;
+					this.#prompts.push({ el, text: draft });
 				} else if (
 					message.role === "custom" &&
 					message.customType === "skill-update" &&

@@ -11,8 +11,10 @@ import { guessSessionDir, sessionLabel, sessionPaths } from "./sessions/session-
 import { SessionItem, SessionsTree, pickSession } from "./sessions/sessions-tree";
 import { SettingsPanel, openConfigFile, runOmp } from "./settings/settings-panel";
 import { type HistoryEntry, SkillsTree, type SkillsNode } from "./skills/skills-tree";
+import { initSounds } from "./sounds";
 
 export function activate(context: vscode.ExtensionContext): void {
+	initSounds(context.extensionUri);
 	const log = vscode.window.createOutputChannel("omp (custom)");
 	bindNoWorkspaceState(context.globalState);
 	const checkpoints = new CheckpointStore(path.join(context.globalStorageUri.fsPath, "checkpoints"));

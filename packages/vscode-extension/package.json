@@ -2,7 +2,7 @@
 	"name": "omp-custom-vscode",
 	"displayName": "omp (custom)",
 	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.12.0",
+	"version": "0.13.0",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",
@@ -432,6 +432,21 @@
 					],
 					"default": "always",
 					"description": "Play a short system sound on the machine running omp when it finishes a task (not when you stop it or it fails)."
+				},
+				"ompCustom.askAlertSound": {
+					"type": "string",
+					"enum": [
+						"always",
+						"windowUnfocused",
+						"off"
+					],
+					"enumDescriptions": [
+						"Every time omp asks you something",
+						"Only while the VS Code window does not have focus (you are in another app)",
+						"Never"
+					],
+					"default": "always",
+					"description": "Play a short spoken alert on the machine running omp when it asks you questions (the ask tool) or waits for a plan approval, repeated every minute until you answer."
 				},
 				"ompCustom.noWorkspaceFolder": {
 					"type": "string",

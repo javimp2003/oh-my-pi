@@ -27,13 +27,14 @@ import {
 	type WrittenFile,
 } from "../checkpoints/snapshots";
 import type { CheckpointStore, RepoCheckpoint } from "../checkpoints/store";
-import { playCompletionSound } from "../completion-sound";
+import { playCompletionSound } from "../sounds";
 import { ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
 import { ensureNoWorkspaceFolder, rememberNoWorkspaceSession } from "../no-workspace";
 import { lastSystemCa } from "../system-ca";
 import { DialogBridge } from "../dialogs";
-import type { AgentStatus, ChatUpdate, ModelChoice } from "../protocol";
+import { type AgentStatus, type ChatUpdate, isUserPrompt, type ModelChoice } from "../protocol";
 import { OmpCommandError, OmpProcess, type OmpResult } from "../rpc/omp-process";
+import { userPrompt } from "./prompt-entries";
 
 /** Notification frames that are not session events (everything else is forwarded as `event`). */
 const NON_EVENT_FRAMES: Record<string, true> = {
@@ -639,7 +640,7 @@ export class AgentHost implements vscode.Disposable {
 			turn.promptTimestamp === undefined
 		) {
 			const message = frame.message;
-			if (message.role !== "user" || message.synthetic) return;
+			if (!isUserPrompt(message)) return;
 			const promptTimestamp = message.timestamp;
 			turn.promptTimestamp = promptTimestamp;
 			this.#queueCheckpointWork(async () => {
@@ -965,27 +966,4 @@ export function editsFiles(toolName: string, args: unknown): boolean {
 	if (toolName !== "lsp" || !args || typeof args !== "object" || !("action" in args)) return false;
 	const apply = "apply" in args ? args.apply : undefined;
 	return typeof args.action === "string" && LSP_EDIT_ACTIONS[args.action] === true && apply !== false;
-}
-
-/**
- * A session entry that is a prompt the user wrote (a non-synthetic user
- * message): its text, joined like the chat shows it, and its timestamp.
- * Undefined for any other entry.
- */
-function userPrompt(entry: Record<string, unknown>): { text: string; timestamp: number | undefined } | undefined {
-	if (entry.type !== "message") return undefined;
-	const message = entry.message;
-	if (!message || typeof message !== "object" || !("role" in message) || message.role !== "user") return undefined;
-	if ("synthetic" in message && message.synthetic === true) return undefined;
-	const timestamp = "timestamp" in message && typeof message.timestamp === "number" ? message.timestamp : undefined;
-	const content = "content" in message ? message.content : undefined;
-	if (typeof content === "string") return { text: content, timestamp };
-	if (!Array.isArray(content)) return undefined;
-	const texts: string[] = [];
-	for (const block of content) {
-		if (block && typeof block === "object" && "type" in block && block.type === "text" && "text" in block) {
-			if (typeof block.text === "string") texts.push(block.text);
-		}
-	}
-	return { text: texts.join("\n"), timestamp };
 }

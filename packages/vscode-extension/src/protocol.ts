@@ -8,6 +8,8 @@
  * the omp process, VS Code dialogs, and the session store.
  *
  * Shared by `src/` (host, Node) and `webview/` (browser); type-only imports.
+ * It also holds the few pure helpers both sides must agree on (which messages
+ * are editable prompts and their draft text).
  */
 import type {
 	AgentMessage,
@@ -44,6 +46,36 @@ export interface ModelChoice {
 	name: string;
 	reasoning: boolean;
 	contextWindow: number | null;
+}
+
+/** `details` of omp's `skill-prompt` custom message (packages/tui/src/chat/messages.ts `SkillPromptDetails`). */
+export interface SkillPromptDetails {
+	name: string;
+	args?: string;
+	/** The draft as submitted, `/skill:<name>` token in place; absent on older sessions. */
+	prompt?: string;
+	lineCount?: number;
+}
+
+export function isSkillPromptDetails(details: unknown): details is SkillPromptDetails {
+	return typeof details === "object" && details !== null && "name" in details && typeof details.name === "string";
+}
+
+/** The draft of a skill invocation as submitted, `/skill:<name>` token in place. */
+export function skillPromptDraft(details: SkillPromptDetails): string {
+	const token = `/skill:${details.name}`;
+	return details.prompt ?? (details.args ? `${token} ${details.args}` : token);
+}
+
+/**
+ * A prompt the user wrote, and so can edit: a non-synthetic user message, or a
+ * `/skill:` prompt the user invoked (attribution `user`). Agent/autoload skill
+ * injections are not: omp's `navigate_tree` does not rewind to them.
+ * Host (`#findPrompt`, via prompt-entries.ts) and webview count prompts with this.
+ */
+export function isUserPrompt(message: AgentMessage): boolean {
+	if (message.role === "user") return !message.synthetic;
+	return message.role === "custom" && message.customType === "skill-prompt" && message.attribution === "user";
 }
 
 /** What a session is doing in this window: working, or finished while no chat showed it. */
@@ -149,7 +181,7 @@ export type ChatRequest =
 	/**
 	 * Edit a prompt of the conversation and resend it: the session continues from
 	 * there and everything after it leaves the conversation. `fromEnd` counts the
-	 * user messages after it (0 = the last one); `original` is its text as shown.
+	 * prompts (`isUserPrompt`) after it (0 = the last one); `original` is its text as shown.
 	 */
 	| { type: "editMessage"; fromEnd: number; original: string; text: string }
 	| { type: "abort" }

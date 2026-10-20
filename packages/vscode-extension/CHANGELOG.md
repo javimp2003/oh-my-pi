@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.13.0]
+
+### Added
+
+- A spoken alert (`media/ask-alert.mp3`) plays when omp asks you questions or waits for a plan approval, and repeats every minute until you answer (`ompCustom.askAlertSound`: `always`, `windowUnfocused`, `off`)
+
+### Fixed
+
+- Prompts that invoke a skill (`/skill:<name> …`) can be edited and resent like any other prompt, including restoring the files omp changed since
+
 ## [0.12.0]
 
 ### Added

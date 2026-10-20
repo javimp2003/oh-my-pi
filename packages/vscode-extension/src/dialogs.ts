@@ -10,6 +10,7 @@ import type {
 	ExtensionUiRequest,
 	ExtensionUiResponse,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
+import { startAskAlert } from "./sounds";
 
 export interface DialogHost {
 	respond(response: ExtensionUiResponse): void;
@@ -91,6 +92,10 @@ export class DialogBridge {
 	async #answer(request: Extract<ExtensionUiRequest, { method: "select" | "confirm" | "input" | "editor" | "ask" }>) {
 		const source = new vscode.CancellationTokenSource();
 		this.#open.set(request.id, source);
+		const alert =
+			request.method === "ask" || (request.method === "select" && isPlanApproval(request.options))
+				? startAskAlert(line => this.host.log(line))
+				: undefined;
 		const token = source.token;
 		try {
 			const response = await this.#prompt(request, token);
@@ -100,6 +105,7 @@ export class DialogBridge {
 			this.host.log(`dialog ${request.method} failed: ${String(error)}`);
 			this.host.respond({ type: "extension_ui_response", id: request.id, cancelled: true });
 		} finally {
+			alert?.dispose();
 			this.#open.delete(request.id);
 			source.dispose();
 		}
