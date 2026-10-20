@@ -5,9 +5,9 @@ A task just finished. Decide whether any skill it used is wrong or incomplete, a
 {{transcript}}
 </task-transcript>
 
-The task used the skills below. {{errorCount}} tool call(s) failed somewhere in it — not necessarily because of a skill.
+The task used the skills below, or had them in context from an earlier task of the conversation (`loaded-earlier`: the transcript need not show them being read; the agent may still have followed them). {{errorCount}} tool call(s) failed somewhere in it — not necessarily because of a skill.
 {{#each skills}}
-<skill-file name="{{name}}" path="{{filePath}}"{{#if readLate}} read-late="true"{{/if}}>
+<skill-file name="{{name}}" path="{{filePath}}"{{#if readLate}} read-late="true"{{/if}}{{#if earlier}} loaded-earlier="true"{{/if}}>
 {{content}}
 </skill-file>
 {{/each}}

@@ -73,31 +73,49 @@ describe("collectCurationSignals", () => {
 		const demo = skillAt("demo");
 		const afterRead = collectCurationSignals(
 			[readCall("r1", "skill://demo"), toolResult("r1", false), toolResult("b1", true)],
+			0,
 			[demo],
 			root,
 		);
-		expect(afterRead).toEqual({ candidates: [{ skill: demo, readLate: false }], errorCount: 1 });
+		expect(afterRead).toEqual({ candidates: [{ skill: demo, readLate: false, earlier: false }], errorCount: 1 });
 
 		const lateRead = collectCurationSignals(
 			[toolResult("b1", true), readCall("r1", path.join(demo.baseDir, "SKILL.md:1-5")), toolResult("r1", false)],
+			0,
 			[demo],
 			root,
 		);
-		expect(lateRead?.candidates).toEqual([{ skill: demo, readLate: true }]);
+		expect(lateRead?.candidates).toEqual([{ skill: demo, readLate: true, earlier: false }]);
+	});
+
+	it("keeps a skill an earlier task loaded as a candidate, but counts only this task's failures", () => {
+		const demo = skillAt("demo");
+		const earlierTask = [readCall("r1", "skill://demo"), toolResult("r1", false), toolResult("b0", true)];
+		const signals = collectCurationSignals(
+			[...earlierTask, toolResult("b1", true)],
+			earlierTask.length,
+			[demo],
+			root,
+		);
+		expect(signals).toEqual({ candidates: [{ skill: demo, readLate: false, earlier: true }], errorCount: 1 });
+		// The earlier task's failure alone does not make this task trip.
+		expect(
+			collectCurationSignals([...earlierTask, toolResult("b1", false)], earlierTask.length, [demo], root),
+		).toBeUndefined();
 	});
 
 	it("needs both a used skill and a failure that is not the skill read itself", () => {
 		const demo = skillAt("demo");
 		expect(
-			collectCurationSignals([readCall("r1", "skill://demo"), toolResult("r1", false)], [demo], root),
+			collectCurationSignals([readCall("r1", "skill://demo"), toolResult("r1", false)], 0, [demo], root),
 		).toBeUndefined();
 		// A failing read of the skill file is not a task failure.
 		expect(
-			collectCurationSignals([readCall("r1", "skill://demo"), toolResult("r1", true)], [demo], root),
+			collectCurationSignals([readCall("r1", "skill://demo"), toolResult("r1", true)], 0, [demo], root),
 		).toBeUndefined();
 		// A skill outside the editable set is ignored.
 		expect(
-			collectCurationSignals([readCall("r1", "skill://other"), toolResult("b1", true)], [demo], root),
+			collectCurationSignals([readCall("r1", "skill://other"), toolResult("b1", true)], 0, [demo], root),
 		).toBeUndefined();
 	});
 
@@ -112,8 +130,8 @@ describe("collectCurationSignals", () => {
 			attribution: "user",
 			timestamp: 0,
 		};
-		expect(collectCurationSignals([invoked, toolResult("b1", true)], [demo], root)?.candidates).toEqual([
-			{ skill: demo, readLate: false },
+		expect(collectCurationSignals([invoked, toolResult("b1", true)], 0, [demo], root)?.candidates).toEqual([
+			{ skill: demo, readLate: false, earlier: false },
 		]);
 	});
 });
@@ -129,23 +147,26 @@ describe("isSelfImprovableSkill", () => {
 });
 
 describe("renderTaskTranscript", () => {
-	it("shows calls with their results and errors in order, keeping the end when too long", () => {
+	it("keeps every call and result whole, in order, and leaves out the assistant's thinking", () => {
+		const longOutput = `${"x".repeat(50_000)} ls: unrecognized option '--long-format'`;
 		const failed: AgentMessage = {
 			role: "toolResult",
 			toolCallId: "b1",
 			toolName: "bash",
-			content: [{ type: "text", text: "ls: unrecognized option '--long-format'" }],
+			content: [{ type: "text", text: longOutput }],
 			isError: true,
 			timestamp: 0,
 		};
-		const transcript = renderTaskTranscript([readCall("r1", "skill://demo"), failed]);
-		expect(transcript).toBe(`CALL read: {"path":"skill://demo"}\nERROR: ls: unrecognized option '--long-format'`);
-
-		const many = Array.from({ length: 400 }, () => failed);
-		const long = renderTaskTranscript([readCall("r1", "skill://first"), ...many]);
-		expect(long.length).toBeLessThanOrEqual(16_001);
-		expect(long.startsWith("…")).toBe(true);
-		expect(long.endsWith("--long-format'")).toBe(true);
+		const call = readCall("r1", "skill://demo");
+		if (call.role === "assistant") call.content.unshift({ type: "thinking", thinking: "private reasoning" });
+		const transcript = renderTaskTranscript([
+			{ role: "user", content: "list the demo folder", timestamp: 0 },
+			call,
+			failed,
+		]);
+		expect(transcript).toBe(
+			`USER: list the demo folder\nCALL read: {"path":"skill://demo"}\nERROR bash: ${longOutput}`,
+		);
 	});
 });
 

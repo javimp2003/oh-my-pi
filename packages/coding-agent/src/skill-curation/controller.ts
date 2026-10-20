@@ -118,7 +118,8 @@ export class SkillCurationController {
 			const taskMessages = messages.slice(start);
 			const thirdParty = cfgSkillsSelfImproveThirdParty.get(this.#settings);
 			const signals = collectCurationSignals(
-				taskMessages,
+				messages,
+				start,
 				session.skills.filter(skill => isSelfImprovableSkill(skill, thirdParty)),
 				session.sessionManager.getCwd(),
 			);
@@ -132,13 +133,15 @@ export class SkillCurationController {
 	}
 
 	async #curate(signals: CurationSignals, transcript: string): Promise<void> {
-		const skills: Array<{ name: string; filePath: string; readLate: boolean; content: string }> = [];
-		for (const { skill, readLate } of signals.candidates) {
+		const skills: Array<{ name: string; filePath: string; readLate: boolean; earlier: boolean; content: string }> =
+			[];
+		for (const { skill, readLate, earlier } of signals.candidates) {
 			try {
 				skills.push({
 					name: skill.name,
 					filePath: skill.filePath,
 					readLate,
+					earlier,
 					content: await Bun.file(skill.filePath).text(),
 				});
 			} catch (error) {

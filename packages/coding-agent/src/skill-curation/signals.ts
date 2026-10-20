@@ -8,13 +8,16 @@
  */
 import * as path from "node:path";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
+import type { Message } from "@oh-my-pi/pi-ai";
 import type { Skill } from "../extensibility/skills";
-import { SKILL_PROMPT_MESSAGE_TYPE } from "../session/messages";
+import { convertToLlm, SKILL_PROMPT_MESSAGE_TYPE } from "../session/messages";
 
 export interface CurationCandidate {
 	skill: Skill;
 	/** The skill was first used only after a tool had already failed: its description may not trigger in time. */
 	readLate: boolean;
+	/** The skill entered the conversation in an earlier task and was still in context: this task may lean on it without reading it again. */
+	earlier: boolean;
 }
 
 export interface CurationSignals {
@@ -42,12 +45,15 @@ export function matchSkillPath(target: string, skills: readonly Skill[], cwd: st
 }
 
 /**
- * Curation candidates in `messages` (one finished task): every skill in
- * `skills` the task used, provided at least one tool call failed. A failed read
- * of a skill file itself is not counted as a failure.
+ * Curation candidates for the task that starts at `messages[taskStart]`:
+ * `messages` is the session's live context, so a skill an earlier task read or
+ * invoked still counts while it stays in context (compaction drops it). Every
+ * such skill in `skills` is a candidate, provided a tool call of this task
+ * failed. A failed read of a skill file itself is not counted as a failure.
  */
 export function collectCurationSignals(
 	messages: readonly AgentMessage[],
+	taskStart: number,
 	skills: readonly Skill[],
 	cwd: string,
 ): CurationSignals | undefined {
@@ -70,58 +76,72 @@ export function collectCurationSignals(
 			const name = details && typeof details === "object" && "name" in details ? details.name : undefined;
 			const skill = skills.find(candidate => candidate.name === name);
 			if (skill && !firstUse.has(skill)) firstUse.set(skill, index);
-		} else if (message.role === "toolResult" && message.isError && !skillReadCallIds.has(message.toolCallId)) {
+		} else if (
+			index >= taskStart &&
+			message.role === "toolResult" &&
+			message.isError &&
+			!skillReadCallIds.has(message.toolCallId)
+		) {
 			errors.push(index);
 		}
 	});
 	if (firstUse.size === 0 || errors.length === 0) return undefined;
 	return {
-		candidates: [...firstUse].map(([skill, used]) => ({ skill, readLate: errors[0] < used })),
+		candidates: [...firstUse].map(([skill, used]) => ({
+			skill,
+			readLate: used >= taskStart && errors[0] < used,
+			earlier: used < taskStart,
+		})),
 		errorCount: errors.length,
 	};
 }
 
-const MAX_TRANSCRIPT_CHARS = 16_000;
-const MAX_ARGS_CHARS = 600;
-const MAX_RESULT_CHARS = 800;
-const MAX_TEXT_CHARS = 1_000;
+type Block = Exclude<Message["content"], string>[number];
 
-function clip(text: string, max: number): string {
-	const flat = text.trim();
-	return flat.length <= max ? flat : `${flat.slice(0, max)}…`;
+/** A content block as transcript text; thinking is omitted, images are marked. */
+function blockText(block: Block): string | undefined {
+	switch (block.type) {
+		case "text":
+			return block.text;
+		case "image":
+			return "[image]";
+		case "toolCall":
+			return `CALL ${block.name}: ${JSON.stringify(block.arguments)}`;
+		default:
+			return undefined;
+	}
 }
 
-function textOf(content: string | ReadonlyArray<{ type: string; text?: string }>): string {
+function contentText(content: Message["content"]): string {
 	if (typeof content === "string") return content;
-	return content.map(block => (block.type === "text" && block.text ? block.text : "")).join("\n");
+	const parts: string[] = [];
+	for (const block of content) {
+		const text = blockText(block);
+		if (text !== undefined) parts.push(text);
+	}
+	return parts.join("\n");
 }
 
 /**
- * What a curation turn sees of a finished task: the user's requests, each tool
- * call with its (clipped) result, and the assistant's text. Keeps the end when
- * the whole exceeds the budget, since the failures and fixes are usually last.
+ * What a curation turn sees of a finished task: every message the model saw
+ * during it, in order and unabridged — user prompts (with invoked skills
+ * expanded), the assistant's text and tool calls, and every tool result. Only
+ * the assistant's thinking is left out.
  */
 export function renderTaskTranscript(messages: readonly AgentMessage[]): string {
 	const lines: string[] = [];
-	for (const message of messages) {
-		if (message.role === "user") {
-			lines.push(`USER: ${clip(textOf(message.content), MAX_TEXT_CHARS)}`);
+	for (const message of convertToLlm([...messages])) {
+		if (message.role === "user" || message.role === "developer") {
+			lines.push(`USER: ${contentText(message.content)}`);
 		} else if (message.role === "assistant") {
 			for (const block of message.content) {
-				if (block.type === "text" && block.text.trim()) {
-					lines.push(`ASSISTANT: ${clip(block.text, MAX_TEXT_CHARS)}`);
-				} else if (block.type === "toolCall") {
-					lines.push(`CALL ${block.name}: ${clip(JSON.stringify(block.arguments), MAX_ARGS_CHARS)}`);
-				}
+				const text = blockText(block);
+				if (text === undefined || !text.trim()) continue;
+				lines.push(block.type === "toolCall" ? text : `ASSISTANT: ${text}`);
 			}
 		} else if (message.role === "toolResult") {
-			lines.push(`${message.isError ? "ERROR" : "RESULT"}: ${clip(textOf(message.content), MAX_RESULT_CHARS)}`);
-		} else if (message.role === "custom" && message.customType === SKILL_PROMPT_MESSAGE_TYPE) {
-			const details = message.details;
-			const name = details && typeof details === "object" && "name" in details ? details.name : undefined;
-			if (typeof name === "string") lines.push(`USER: /skill:${name}`);
+			lines.push(`${message.isError ? "ERROR" : "RESULT"} ${message.toolName}: ${contentText(message.content)}`);
 		}
 	}
-	const transcript = lines.join("\n");
-	return transcript.length <= MAX_TRANSCRIPT_CHARS ? transcript : `…${transcript.slice(-MAX_TRANSCRIPT_CHARS)}`;
+	return lines.join("\n");
 }

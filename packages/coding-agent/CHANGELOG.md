@@ -24,6 +24,8 @@
 
 ### Changed
 
+- Changed skill self-improvement to give the curator the whole finished task — your prompts (with invoked skills expanded), every reply, tool call and tool result, unabridged — instead of a 16,000-character tail; only the agent's thinking is left out
+- Changed skill self-improvement to also review skills an earlier task of the conversation read or invoked while they are still in context, so a follow-up task that leans on a skill without naming it again is covered
 - Changed the agent's role from coding assistant to a technical agent for software, cloud infrastructure and platform operations: reviews query live systems instead of answering from memory, changes to external systems are read back to confirm them, and reviews lead with findings
 - Changed skill guidance: the agent reads every matching skill, carries out the operations a skill documents end to end instead of stopping at read-only, and follows the skill's own guardrails for confirmations instead of asking on its own
 - Changed the default system prompt so the agent replies entirely in the language of your message, without words or characters from other languages (code, paths, and identifiers stay verbatim)
