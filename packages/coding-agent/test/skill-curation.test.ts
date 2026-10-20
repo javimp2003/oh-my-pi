@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import { Snowflake } from "@oh-my-pi/pi-utils";
-import type { Skill } from "../src/extensibility/skills";
+import { isSelfImprovableSkill, type Skill } from "../src/extensibility/skills";
 import { SKILL_PROMPT_MESSAGE_TYPE } from "../src/session/messages";
 import { listSkillHistory, revertSkillHistoryEntry, writeSkillHistoryEntry } from "../src/skill-curation/history";
 import { collectCurationSignals, renderTaskTranscript } from "../src/skill-curation/signals";
@@ -115,6 +115,16 @@ describe("collectCurationSignals", () => {
 		expect(collectCurationSignals([invoked, toolResult("b1", true)], [demo], root)?.candidates).toEqual([
 			{ skill: demo, readLate: false },
 		]);
+	});
+});
+
+describe("isSelfImprovableSkill", () => {
+	it("edits other tools' skill folders only when third-party improvement is on; never plugin or registry skills", () => {
+		expect(isSelfImprovableSkill(skillAt("demo", "native"), false)).toBe(true);
+		expect(isSelfImprovableSkill(skillAt("demo", "claude"), false)).toBe(false);
+		expect(isSelfImprovableSkill(skillAt("demo", "claude"), true)).toBe(true);
+		expect(isSelfImprovableSkill(skillAt("demo", "claude-plugins"), true)).toBe(false);
+		expect(isSelfImprovableSkill(skillAt("demo", "skillshare"), true)).toBe(false);
 	});
 });
 

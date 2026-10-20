@@ -217,6 +217,9 @@ function handle(update: ChatUpdate): void {
 		case "openFind":
 			openFind();
 			break;
+		case "skillCuration":
+			header.setCuration(update.status, update.updates);
+			break;
 	}
 }
 

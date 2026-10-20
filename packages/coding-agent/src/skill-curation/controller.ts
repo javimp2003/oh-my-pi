@@ -8,9 +8,12 @@
  * session settles (no run, queued input or background work that could resume
  * it), so goal continuations, follow-ups and job results belong to one task.
  */
+import type { Model } from "@oh-my-pi/pi-ai";
+import type { ConfiguredThinkingLevel } from "@oh-my-pi/pi-tui/thinking";
 import { logger, prompt } from "@oh-my-pi/pi-utils";
+import { getModelMatchPreferences, resolveModelRoleValue } from "../config/model-resolver";
 import type { Settings } from "../config/settings";
-import { cfgSkillsSelfImprove } from "../extensibility/settings";
+import { cfgSkillsSelfImprove, cfgSkillsSelfImproveThirdParty } from "../extensibility/settings";
 import { isSelfImprovableSkill } from "../extensibility/skills";
 import curationTemplate from "../prompts/skills/curation.md" with { type: "text" };
 import type { AgentSession } from "../session/agent-session";
@@ -31,6 +34,31 @@ export interface SkillUpdateDetails {
 }
 
 const NOTICE_ATTEMPTS = 3;
+
+/**
+ * The model a curation turn runs on: the `curator` model role
+ * (`modelRoles.curator`) resolved against `availableModels`. Undefined when the
+ * role is unset or matches no available model — the turn then runs on the
+ * session's model.
+ */
+export function resolveSkillCurationModel(
+	settings: Settings,
+	availableModels: Model[],
+): { model: Model; thinkingLevel?: ConfiguredThinkingLevel } | undefined {
+	const selector = settings.getModelRole("curator")?.trim();
+	if (!selector) return undefined;
+	const resolved = resolveModelRoleValue(selector, availableModels, {
+		settings,
+		matchPreferences: getModelMatchPreferences(settings),
+	});
+	if (!resolved.model) {
+		logger.warn("modelRoles.curator matched no available model; skill curation uses the session model", {
+			selector,
+		});
+		return undefined;
+	}
+	return { model: resolved.model, thinkingLevel: resolved.thinkingLevel };
+}
 
 export interface SkillCurationControllerOptions {
 	session: AgentSession;
@@ -88,9 +116,10 @@ export class SkillCurationController {
 			const last = messages.findLast(message => message.role === "assistant");
 			if (last?.role === "assistant" && (last.stopReason === "aborted" || last.stopReason === "error")) return;
 			const taskMessages = messages.slice(start);
+			const thirdParty = cfgSkillsSelfImproveThirdParty.get(this.#settings);
 			const signals = collectCurationSignals(
 				taskMessages,
-				session.skills.filter(isSelfImprovableSkill),
+				session.skills.filter(skill => isSelfImprovableSkill(skill, thirdParty)),
 				session.sessionManager.getCwd(),
 			);
 			// Not awaited: the next task is tracked while curation runs.
@@ -117,36 +146,53 @@ export class SkillCurationController {
 			}
 		}
 		if (skills.length === 0) return;
-		const tool = new SkillEditTool(signals.candidates.map(candidate => candidate.skill));
-		const read = this.#session.getToolByName("read");
+		const updates: SkillUpdateDetails[] = [];
+		this.#session.emitSkillCuration("running");
 		try {
-			await this.#runTurn(
-				prompt.render(curationTemplate, { transcript, skills, errorCount: signals.errorCount }),
-				read ? [read, tool] : [tool],
-			);
-		} catch (error) {
-			// Edits already written still count.
-			logger.warn("Skill curation failed", { error: String(error) });
-		}
-		for (const record of tool.edits.values()) {
-			const files = [...record.files]
-				.filter(([, file]) => file.before !== file.after)
-				.map(([filePath, file]) => ({ path: filePath, ...file }));
-			if (files.length === 0) continue;
-			const summary = record.summaries.join("; ");
+			const tool = new SkillEditTool(signals.candidates.map(candidate => candidate.skill));
+			const read = this.#session.getToolByName("read");
 			try {
-				const entry = await writeSkillHistoryEntry({ skill: record.skill.name, summary, files });
-				await this.#announce({
-					skill: entry.skill,
-					id: entry.id,
-					summary,
-					files: files.map(file => file.relativePath),
-					diff: files
-						.map(file => `--- ${file.relativePath}\n${compactSkillDiff(file.before, file.after)}`)
-						.join("\n"),
-				});
+				await this.#runTurn(
+					prompt.render(curationTemplate, { transcript, skills, errorCount: signals.errorCount }),
+					read ? [read, tool] : [tool],
+				);
 			} catch (error) {
-				logger.warn("Skill curation could not record an edit", { skill: record.skill.name, error: String(error) });
+				// Edits already written still count.
+				logger.warn("Skill curation failed", { error: String(error) });
+			}
+			for (const record of tool.edits.values()) {
+				const files = [...record.files]
+					.filter(([, file]) => file.before !== file.after)
+					.map(([filePath, file]) => ({ path: filePath, ...file }));
+				if (files.length === 0) continue;
+				const summary = record.summaries.join("; ");
+				try {
+					const entry = await writeSkillHistoryEntry({ skill: record.skill.name, summary, files });
+					updates.push({
+						skill: entry.skill,
+						id: entry.id,
+						summary,
+						files: files.map(file => file.relativePath),
+						diff: files
+							.map(file => `--- ${file.relativePath}\n${compactSkillDiff(file.before, file.after)}`)
+							.join("\n"),
+					});
+				} catch (error) {
+					logger.warn("Skill curation could not record an edit", {
+						skill: record.skill.name,
+						error: String(error),
+					});
+				}
+			}
+		} finally {
+			// Before the transcript notices: those wait for the session to go idle.
+			this.#session.emitSkillCuration("done", updates);
+		}
+		for (const details of updates) {
+			try {
+				await this.#announce(details);
+			} catch (error) {
+				logger.warn("Skill curation could not announce an edit", { skill: details.skill, error: String(error) });
 			}
 		}
 	}

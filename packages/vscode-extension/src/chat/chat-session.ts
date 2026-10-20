@@ -487,6 +487,9 @@ export class ChatSession implements vscode.Disposable, HostView {
 					);
 				}
 				return;
+			case "dismissSkillCuration":
+				this.#host?.dismissSkillCuration();
+				return;
 			case "openFile":
 				await openWorkspaceFile(request.path, request.line);
 				return;

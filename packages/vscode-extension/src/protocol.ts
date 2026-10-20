@@ -18,6 +18,7 @@ import type {
 	RpcAgentEvent,
 	SessionState,
 	SessionStats,
+	SkillUpdate,
 	ThinkingLevel,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
 
@@ -31,6 +32,7 @@ export type {
 	RpcAgentEvent,
 	SessionState,
 	SessionStats,
+	SkillUpdate,
 	TextContent,
 	ThinkingContent,
 	ThinkingLevel,
@@ -170,7 +172,13 @@ export type ChatUpdate =
 	 */
 	| { type: "planReview"; id: string; title: string; content: string; path?: string; options: string[] }
 	/** omp withdrew the plan review (the turn was aborted); disable its buttons. */
-	| { type: "planReviewClosed"; id: string };
+	| { type: "planReviewClosed"; id: string }
+	/**
+	 * Skill self-improvement of the open session: `running` while omp reviews the
+	 * skills the last task used; `done` once it changed skills (`updates` are the
+	 * edits); `idle` otherwise.
+	 */
+	| { type: "skillCuration"; status: "idle" | "running" | "done"; updates: SkillUpdate[] };
 
 /** Chat webview → host. */
 export type ChatRequest =
@@ -206,6 +214,8 @@ export type ChatRequest =
 	| { type: "openPlan"; path: string }
 	/** Revert one of omp's self-improvement edits to a skill (`omp skill revert <id>`), from its `skill-update` card. */
 	| { type: "revertSkillUpdate"; id: string }
+	/** The skill updates of the last curation were seen: clear the header indicator. */
+	| { type: "dismissSkillCuration" }
 	| { type: "openSettings" }
 	| { type: "login" }
 	| { type: "compact" }

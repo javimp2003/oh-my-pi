@@ -58,6 +58,7 @@ const NON_EVENT_FRAMES: Record<string, true> = {
 	session_info_update: true,
 	config_update: true,
 	rpc_frame_error: true,
+	skill_curation: true,
 };
 
 /** Frames after which the session snapshot (state, stats, title) is re-read. */
@@ -134,6 +135,9 @@ export interface HostView {
 }
 
 type PlanReview = Extract<ChatUpdate, { type: "planReview" }>;
+type SkillCuration = Extract<ChatUpdate, { type: "skillCuration" }>;
+
+const CURATION_IDLE: SkillCuration = { type: "skillCuration", status: "idle", updates: [] };
 
 export class AgentHost implements vscode.Disposable {
 	#process: OmpProcess | undefined;
@@ -164,6 +168,8 @@ export class AgentHost implements vscode.Disposable {
 	readonly #statusTexts = new Map<string, string>();
 	/** Plan reviews awaiting a decision, by request id; re-sent to views that attach later. */
 	readonly #planReviews = new Map<string, { update: PlanReview; resolve(value: string | undefined): void }>();
+	/** Skill self-improvement of the open session, re-sent to views that attach later. */
+	#curation: SkillCuration = CURATION_IDLE;
 	readonly #onDidChange = new vscode.EventEmitter<AgentHost>();
 	/** Fires when the process, session, title, model, busy or settled state changes. */
 	readonly onDidChange = this.#onDidChange.event;
@@ -219,6 +225,10 @@ export class AgentHost implements vscode.Disposable {
 	get process(): OmpProcess | undefined {
 		return this.#process?.running ? this.#process : undefined;
 	}
+	/** omp is reviewing the skills the last task used; stopping the process now would cut it off. */
+	get curating(): boolean {
+		return this.#curation.status === "running";
+	}
 	get views(): ReadonlySet<HostView> {
 		return this.#views;
 	}
@@ -244,6 +254,18 @@ export class AgentHost implements vscode.Disposable {
 		const process = this.process;
 		if (process) await this.#sendSnapshot(process, [view]);
 		for (const review of this.#planReviews.values()) view.post(review.update);
+		view.post(this.#curation);
+	}
+
+	/** The user saw the last curation's skill updates: clear the indicator in every view. */
+	dismissSkillCuration(): void {
+		if (this.#curation.status === "done") this.#setCuration(CURATION_IDLE);
+	}
+
+	#setCuration(curation: SkillCuration): void {
+		this.#curation = curation;
+		this.post(curation);
+		this.#onDidChange.fire(this);
 	}
 
 	/** Start (or restart) omp on `target`; resolves once the first snapshot reached the views. */
@@ -273,6 +295,7 @@ export class AgentHost implements vscode.Disposable {
 			// A dead process runs nothing: let the pool retire it if no view shows it.
 			this.#busy = false;
 			this.#settled = true;
+			if (this.#curation.status === "running") this.#setCuration(CURATION_IDLE);
 			this.#setStatus({ phase: "stopped", message: reason });
 		});
 		const args = [...readConfig().extraArgs];
@@ -290,6 +313,7 @@ export class AgentHost implements vscode.Disposable {
 		await process.request("set_ask_dialog", { enabled: true }).catch(error => this.log.appendLine(String(error)));
 		this.#setStatus({ phase: "ready" });
 		this.#title = undefined;
+		this.#setCuration(CURATION_IDLE);
 		await this.#sendSnapshot(process, this.#views);
 	}
 
@@ -312,6 +336,7 @@ export class AgentHost implements vscode.Disposable {
 		const result = await process.request("new_session", {});
 		if (result.cancelled) return;
 		this.#title = undefined;
+		this.#setCuration(CURATION_IDLE);
 		await this.#sendSnapshot(process, this.#views);
 	}
 
@@ -325,6 +350,7 @@ export class AgentHost implements vscode.Disposable {
 		const result = await process.request("switch_session", { sessionPath: sessionFile });
 		if (result.cancelled) return;
 		this.#title = undefined;
+		this.#setCuration(CURATION_IDLE);
 		await this.#sendSnapshot(process, this.#views);
 	}
 
@@ -821,6 +847,14 @@ export class AgentHost implements vscode.Disposable {
 				break;
 			case "session_info_update":
 				if (frame.title) this.#title = frame.title;
+				break;
+			case "skill_curation":
+				// A curation that changed nothing leaves nothing to show.
+				this.#setCuration(
+					frame.status === "done" && frame.updates.length === 0
+						? CURATION_IDLE
+						: { type: "skillCuration", status: frame.status, updates: frame.updates },
+				);
 				break;
 			case "prompt_result":
 				if (frame.status === "error" && frame.error) this.#notice("error", frame.error.message);

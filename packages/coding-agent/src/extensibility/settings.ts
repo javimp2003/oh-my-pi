@@ -74,6 +74,19 @@ export const cfgSkillsSelfImprove = register({
 	},
 });
 
+export const cfgSkillsSelfImproveThirdParty = register({
+	id: "skills.selfImproveThirdParty",
+	type: "boolean",
+	default: false,
+	ui: {
+		tab: "tasks",
+		group: "Commands & Skills",
+		label: "Self-Improve Third-Party Skills",
+		description:
+			"Skill self-improvement may also edit skills loaded from other tools' folders (.claude, .agents, .codex, .github, .opencode)",
+	},
+});
+
 export const cfgSkillsEnableCodexUser = register({ id: "skills.enableCodexUser", type: "boolean", default: false });
 
 export const cfgSkillsEnableClaudeUser = register({ id: "skills.enableClaudeUser", type: "boolean", default: false });

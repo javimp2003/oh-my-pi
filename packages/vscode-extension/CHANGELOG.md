@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.14.0]
+
+### Added
+
+- A spinner beside the session title while omp reviews the skills the last task used; when it changed skills, a button in its place opens the edits with their diffs, a Revert button for each, and Dismiss
+
 ## [0.13.0]
 
 ### Added

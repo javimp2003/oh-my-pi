@@ -4426,6 +4426,86 @@ func (v GoalUpdatedEvent) MarshalJSON() ([]byte, error) {
 	return encodeObject(plain(v), `"type":"goal_updated"`, nil)
 }
 
+// One skill edit recorded by skill self-improvement.
+type SkillUpdate struct {
+	Skill string `json:"skill"`
+	// Skill-history entry id; `omp skill revert <id>` undoes the edit.
+	ID      string `json:"id"`
+	Summary string `json:"summary"`
+	// Edited files, relative to the skill directory.
+	Files []string `json:"files"`
+	// Compact unified diff of every edited file.
+	Diff string `json:"diff"`
+}
+
+func (v *SkillUpdate) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SkillUpdate", v.decodeFrom)
+}
+
+func (v *SkillUpdate) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SkillUpdate
+	d := fieldDecoder{raw: raw, owner: "SkillUpdate"}
+	d.required("skill", &out.Skill)
+	d.required("id", &out.ID)
+	d.required("summary", &out.Summary)
+	d.required("files", &out.Files)
+	d.required("diff", &out.Diff)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+// Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`).
+type SkillCurationEvent struct {
+	Status SkillCurationEventStatus `json:"status"`
+	// Edits the curation turn recorded; empty while running or when nothing changed.
+	Updates []SkillUpdate `json:"updates"`
+}
+
+func (v *SkillCurationEvent) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SkillCurationEvent", v.decodeFrom)
+}
+
+func (v *SkillCurationEvent) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SkillCurationEvent
+	d := fieldDecoder{raw: raw, owner: "SkillCurationEvent"}
+	d.constant("type", "skill_curation")
+	d.required("status", &out.Status)
+	d.required("updates", &out.Updates)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+func (v SkillCurationEvent) MarshalJSON() ([]byte, error) {
+	type plain SkillCurationEvent
+	return encodeObject(plain(v), `"type":"skill_curation"`, nil)
+}
+
+type SkillCurationEventStatus string
+
+const (
+	SkillCurationEventStatusRunning SkillCurationEventStatus = "running"
+	SkillCurationEventStatusDone    SkillCurationEventStatus = "done"
+)
+
+func (v *SkillCurationEventStatus) UnmarshalJSON(data []byte) error {
+	s, err := decodeString(data, "SkillCurationEventStatus")
+	if err != nil {
+		return err
+	}
+	switch value := SkillCurationEventStatus(s); value {
+	case SkillCurationEventStatusRunning, SkillCurationEventStatusDone:
+		*v = value
+		return nil
+	}
+	return unknownValue("SkillCurationEventStatus", s)
+}
+
 // Coalesced snapshot of the displayable steering/follow-up queue, sent whenever it changes.
 type QueueUpdateEvent struct {
 	Steering []string `json:"steering"`
@@ -4499,6 +4579,7 @@ func (IrcMessageEvent) isRpcAgentEvent()             {}
 func (NoticeEvent) isRpcAgentEvent()                 {}
 func (ThinkingLevelChangedEvent) isRpcAgentEvent()   {}
 func (GoalUpdatedEvent) isRpcAgentEvent()            {}
+func (SkillCurationEvent) isRpcAgentEvent()          {}
 func (QueueUpdateEvent) isRpcAgentEvent()            {}
 func (UnknownNotification) isRpcAgentEvent()         {}
 
@@ -4581,6 +4662,8 @@ func (v *RpcAgentEvent) decodeFrom(raw map[string]json.RawMessage) error {
 		value, err = decodeVariant[ThinkingLevelChangedEvent](raw)
 	case "goal_updated":
 		value, err = decodeVariant[GoalUpdatedEvent](raw)
+	case "skill_curation":
+		value, err = decodeVariant[SkillCurationEvent](raw)
 	case "queue_update":
 		value, err = decodeVariant[QueueUpdateEvent](raw)
 	default:
@@ -6587,6 +6670,7 @@ func (IrcMessageEvent) isRpcNotification()              {}
 func (NoticeEvent) isRpcNotification()                  {}
 func (ThinkingLevelChangedEvent) isRpcNotification()    {}
 func (GoalUpdatedEvent) isRpcNotification()             {}
+func (SkillCurationEvent) isRpcNotification()           {}
 func (QueueUpdateEvent) isRpcNotification()             {}
 func (UnknownNotification) isRpcNotification()          {}
 
@@ -6702,6 +6786,8 @@ func (v *RpcNotification) UnmarshalJSON(data []byte) error {
 		value, err = decodeVariant[ThinkingLevelChangedEvent](raw)
 	case "goal_updated":
 		value, err = decodeVariant[GoalUpdatedEvent](raw)
+	case "skill_curation":
+		value, err = decodeVariant[SkillCurationEvent](raw)
 	case "queue_update":
 		value, err = decodeVariant[QueueUpdateEvent](raw)
 	default:
@@ -6780,6 +6866,7 @@ func (IrcMessageEvent) isRpcServerFrame()              {}
 func (NoticeEvent) isRpcServerFrame()                  {}
 func (ThinkingLevelChangedEvent) isRpcServerFrame()    {}
 func (GoalUpdatedEvent) isRpcServerFrame()             {}
+func (SkillCurationEvent) isRpcServerFrame()           {}
 func (QueueUpdateEvent) isRpcServerFrame()             {}
 func (UnknownNotification) isRpcServerFrame()          {}
 
@@ -6905,6 +6992,8 @@ func (v *RpcServerFrame) UnmarshalJSON(data []byte) error {
 		value, err = decodeVariant[ThinkingLevelChangedEvent](raw)
 	case "goal_updated":
 		value, err = decodeVariant[GoalUpdatedEvent](raw)
+	case "skill_curation":
+		value, err = decodeVariant[SkillCurationEvent](raw)
 	case "queue_update":
 		value, err = decodeVariant[QueueUpdateEvent](raw)
 	default:

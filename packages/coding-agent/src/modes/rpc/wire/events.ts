@@ -152,6 +152,27 @@ export const eventDefs = {
 		{ type: "'goal_updated'", goal: "Goal | null", "state?": "GoalModeState" },
 		"Goal mode changed, by a host `goal` command or the agent's `goal` tool.",
 	),
+	SkillUpdate: doc(
+		{
+			skill: "string",
+			id: doc("string", "Skill-history entry id; `omp skill revert <id>` undoes the edit."),
+			summary: "string",
+			files: doc("string[]", "Edited files, relative to the skill directory."),
+			diff: doc("string", "Compact unified diff of every edited file."),
+		},
+		"One skill edit recorded by skill self-improvement.",
+	),
+	SkillCurationEvent: doc(
+		{
+			type: "'skill_curation'",
+			status: "'running' | 'done'",
+			updates: doc(
+				"SkillUpdate[]",
+				"Edits the curation turn recorded; empty while running or when nothing changed.",
+			),
+		},
+		"Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`).",
+	),
 	QueueUpdateEvent: doc(
 		{
 			type: "'queue_update'",
@@ -200,6 +221,7 @@ export const eventDefs = {
 			"NoticeEvent",
 			"ThinkingLevelChangedEvent",
 			"GoalUpdatedEvent",
+			"SkillCurationEvent",
 			"QueueUpdateEvent",
 		].join(" | "),
 		"A session event, discriminated by `type`; `set_event_filter` selects which are sent.",

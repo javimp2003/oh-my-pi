@@ -1,14 +1,18 @@
 /**
- * Top bar: π mark, session title (renamable in place), a "No workspace" badge on
+ * Top bar: π mark, session title (renamable in place), a skill-curation
+ * indicator beside it (a spinner while omp reviews the skills the last task used,
+ * then a button opening the skill updates it made), a "No workspace" badge on
  * chats without a workspace, and New chat / New chat without workspace / History /
  * Settings icon buttons.
  */
-import type { ChatRequest, SessionState, SessionStats } from "../../src/protocol";
-import { h, iconButton } from "../dom";
+import type { ChatRequest, SessionState, SessionStats, SkillUpdate } from "../../src/protocol";
+import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
+import { skillUpdateElement } from "./notices";
 
 type Post = (request: ChatRequest) => void;
+type CurationStatus = "idle" | "running" | "done";
 
 export class Header {
 	readonly element: HTMLElement;
@@ -31,6 +35,37 @@ export class Header {
 		icon("globe"),
 		"No workspace",
 	);
+	#curationStatus: CurationStatus = "idle";
+	#curationRunning = h("span", {
+		className: "curation-spinner",
+		hidden: true,
+		role: "status",
+		ariaLabel: "Improving skills",
+		dataset: { tooltip: "omp is reviewing the skills this task used" },
+	});
+	#curationCount = h("span", { className: "curation-count" });
+	#curationDone = h(
+		"button",
+		{ type: "button", className: "curation-done", hidden: true, ariaExpanded: "false" },
+		icon("pencil"),
+		this.#curationCount,
+	);
+	#curationList = h("div", { className: "curation-list" });
+	#curationPanel = h(
+		"div",
+		{ className: "curation-panel", hidden: true, role: "dialog", ariaLabel: "Skill updates" },
+		h(
+			"div",
+			{ className: "curation-panel-head" },
+			h("span", { className: "curation-panel-title" }, "Skill updates"),
+			button("Dismiss", "secondary-button", () => {
+				this.#closeCurationPanel();
+				this.post({ type: "dismissSkillCuration" });
+			}),
+			iconButton("close", "Close", () => this.#closeCurationPanel()),
+		),
+		this.#curationList,
+	);
 
 	constructor(
 		private readonly post: Post,
@@ -42,6 +77,19 @@ export class Header {
 		this.#rename = iconButton("pencil", "Rename chat", () => this.#startRename());
 		this.#rename.classList.add("title-rename");
 		this.#title.addEventListener("dblclick", () => this.#startRename());
+		this.#curationDone.addEventListener("click", () => {
+			if (this.#curationPanel.hidden) this.#openCurationPanel();
+			else this.#closeCurationPanel();
+		});
+		document.addEventListener("keydown", event => {
+			if (event.key === "Escape" && !this.#curationPanel.hidden) this.#closeCurationPanel();
+		});
+		document.addEventListener("mousedown", event => {
+			const target = event.target as Node | null;
+			if (this.#curationPanel.hidden || !target) return;
+			if (this.#curationPanel.contains(target) || this.#curationDone.contains(target)) return;
+			this.#closeCurationPanel();
+		});
 		this.#input.addEventListener("keydown", event => {
 			if (event.isComposing) return;
 			if (event.key === "Enter") {
@@ -59,6 +107,8 @@ export class Header {
 			h("span", { className: "brand", ariaHidden: "true" }, "π"),
 			this.#title,
 			this.#input,
+			this.#curationRunning,
+			this.#curationDone,
 			this.#rename,
 			this.#noWorkspace,
 			h(
@@ -72,6 +122,7 @@ export class Header {
 				this.#back,
 				iconButton("settings", "Settings", () => post({ type: "openSettings" })),
 			),
+			this.#curationPanel,
 		);
 		this.#render();
 	}
@@ -86,6 +137,34 @@ export class Header {
 		this.#sessionTitle = title || state.sessionName || "New chat";
 		this.#noWorkspace.dataset.on = String(noWorkspace);
 		this.#render();
+	}
+
+	/** Skill self-improvement of the open session (host `skillCuration` update). */
+	setCuration(status: CurationStatus, updates: SkillUpdate[]): void {
+		this.#curationStatus = status;
+		const count = new Set(updates.map(update => update.skill)).size;
+		this.#curationCount.textContent = String(count);
+		setTooltip(
+			this.#curationDone,
+			`omp updated ${count} skill${count === 1 ? "" : "s"} after the last task — click to see the changes`,
+		);
+		this.#curationList.replaceChildren(
+			...updates.map(update =>
+				skillUpdateElement(update, () => this.post({ type: "revertSkillUpdate", id: update.id })),
+			),
+		);
+		if (status !== "done") this.#closeCurationPanel();
+		this.#render();
+	}
+
+	#openCurationPanel(): void {
+		this.#curationPanel.hidden = false;
+		this.#curationDone.ariaExpanded = "true";
+	}
+
+	#closeCurationPanel(): void {
+		this.#curationPanel.hidden = true;
+		this.#curationDone.ariaExpanded = "false";
 	}
 
 	/** While the history panel is open the bar reads "History" and offers Back instead of History. */
@@ -131,6 +210,10 @@ export class Header {
 		this.#title.hidden = !this.#input.hidden;
 		this.#rename.hidden = !this.#canRename() || !this.#input.hidden;
 		this.#noWorkspace.hidden = this.#noWorkspace.dataset.on !== "true" || this.#historyOpen || !this.#input.hidden;
+		const curationVisible = !this.#historyOpen && this.#input.hidden;
+		this.#curationRunning.hidden = !curationVisible || this.#curationStatus !== "running";
+		this.#curationDone.hidden = !curationVisible || this.#curationStatus !== "done";
+		if (this.#curationDone.hidden) this.#closeCurationPanel();
 		setTooltip(this.#title, this.#canRename() ? `${text}\nDouble-click to rename` : text);
 	}
 }

@@ -5,7 +5,13 @@ import { CliUsageError } from "@oh-my-pi/pi-utils/cli";
 import { Settings } from "../config/settings";
 import type { EffectiveExtensionRoots } from "../capability/types";
 import { initializeWithSettings } from "../discovery";
-import { cfgDisabledExtensions, cfgExtensions, cfgSkills, type SkillsSettings } from "../extensibility/settings";
+import {
+	cfgDisabledExtensions,
+	cfgExtensions,
+	cfgSkills,
+	cfgSkillsSelfImproveThirdParty,
+	type SkillsSettings,
+} from "../extensibility/settings";
 import { isSelfImprovableSkill, loadSkills, type SkillWarning } from "../extensibility/skills";
 
 /** Public skill listing entry: the fields a machine consumer may rely on. */
@@ -40,6 +46,7 @@ export async function runSkillsCommand(
 	let skillsSettings: Partial<SkillsSettings>;
 	let disabledExtensions: string[];
 	let extensionRoots: EffectiveExtensionRoots;
+	let thirdParty = false;
 	if (options.skillsSettings) {
 		// Test seam: fully isolated from ambient configuration.
 		skillsSettings = options.skillsSettings;
@@ -50,6 +57,7 @@ export async function runSkillsCommand(
 		initializeWithSettings(settings);
 		skillsSettings = cfgSkills.get(settings);
 		disabledExtensions = [...cfgDisabledExtensions.get(settings)];
+		thirdParty = cfgSkillsSelfImproveThirdParty.get(settings);
 		extensionRoots = {
 			explicit: [],
 			mode: "merge",
@@ -81,7 +89,7 @@ export async function runSkillsCommand(
 			baseDir: skill.baseDir,
 			source: skill.source,
 			hide: skill.hide === true,
-			selfImprovable: isSelfImprovableSkill(skill),
+			selfImprovable: isSelfImprovableSkill(skill, thirdParty),
 		})),
 		warnings,
 	};

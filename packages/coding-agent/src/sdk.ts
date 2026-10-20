@@ -10,7 +10,7 @@ import {
 	filterProviderReplayMessages,
 	resolveTelemetry,
 	type StreamFn,
-	type ThinkingLevel,
+	ThinkingLevel,
 } from "@oh-my-pi/pi-agent-core";
 import type {
 	Context,
@@ -48,7 +48,7 @@ import {
 } from "./advisor";
 import { AsyncJobManager } from "./async";
 import { AutoLearnController, buildAutoLearnInstructions } from "./autolearn/controller";
-import { SkillCurationController } from "./skill-curation/controller";
+import { resolveSkillCurationModel, SkillCurationController } from "./skill-curation/controller";
 import { createAutoresearchExtension } from "./autoresearch";
 import { loadCapability, reset as resetCapabilities } from "./capability";
 import {
@@ -1588,6 +1588,12 @@ export interface AutoLearnCaptureRunnerOptions {
 	 * change against the session's recorded one (the request must carry what it needs).
 	 */
 	history?: "clone" | "none";
+	/**
+	 * Model for this capture, resolved per run. Undefined (or no resolver) runs on the
+	 * source agent's model. Without an explicit thinking level, the source's level is
+	 * kept, clamped to the override model.
+	 */
+	model?: () => { model: Model; thinkingLevel?: ConfiguredThinkingLevel } | undefined;
 }
 
 /** Build a private capture runner over a detached message snapshot and provider session. */
@@ -1597,8 +1603,20 @@ export function createAutoLearnCaptureRunner(
 	return async (content, signal) => {
 		const captureTools = options.captureTools();
 		if (captureTools.length === 0 || signal?.aborted) return;
-		const captureModel = options.sourceAgent.state.model;
+		const source = options.sourceAgent.state;
+		const override = options.model?.();
+		const captureModel = override?.model ?? source.model;
 		if (!captureModel) return;
+		let thinkingLevel = source.thinkingLevel;
+		let disableReasoning = source.disableReasoning;
+		if (override) {
+			const requested =
+				concreteThinkingLevel(override.thinkingLevel) ??
+				(source.disableReasoning ? ThinkingLevel.Off : parseThinkingLevel(source.thinkingLevel));
+			const level = resolveThinkingLevelForModel(override.model, requested);
+			thinkingLevel = toReasoningEffort(level);
+			disableReasoning = shouldDisableReasoning(level);
+		}
 
 		const captureSessionId = options.createSessionId?.() ?? Bun.randomUUIDv7();
 		const captureProviderSessionState = new Map<string, ProviderSessionState>();
@@ -1616,10 +1634,10 @@ export function createAutoLearnCaptureRunner(
 					});
 		const captureAgent = options.createAgent({
 			initialState: {
-				systemPrompt: [...options.sourceAgent.state.systemPrompt],
+				systemPrompt: [...source.systemPrompt],
 				model: captureModel,
-				thinkingLevel: options.sourceAgent.state.thinkingLevel,
-				disableReasoning: options.sourceAgent.state.disableReasoning,
+				thinkingLevel,
+				disableReasoning,
 				tools: captureTools,
 				messages: captureMessages,
 			},
@@ -5237,6 +5255,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		const runCurationTurn = createAutoLearnCaptureRunner({
 			sourceAgent: agent,
 			captureTools: () => curationTools,
+			model: () => resolveSkillCurationModel(settings, modelRegistry.getAvailable()),
 			customType: "skill-curation",
 			history: "none",
 			onPayload,

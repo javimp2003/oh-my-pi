@@ -209,6 +209,7 @@ import { type AgentRef, AgentRegistry } from "../registry/agent-registry";
 import { cfgSecretsEnabled } from "../secrets/settings";
 import { releaseSharpshooterSession } from "../sharpshooter/backend";
 import { flushSharpshooterExtraction } from "../sharpshooter/extract";
+import type { SkillUpdateDetails } from "../skill-curation/controller";
 import { toolReadsSkillUris } from "../system-prompt";
 import {
 	AUTO_THINKING,
@@ -3207,6 +3208,11 @@ export class AgentSession implements SettingsScope {
 	 */
 	emitNotice(level: "info" | "warning" | "error", message: string, source?: string): void {
 		this.#emit({ type: "notice", level, message, source });
+	}
+
+	/** Report skill-curation progress to UI listeners (see the `skill_curation` event); never reaches the LLM. */
+	emitSkillCuration(status: "running" | "done", updates: SkillUpdateDetails[] = []): void {
+		this.#emit({ type: "skill_curation", status, updates });
 	}
 
 	#recordToolExecutionStart(event: Extract<AgentEvent, { type: "tool_execution_start" }>): void {

@@ -1003,6 +1003,26 @@ export interface GoalUpdatedEvent {
 	state?: GoalModeState;
 }
 
+/** One skill edit recorded by skill self-improvement. */
+export interface SkillUpdate {
+	skill: string;
+	/** Skill-history entry id; `omp skill revert <id>` undoes the edit. */
+	id: string;
+	summary: string;
+	/** Edited files, relative to the skill directory. */
+	files: string[];
+	/** Compact unified diff of every edited file. */
+	diff: string;
+}
+
+/** Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`). */
+export interface SkillCurationEvent {
+	type: "skill_curation";
+	status: "running" | "done";
+	/** Edits the curation turn recorded; empty while running or when nothing changed. */
+	updates: SkillUpdate[];
+}
+
 /** Coalesced snapshot of the displayable steering/follow-up queue, sent whenever it changes. */
 export interface QueueUpdateEvent {
 	type: "queue_update";
@@ -1013,7 +1033,7 @@ export interface QueueUpdateEvent {
 }
 
 /** A session event, discriminated by `type`; `set_event_filter` selects which are sent. */
-export type RpcAgentEvent = AgentStartEvent | AgentEndEvent | TurnStartEvent | TurnEndEvent | MessageStartEvent | MessageUpdateEvent | MessageEndEvent | ToolExecutionStartEvent | ToolExecutionUpdateEvent | ToolStreamUpdateEvent | ToolExecutionEndEvent | AutoCompactionStartEvent | AutoCompactionEndEvent | AutoRetryStartEvent | AutoRetryEndEvent | CacheWarmingStartEvent | CacheWarmingEndEvent | RetryFallbackAppliedEvent | RetryFallbackSucceededEvent | ModelChangedEvent | ConfigWarningsChangedEvent | AdvisorCostChangedEvent | AdvisorYieldedEvent | TtsrTriggeredEvent | TodoReminderEvent | TodoAutoClearEvent | IrcMessageEvent | NoticeEvent | ThinkingLevelChangedEvent | GoalUpdatedEvent | QueueUpdateEvent;
+export type RpcAgentEvent = AgentStartEvent | AgentEndEvent | TurnStartEvent | TurnEndEvent | MessageStartEvent | MessageUpdateEvent | MessageEndEvent | ToolExecutionStartEvent | ToolExecutionUpdateEvent | ToolStreamUpdateEvent | ToolExecutionEndEvent | AutoCompactionStartEvent | AutoCompactionEndEvent | AutoRetryStartEvent | AutoRetryEndEvent | CacheWarmingStartEvent | CacheWarmingEndEvent | RetryFallbackAppliedEvent | RetryFallbackSucceededEvent | ModelChangedEvent | ConfigWarningsChangedEvent | AdvisorCostChangedEvent | AdvisorYieldedEvent | TtsrTriggeredEvent | TodoReminderEvent | TodoAutoClearEvent | IrcMessageEvent | NoticeEvent | ThinkingLevelChangedEvent | GoalUpdatedEvent | SkillCurationEvent | QueueUpdateEvent;
 
 /** First frame after startup; transport fields are absent on servers without protocol v2. */
 export interface ReadyEvent {

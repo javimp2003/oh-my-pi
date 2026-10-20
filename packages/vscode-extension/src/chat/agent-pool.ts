@@ -95,7 +95,7 @@ export class AgentPool implements vscode.Disposable {
 
 	#update(host: AgentHost): void {
 		if (this.#hosts.has(host)) {
-			const idleAndHidden = host.views.size === 0 && !host.running && host.settled;
+			const idleAndHidden = host.views.size === 0 && !host.running && host.settled && !host.curating;
 			if (!idleAndHidden) this.#unwarm(host);
 			else if (!this.#warm.has(host)) this.#keepWarm(host);
 		}

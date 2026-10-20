@@ -17,6 +17,9 @@
 - Added dictation to RPC: `dictation_start`, `dictation_stop` and `dictation_cancel` record the microphone natively and transcribe it through a cloud transcription API (the first `openai-transcriptions` model of the `dictation` role, such as Groq's Whisper; local speech models are never used over RPC), returning the text to the host; `dictation_state` frames report the state
 - Added Groq's Whisper models (`groq/whisper-large-v3-turbo`, `groq/whisper-large-v3`) as speech-to-text models, and Groq to `/login` with an API key. The `dictation` role now prefers `groq/whisper-large-v3-turbo` when a Groq key is stored, before the local Parakeet model
 - Added skill self-improvement (`skills.selfImprove`, on by default): after a task that used your own skills (`~/.omp/agent/skills`, `.omp/skills`, `skills.customDirectories`) and hit tool errors, omp corrects those skills in place in a private follow-up turn and shows a "Skill updated" message; every edit is kept in a history (`omp skill history`, `/skill-history`) and can be undone (`omp skill revert <id>`, `/skill-history revert <id>`)
+- Added the `curator` model role (`modelRoles.curator` in `config.yml`, or the model hub) for skill self-improvement turns; unset keeps using the session's model, as does a selector that matches no available model
+- Added `skills.selfImproveThirdParty` (off by default): skill self-improvement may also edit skills loaded from other tools' folders (`.claude`, `.agents`, `.codex`, `.github`, `.opencode`); plugin and registry skills stay untouched
+- Added the `skill_curation` RPC event: `running` while skill self-improvement reviews the skills the last task used, `done` with the edits it made
 - Added `skills.descriptions`: `full` (default) lists each skill's description as written; `compressed` keeps the previous 12-word hints
 
 ### Changed

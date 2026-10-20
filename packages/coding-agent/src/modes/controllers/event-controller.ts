@@ -413,6 +413,8 @@ export class EventController {
 				this.ctx.ui.requestRender(true);
 			},
 			goal_updated: async () => {},
+			// RPC hosts show curation progress; the TUI gets the `skill-update` transcript notices.
+			skill_curation: async () => {},
 			// The TUI already refreshes the pending-messages bar at every queue
 			// mutation call site (`updatePendingMessagesDisplay()` in ui-helpers.ts);
 			// this event exists for RPC/ACP clients that have no equivalent local

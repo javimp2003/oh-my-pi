@@ -4261,6 +4261,68 @@
 			],
 			"description": "Goal mode changed, by a host `goal` command or the agent's `goal` tool."
 		},
+		"SkillUpdate": {
+			"type": "object",
+			"properties": {
+				"skill": {
+					"type": "string"
+				},
+				"id": {
+					"type": "string",
+					"description": "Skill-history entry id; `omp skill revert <id>` undoes the edit."
+				},
+				"summary": {
+					"type": "string"
+				},
+				"files": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"description": "Edited files, relative to the skill directory."
+				},
+				"diff": {
+					"type": "string",
+					"description": "Compact unified diff of every edited file."
+				}
+			},
+			"required": [
+				"skill",
+				"id",
+				"summary",
+				"files",
+				"diff"
+			],
+			"description": "One skill edit recorded by skill self-improvement."
+		},
+		"SkillCurationEvent": {
+			"type": "object",
+			"properties": {
+				"type": {
+					"const": "skill_curation"
+				},
+				"status": {
+					"enum": [
+						"running",
+						"done"
+					],
+					"type": "string"
+				},
+				"updates": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/SkillUpdate"
+					},
+					"description": "Edits the curation turn recorded; empty while running or when nothing changed."
+				}
+			},
+			"required": [
+				"type",
+				"status",
+				"updates"
+			],
+			"description": "Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`)."
+		},
 		"QueueUpdateEvent": {
 			"type": "object",
 			"properties": {
@@ -4383,6 +4445,9 @@
 				},
 				{
 					"$ref": "#/$defs/GoalUpdatedEvent"
+				},
+				{
+					"$ref": "#/$defs/SkillCurationEvent"
 				},
 				{
 					"$ref": "#/$defs/QueueUpdateEvent"

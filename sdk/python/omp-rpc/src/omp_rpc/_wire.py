@@ -1215,6 +1215,28 @@ class GoalUpdatedEvent:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
+class SkillUpdate:
+    """One skill edit recorded by skill self-improvement."""
+    skill: str
+    id: str
+    """Skill-history entry id; `omp skill revert <id>` undoes the edit."""
+    summary: str
+    files: tuple[str, ...]
+    """Edited files, relative to the skill directory."""
+    diff: str
+    """Compact unified diff of every edited file."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
+class SkillCurationEvent:
+    """Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`)."""
+    type: Literal["skill_curation"] = "skill_curation"
+    status: Literal["running", "done"]
+    updates: tuple[SkillUpdate, ...]
+    """Edits the curation turn recorded; empty while running or when nothing changed."""
+
+
+@dataclass(slots=True, frozen=True, kw_only=True)
 class QueueUpdateEvent:
     """Coalesced snapshot of the displayable steering/follow-up queue, sent whenever it changes."""
     type: Literal["queue_update"] = "queue_update"
@@ -1648,7 +1670,7 @@ UsageLimitState: TypeAlias = UsageLimitLowPriority | UsageLimitWrapUp
 """Provider-neutral state of an account past its usage limit, discriminated by `stage`."""
 
 
-RpcAgentEvent: TypeAlias = AgentStartEvent | AgentEndEvent | TurnStartEvent | TurnEndEvent | MessageStartEvent | MessageUpdateEvent | MessageEndEvent | ToolExecutionStartEvent | ToolExecutionUpdateEvent | ToolStreamUpdateEvent | ToolExecutionEndEvent | AutoCompactionStartEvent | AutoCompactionEndEvent | AutoRetryStartEvent | AutoRetryEndEvent | CacheWarmingStartEvent | CacheWarmingEndEvent | RetryFallbackAppliedEvent | RetryFallbackSucceededEvent | ModelChangedEvent | ConfigWarningsChangedEvent | AdvisorCostChangedEvent | AdvisorYieldedEvent | TtsrTriggeredEvent | TodoReminderEvent | TodoAutoClearEvent | IrcMessageEvent | NoticeEvent | ThinkingLevelChangedEvent | GoalUpdatedEvent | QueueUpdateEvent
+RpcAgentEvent: TypeAlias = AgentStartEvent | AgentEndEvent | TurnStartEvent | TurnEndEvent | MessageStartEvent | MessageUpdateEvent | MessageEndEvent | ToolExecutionStartEvent | ToolExecutionUpdateEvent | ToolStreamUpdateEvent | ToolExecutionEndEvent | AutoCompactionStartEvent | AutoCompactionEndEvent | AutoRetryStartEvent | AutoRetryEndEvent | CacheWarmingStartEvent | CacheWarmingEndEvent | RetryFallbackAppliedEvent | RetryFallbackSucceededEvent | ModelChangedEvent | ConfigWarningsChangedEvent | AdvisorCostChangedEvent | AdvisorYieldedEvent | TtsrTriggeredEvent | TodoReminderEvent | TodoAutoClearEvent | IrcMessageEvent | NoticeEvent | ThinkingLevelChangedEvent | GoalUpdatedEvent | SkillCurationEvent | QueueUpdateEvent
 """A session event, discriminated by `type`; `set_event_filter` selects which are sent."""
 
 
@@ -2611,6 +2633,26 @@ def parse_goal_updated_event(value: object, path: str = "GoalUpdatedEvent") -> G
     )
 
 
+def parse_skill_update(value: object, path: str = "SkillUpdate") -> SkillUpdate:
+    payload = expect_object(value, path)
+    return SkillUpdate(
+        skill=required(payload, "skill", decode_str, path),
+        id=required(payload, "id", decode_str, path),
+        summary=required(payload, "summary", decode_str, path),
+        files=required(payload, "files", array(decode_str), path),
+        diff=required(payload, "diff", decode_str, path),
+    )
+
+
+def parse_skill_curation_event(value: object, path: str = "SkillCurationEvent") -> SkillCurationEvent:
+    payload = expect_object(value, path)
+    required(payload, "type", cast('Decoder[Literal["skill_curation"]]', literal(frozenset({"skill_curation"}))), path)
+    return SkillCurationEvent(
+        status=required(payload, "status", cast('Decoder[Literal["running", "done"]]', literal(frozenset({"running", "done"}))), path),
+        updates=required(payload, "updates", array(parse_skill_update), path),
+    )
+
+
 def parse_queue_update_event(value: object, path: str = "QueueUpdateEvent") -> QueueUpdateEvent:
     payload = expect_object(value, path)
     required(payload, "type", cast('Decoder[Literal["queue_update"]]', literal(frozenset({"queue_update"}))), path)
@@ -3141,6 +3183,7 @@ _RPC_AGENT_EVENT_CASES: Final[dict[str, Decoder[RpcAgentEvent]]] = {
         "notice": parse_notice_event,
         "thinking_level_changed": parse_thinking_level_changed_event,
         "goal_updated": parse_goal_updated_event,
+        "skill_curation": parse_skill_curation_event,
         "queue_update": parse_queue_update_event,
 }
 
@@ -3196,6 +3239,7 @@ _RPC_NOTIFICATION_CASES: Final[dict[str, Decoder[RpcNotification]]] = {
         "notice": parse_rpc_agent_event,
         "thinking_level_changed": parse_rpc_agent_event,
         "goal_updated": parse_rpc_agent_event,
+        "skill_curation": parse_rpc_agent_event,
         "queue_update": parse_rpc_agent_event,
 }
 
@@ -3830,6 +3874,10 @@ class WireClient:
         """Subscribe to `goal_updated`: Goal mode changed, by a host `goal` command or the agent's `goal` tool."""
         return self._listen("goal_updated", listener)
 
+    def on_skill_curation(self, listener: Callable[[SkillCurationEvent], None]) -> Callable[[], None]:
+        """Subscribe to `skill_curation`: Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`)."""
+        return self._listen("skill_curation", listener)
+
     def on_queue_update(self, listener: Callable[[QueueUpdateEvent], None]) -> Callable[[], None]:
         """Subscribe to `queue_update`: Coalesced snapshot of the displayable steering/follow-up queue, sent whenever it changes."""
         return self._listen("queue_update", listener)
@@ -3986,6 +4034,8 @@ __all__ = [
     "SetStatusUiRequest",
     "SetTitleUiRequest",
     "SetWidgetUiRequest",
+    "SkillCurationEvent",
+    "SkillUpdate",
     "SlashCommandInput",
     "SlashCommandSource",
     "SlashSubcommand",
@@ -4161,6 +4211,8 @@ __all__ = [
     "parse_set_status_ui_request",
     "parse_set_title_ui_request",
     "parse_set_widget_ui_request",
+    "parse_skill_curation_event",
+    "parse_skill_update",
     "parse_slash_command_input",
     "parse_slash_subcommand",
     "parse_subagent_event",

@@ -5,9 +5,11 @@ import type { AssistantMessage, FetchImpl, Model, ProviderSessionState, Usage } 
 import { streamGoogle } from "@oh-my-pi/pi-ai/providers/google";
 import { createMockModel } from "@oh-my-pi/pi-ai/providers/mock";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
+import { Effort } from "@oh-my-pi/pi-catalog/effort";
 import { AutoLearnController, buildAutoLearnInstructions } from "@oh-my-pi/pi-coding-agent/autolearn/controller";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { createAutoLearnCaptureRunner } from "@oh-my-pi/pi-coding-agent/sdk";
+import { resolveSkillCurationModel } from "@oh-my-pi/pi-coding-agent/skill-curation/controller";
 import type { AgentSession, AgentSessionEvent } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { convertToLlm } from "@oh-my-pi/pi-coding-agent/session/messages";
 
@@ -502,6 +504,48 @@ describe("isolated auto-learn capture", () => {
 
 		expect(closeCalls).toBe(1);
 		expect(providerState?.size).toBe(0);
+	});
+
+	it("runs on the curator model role when it resolves, else on the session model", async () => {
+		const sessionModel = createMockModel({ id: "session-model", responses: [{ content: ["s"] }] });
+		const curatorModel = createMockModel({ id: "curator-model", responses: [{ content: ["c"] }] });
+		const skillEditTool = captureTool("skill_edit", "Edit skills");
+		const sourceAgent = new Agent({
+			initialState: { model: sessionModel, systemPrompt: ["Test"], tools: [], thinkingLevel: Effort.High },
+		});
+		const run = async (selector: string) => {
+			const settings = Settings.isolated({ modelRoles: { curator: selector } });
+			let disableReasoning: boolean | undefined;
+			const runCapture = createAutoLearnCaptureRunner({
+				sourceAgent,
+				captureTools: () => [skillEditTool],
+				model: () => resolveSkillCurationModel(settings, [sessionModel, curatorModel]),
+				history: "none",
+				createAgent: options => {
+					disableReasoning = options.initialState?.disableReasoning;
+					return new Agent({
+						...options,
+						convertToLlm,
+						streamFn: (requestModel, context, streamOptions) =>
+							(requestModel.id === curatorModel.id ? curatorModel : sessionModel).stream(
+								requestModel,
+								context,
+								streamOptions,
+							),
+					});
+				},
+			});
+			await runCapture("Curate");
+			return disableReasoning;
+		};
+
+		expect(await run("mock/curator-model:off")).toBe(true);
+		expect(curatorModel.calls).toHaveLength(1);
+		expect(sessionModel.calls).toHaveLength(0);
+
+		expect(await run("mock/no-such-model")).toBeFalsy();
+		expect(sessionModel.calls).toHaveLength(1);
+		expect(curatorModel.calls).toHaveLength(1);
 	});
 });
 

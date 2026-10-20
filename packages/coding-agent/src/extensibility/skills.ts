@@ -49,15 +49,20 @@ export interface Skill {
 	_source?: SourceMeta;
 }
 
+/** Providers that load plain skill folders owned by another tool (`.claude/skills`, `.agents/skills`, …). */
+const THIRD_PARTY_SKILL_DIR_PROVIDERS = new Set(["claude", "agents", "codex", "github", "opencode"]);
+
 /**
  * Whether skill curation may edit this skill in place: the user's and the
- * project's own `.omp` skills and `skills.customDirectories`. Plugin, registry,
- * managed and foreign (`.claude`/`.agents`/`.codex`/`.github`) skills are never
- * edited — their owners or the next update would overwrite the change.
+ * project's own `.omp` skills and `skills.customDirectories`, plus — when
+ * `thirdParty` (`skills.selfImproveThirdParty`) is on — skill folders of other
+ * tools (`.claude`/`.agents`/`.codex`/`.github`/`.opencode`). Plugin, registry
+ * and managed skills are never edited: their next update would overwrite the change.
  */
-export function isSelfImprovableSkill(skill: Skill): boolean {
+export function isSelfImprovableSkill(skill: Skill, thirdParty: boolean): boolean {
 	const provider = skill._source?.provider;
-	return provider === "native" || provider === CUSTOM_DIR_PROVIDER_ID;
+	if (provider === "native" || provider === CUSTOM_DIR_PROVIDER_ID) return true;
+	return thirdParty && provider !== undefined && THIRD_PARTY_SKILL_DIR_PROVIDERS.has(provider);
 }
 
 export interface SkillWarning {
