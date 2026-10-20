@@ -1215,25 +1215,27 @@ class GoalUpdatedEvent:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class SkillUpdate:
-    """One skill edit recorded by skill self-improvement."""
-    skill: str
+class SkillProposalNotice:
+    """A skill change proposed by skill self-improvement, awaiting the user's decision."""
     id: str
-    """Skill-history entry id; `omp skill revert <id>` undoes the edit."""
+    """Proposal id; `omp skill approve|reject <id>` decides it."""
+    skill: str
     summary: str
+    reason: str
+    """The transcript evidence the curator gave for the change."""
     files: tuple[str, ...]
-    """Edited files, relative to the skill directory."""
+    """Files the proposal changes, relative to the skill directory."""
     diff: str
-    """Compact unified diff of every edited file."""
+    """Compact unified diff of every changed file."""
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class SkillCurationEvent:
-    """Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`)."""
+    """Skill self-improvement: a private turn reviewing the skills a finished task relied on started (`running`) or ended (`done`)."""
     type: Literal["skill_curation"] = "skill_curation"
     status: Literal["running", "done"]
-    updates: tuple[SkillUpdate, ...]
-    """Edits the curation turn recorded; empty while running or when nothing changed."""
+    proposals: tuple[SkillProposalNotice, ...]
+    """Proposals this curation turn created; empty while running or when it proposed nothing."""
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -2633,12 +2635,13 @@ def parse_goal_updated_event(value: object, path: str = "GoalUpdatedEvent") -> G
     )
 
 
-def parse_skill_update(value: object, path: str = "SkillUpdate") -> SkillUpdate:
+def parse_skill_proposal_notice(value: object, path: str = "SkillProposalNotice") -> SkillProposalNotice:
     payload = expect_object(value, path)
-    return SkillUpdate(
-        skill=required(payload, "skill", decode_str, path),
+    return SkillProposalNotice(
         id=required(payload, "id", decode_str, path),
+        skill=required(payload, "skill", decode_str, path),
         summary=required(payload, "summary", decode_str, path),
+        reason=required(payload, "reason", decode_str, path),
         files=required(payload, "files", array(decode_str), path),
         diff=required(payload, "diff", decode_str, path),
     )
@@ -2649,7 +2652,7 @@ def parse_skill_curation_event(value: object, path: str = "SkillCurationEvent") 
     required(payload, "type", cast('Decoder[Literal["skill_curation"]]', literal(frozenset({"skill_curation"}))), path)
     return SkillCurationEvent(
         status=required(payload, "status", cast('Decoder[Literal["running", "done"]]', literal(frozenset({"running", "done"}))), path),
-        updates=required(payload, "updates", array(parse_skill_update), path),
+        proposals=required(payload, "proposals", array(parse_skill_proposal_notice), path),
     )
 
 
@@ -3875,7 +3878,7 @@ class WireClient:
         return self._listen("goal_updated", listener)
 
     def on_skill_curation(self, listener: Callable[[SkillCurationEvent], None]) -> Callable[[], None]:
-        """Subscribe to `skill_curation`: Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`)."""
+        """Subscribe to `skill_curation`: Skill self-improvement: a private turn reviewing the skills a finished task relied on started (`running`) or ended (`done`)."""
         return self._listen("skill_curation", listener)
 
     def on_queue_update(self, listener: Callable[[QueueUpdateEvent], None]) -> Callable[[], None]:
@@ -4035,7 +4038,7 @@ __all__ = [
     "SetTitleUiRequest",
     "SetWidgetUiRequest",
     "SkillCurationEvent",
-    "SkillUpdate",
+    "SkillProposalNotice",
     "SlashCommandInput",
     "SlashCommandSource",
     "SlashSubcommand",
@@ -4212,7 +4215,7 @@ __all__ = [
     "parse_set_title_ui_request",
     "parse_set_widget_ui_request",
     "parse_skill_curation_event",
-    "parse_skill_update",
+    "parse_skill_proposal_notice",
     "parse_slash_command_input",
     "parse_slash_subcommand",
     "parse_subagent_event",

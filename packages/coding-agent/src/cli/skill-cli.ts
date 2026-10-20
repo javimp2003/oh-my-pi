@@ -21,6 +21,12 @@ import { parseSkillSpec, type SkillSpec, SkillshareClient, SkillshareError } fro
 import { installSkills, searchSkills, showSkillInfo, uninstallSkills, updateSkills } from "../skillshare/installer";
 import { bumpVersion, type PackResult, packSkill, SEMVER_RE } from "../skillshare/pack";
 import { formatSkillHistory, listSkillHistory, revertSkillHistoryEntry } from "../skill-curation/history";
+import {
+	approveSkillProposal,
+	formatSkillProposals,
+	listSkillProposals,
+	rejectSkillProposal,
+} from "../skill-curation/proposals";
 import { handleSkillList } from "./skill-list";
 
 export type SkillAction =
@@ -39,7 +45,10 @@ export type SkillAction =
 	| "info"
 	| "list"
 	| "history"
-	| "revert";
+	| "revert"
+	| "proposals"
+	| "approve"
+	| "reject";
 
 export const SKILL_ACTIONS: readonly SkillAction[] = [
 	"publish",
@@ -58,6 +67,9 @@ export const SKILL_ACTIONS: readonly SkillAction[] = [
 	"list",
 	"history",
 	"revert",
+	"proposals",
+	"approve",
+	"reject",
 ];
 
 export interface SkillCommandArgs {
@@ -91,6 +103,9 @@ Install and discover:
   list [dir] [--json]                             Skills a session in dir resolves, with warnings
   history [name] [--json]                         Self-improvement edits, newest first
   revert <id>                                     Undo one self-improvement edit
+  proposals [name] [--json]                       Pending self-improvement proposals
+  approve <id>                                    Apply a proposal (recorded in history)
+  reject <id> [reason...]                         Decline a proposal
 
 Publish and manage:
   publish [dir] [--scope s] [--tag t] [--dry-run] [--allow-secrets]
@@ -525,6 +540,29 @@ async function dispatch(cmd: SkillCommandArgs): Promise<number> {
 			if (!id) throw new CliUsageError("usage: omp skill revert <id>");
 			const entry = await revertSkillHistoryEntry(id);
 			process.stdout.write(`Reverted ${entry.skill}: ${entry.files.map(file => file.relativePath).join(", ")}\n`);
+			return 0;
+		}
+		case "proposals": {
+			const proposals = await listSkillProposals({ skill: args[0], limit: 50 });
+			process.stdout.write(
+				flags.json ? `${JSON.stringify({ proposals }, null, 2)}\n` : `${formatSkillProposals(proposals)}\n`,
+			);
+			return 0;
+		}
+		case "approve": {
+			const id = args[0];
+			if (!id) throw new CliUsageError("usage: omp skill approve <id>");
+			const { proposal, history } = await approveSkillProposal(id);
+			process.stdout.write(
+				`Approved ${proposal.skill}: ${proposal.files.map(file => file.relativePath).join(", ")} (history ${history.id})\n`,
+			);
+			return 0;
+		}
+		case "reject": {
+			const id = args[0];
+			if (!id) throw new CliUsageError("usage: omp skill reject <id> [reason...]");
+			await rejectSkillProposal(id, args.slice(1).join(" "));
+			process.stdout.write(`Rejected ${id}\n`);
 			return 0;
 		}
 	}

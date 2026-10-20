@@ -4261,39 +4261,44 @@
 			],
 			"description": "Goal mode changed, by a host `goal` command or the agent's `goal` tool."
 		},
-		"SkillUpdate": {
+		"SkillProposalNotice": {
 			"type": "object",
 			"properties": {
+				"id": {
+					"type": "string",
+					"description": "Proposal id; `omp skill approve|reject <id>` decides it."
+				},
 				"skill": {
 					"type": "string"
 				},
-				"id": {
-					"type": "string",
-					"description": "Skill-history entry id; `omp skill revert <id>` undoes the edit."
-				},
 				"summary": {
 					"type": "string"
+				},
+				"reason": {
+					"type": "string",
+					"description": "The transcript evidence the curator gave for the change."
 				},
 				"files": {
 					"type": "array",
 					"items": {
 						"type": "string"
 					},
-					"description": "Edited files, relative to the skill directory."
+					"description": "Files the proposal changes, relative to the skill directory."
 				},
 				"diff": {
 					"type": "string",
-					"description": "Compact unified diff of every edited file."
+					"description": "Compact unified diff of every changed file."
 				}
 			},
 			"required": [
-				"skill",
 				"id",
+				"skill",
 				"summary",
+				"reason",
 				"files",
 				"diff"
 			],
-			"description": "One skill edit recorded by skill self-improvement."
+			"description": "A skill change proposed by skill self-improvement, awaiting the user's decision."
 		},
 		"SkillCurationEvent": {
 			"type": "object",
@@ -4308,20 +4313,20 @@
 					],
 					"type": "string"
 				},
-				"updates": {
+				"proposals": {
 					"type": "array",
 					"items": {
-						"$ref": "#/$defs/SkillUpdate"
+						"$ref": "#/$defs/SkillProposalNotice"
 					},
-					"description": "Edits the curation turn recorded; empty while running or when nothing changed."
+					"description": "Proposals this curation turn created; empty while running or when it proposed nothing."
 				}
 			},
 			"required": [
 				"type",
 				"status",
-				"updates"
+				"proposals"
 			],
-			"description": "Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`)."
+			"description": "Skill self-improvement: a private turn reviewing the skills a finished task relied on started (`running`) or ended (`done`)."
 		},
 		"QueueUpdateEvent": {
 			"type": "object",

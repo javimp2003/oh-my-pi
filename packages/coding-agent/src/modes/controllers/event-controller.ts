@@ -413,7 +413,7 @@ export class EventController {
 				this.ctx.ui.requestRender(true);
 			},
 			goal_updated: async () => {},
-			// RPC hosts show curation progress; the TUI gets the `skill-update` transcript notices.
+			// Proposals are reviewed in the VS Code extension (or with `omp skill proposals`).
 			skill_curation: async () => {},
 			// The TUI already refreshes the pending-messages bar at every queue
 			// mutation call site (`updatePendingMessagesDisplay()` in ui-helpers.ts);

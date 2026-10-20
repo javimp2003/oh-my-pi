@@ -2,7 +2,7 @@
 	"name": "omp-custom-vscode",
 	"displayName": "omp (custom)",
 	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.14.0",
+	"version": "0.15.0",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",
@@ -145,6 +145,23 @@
 				"title": "Revert Skill Change",
 				"category": "omp",
 				"icon": "$(discard)"
+			},
+			{
+				"command": "ompCustom.approveSkillProposal",
+				"title": "Approve Skill Proposal",
+				"category": "omp",
+				"icon": "$(check)"
+			},
+			{
+				"command": "ompCustom.rejectSkillProposal",
+				"title": "Reject Skill Proposal",
+				"category": "omp",
+				"icon": "$(close)"
+			},
+			{
+				"command": "ompCustom.showSkillProposal",
+				"title": "Show Skill Proposal",
+				"category": "omp"
 			},
 			{
 				"command": "ompCustom.selectModel",
@@ -297,6 +314,16 @@
 					"command": "ompCustom.revertSkillChange",
 					"when": "view == ompCustom.skills && viewItem == skillHistory",
 					"group": "inline"
+				},
+				{
+					"command": "ompCustom.approveSkillProposal",
+					"when": "view == ompCustom.skills && viewItem == skillProposal",
+					"group": "inline@1"
+				},
+				{
+					"command": "ompCustom.rejectSkillProposal",
+					"when": "view == ompCustom.skills && viewItem =~ /^skillProposal/",
+					"group": "inline@2"
 				}
 			],
 			"editor/context": [
@@ -340,6 +367,18 @@
 				},
 				{
 					"command": "ompCustom.revertSkillChange",
+					"when": "false"
+				},
+				{
+					"command": "ompCustom.approveSkillProposal",
+					"when": "false"
+				},
+				{
+					"command": "ompCustom.rejectSkillProposal",
+					"when": "false"
+				},
+				{
+					"command": "ompCustom.showSkillProposal",
 					"when": "false"
 				}
 			]

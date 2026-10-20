@@ -1003,24 +1003,26 @@ export interface GoalUpdatedEvent {
 	state?: GoalModeState;
 }
 
-/** One skill edit recorded by skill self-improvement. */
-export interface SkillUpdate {
-	skill: string;
-	/** Skill-history entry id; `omp skill revert <id>` undoes the edit. */
+/** A skill change proposed by skill self-improvement, awaiting the user's decision. */
+export interface SkillProposalNotice {
+	/** Proposal id; `omp skill approve|reject <id>` decides it. */
 	id: string;
+	skill: string;
 	summary: string;
-	/** Edited files, relative to the skill directory. */
+	/** The transcript evidence the curator gave for the change. */
+	reason: string;
+	/** Files the proposal changes, relative to the skill directory. */
 	files: string[];
-	/** Compact unified diff of every edited file. */
+	/** Compact unified diff of every changed file. */
 	diff: string;
 }
 
-/** Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`). */
+/** Skill self-improvement: a private turn reviewing the skills a finished task relied on started (`running`) or ended (`done`). */
 export interface SkillCurationEvent {
 	type: "skill_curation";
 	status: "running" | "done";
-	/** Edits the curation turn recorded; empty while running or when nothing changed. */
-	updates: SkillUpdate[];
+	/** Proposals this curation turn created; empty while running or when it proposed nothing. */
+	proposals: SkillProposalNotice[];
 }
 
 /** Coalesced snapshot of the displayable steering/follow-up queue, sent whenever it changes. */

@@ -2,9 +2,7 @@
  * File checkpoints of each session, persisted in the extension's storage (one
  * JSON file per session file) so they survive restarts.
  */
-import { createHash } from "node:crypto";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import { SessionFileStore } from "../session-store";
 import type { TurnSnapshots } from "./snapshots";
 
 /** Older checkpoints of a session are dropped beyond this many. */
@@ -28,25 +26,19 @@ export interface Checkpoint {
 }
 
 export class CheckpointStore {
-	/** Serializes writes per session file. */
-	readonly #queues = new Map<string, Promise<unknown>>();
+	readonly #files: SessionFileStore<Checkpoint>;
 
-	constructor(readonly directory: string) {}
+	constructor(directory: string) {
+		this.#files = new SessionFileStore(directory, isCheckpoint);
+	}
 
-	async load(sessionFile: string): Promise<Checkpoint[]> {
-		const text = await fs.readFile(this.#file(sessionFile), "utf8").catch(() => undefined);
-		if (text === undefined) return [];
-		try {
-			const parsed: unknown = JSON.parse(text);
-			return Array.isArray(parsed) ? parsed.filter(isCheckpoint) : [];
-		} catch {
-			return [];
-		}
+	load(sessionFile: string): Promise<Checkpoint[]> {
+		return this.#files.load(sessionFile);
 	}
 
 	/** Add a checkpoint, or replace the one with the same prompt. */
 	put(sessionFile: string, checkpoint: Checkpoint): Promise<void> {
-		return this.#update(sessionFile, checkpoints => {
+		return this.#files.update(sessionFile, checkpoints => {
 			const kept = checkpoints.filter(entry => entry.promptTimestamp !== checkpoint.promptTimestamp);
 			kept.push(checkpoint);
 			return kept.slice(-MAX_CHECKPOINTS);
@@ -55,33 +47,7 @@ export class CheckpointStore {
 
 	/** Forget a session's checkpoints (its file was deleted). */
 	remove(sessionFile: string): Promise<void> {
-		return this.#update(sessionFile, () => undefined);
-	}
-
-	#update(sessionFile: string, change: (checkpoints: Checkpoint[]) => Checkpoint[] | undefined): Promise<void> {
-		const previous = this.#queues.get(sessionFile) ?? Promise.resolve();
-		const next = previous.then(async () => {
-			const file = this.#file(sessionFile);
-			const updated = change(await this.load(sessionFile));
-			if (!updated) {
-				await fs.rm(file, { force: true });
-				return;
-			}
-			await fs.mkdir(this.directory, { recursive: true });
-			const temp = `${file}.${process.pid}.tmp`;
-			await fs.writeFile(temp, JSON.stringify(updated));
-			await fs.rename(temp, file);
-		});
-		this.#queues.set(
-			sessionFile,
-			next.catch(() => {}),
-		);
-		return next;
-	}
-
-	#file(sessionFile: string): string {
-		const key = createHash("sha256").update(path.resolve(sessionFile)).digest("hex").slice(0, 32);
-		return path.join(this.directory, `${key}.json`);
+		return this.#files.remove(sessionFile);
 	}
 }
 

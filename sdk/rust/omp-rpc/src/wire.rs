@@ -3872,25 +3872,27 @@ pub struct GoalUpdatedEvent {
 	pub state: Option<GoalModeState>,
 }
 
-/// One skill edit recorded by skill self-improvement.
+/// A skill change proposed by skill self-improvement, awaiting the user's decision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SkillUpdate {
-	pub skill: String,
-	/// Skill-history entry id; `omp skill revert <id>` undoes the edit.
+pub struct SkillProposalNotice {
+	/// Proposal id; `omp skill approve|reject <id>` decides it.
 	pub id: String,
+	pub skill: String,
 	pub summary: String,
-	/// Edited files, relative to the skill directory.
+	/// The transcript evidence the curator gave for the change.
+	pub reason: String,
+	/// Files the proposal changes, relative to the skill directory.
 	pub files: Vec<String>,
-	/// Compact unified diff of every edited file.
+	/// Compact unified diff of every changed file.
 	pub diff: String,
 }
 
-/// Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`).
+/// Skill self-improvement: a private turn reviewing the skills a finished task relied on started (`running`) or ended (`done`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SkillCurationEvent {
 	pub status: SkillCurationEventStatus,
-	/// Edits the curation turn recorded; empty while running or when nothing changed.
-	pub updates: Vec<SkillUpdate>,
+	/// Proposals this curation turn created; empty while running or when it proposed nothing.
+	pub proposals: Vec<SkillProposalNotice>,
 }
 
 /// Coalesced snapshot of the displayable steering/follow-up queue, sent whenever it changes.
@@ -3941,7 +3943,7 @@ pub enum RpcAgentEvent {
 	ThinkingLevelChanged(ThinkingLevelChangedEvent),
 	/// Goal mode changed, by a host `goal` command or the agent's `goal` tool.
 	GoalUpdated(GoalUpdatedEvent),
-	/// Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`).
+	/// Skill self-improvement: a private turn reviewing the skills a finished task relied on started (`running`) or ended (`done`).
 	SkillCuration(SkillCurationEvent),
 	/// Coalesced snapshot of the displayable steering/follow-up queue, sent whenever it changes.
 	QueueUpdate(QueueUpdateEvent),

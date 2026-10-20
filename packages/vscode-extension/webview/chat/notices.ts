@@ -7,6 +7,7 @@
 import { button, h } from "../dom";
 import { type IconName, icon } from "../icons";
 import { truncatedPre } from "./tools";
+import type { SkillProposalSummary } from "../../src/protocol";
 
 interface NoticeRow {
 	icon: IconName;
@@ -83,6 +84,67 @@ export function skillUpdateElement(details: SkillUpdateDetails, onRevert: () => 
 				{ className: "activity-body" },
 				truncatedPre(details.diff, "activity-pre"),
 				h("div", { className: "skill-update-actions" }, revert),
+			),
+		),
+	);
+}
+
+/**
+ * A skill proposal awaiting the user's decision: an expandable row with omp's
+ * reason and the diff, and Approve / Reject / Open diff (Discard / Open diff
+ * when the skill changed after the proposal).
+ */
+export function skillProposalElement(
+	proposal: SkillProposalSummary,
+	actions: { approve(): void; reject(): void; openDiff(): void },
+): HTMLElement {
+	const line = h(
+		"div",
+		{ className: "activity-line" },
+		h("span", { className: "activity-icon" }, icon("pencil")),
+		h("span", { className: "activity-verb" }, proposal.stale ? "Outdated" : "Proposed"),
+		h("span", { className: "activity-subject code" }, proposal.skill),
+		proposal.summary ? h("span", { className: "activity-label" }, proposal.summary) : null,
+		h("span", { className: "activity-chevron" }, icon("chevronRight")),
+	);
+	const decisions: HTMLButtonElement[] = [];
+	const decide = (label: string, busy: string, className: string, run: () => void) => {
+		const element = button(label, className, () => {
+			for (const decision of decisions) decision.disabled = true;
+			element.textContent = busy;
+			run();
+		});
+		decisions.push(element);
+		return element;
+	};
+	const buttons = proposal.stale
+		? [decide("Discard", "Discarding…", "secondary-button", actions.reject)]
+		: [
+				decide("Approve", "Applying…", "primary-button", actions.approve),
+				decide("Reject", "Rejecting…", "secondary-button", actions.reject),
+			];
+	return h(
+		"div",
+		{ className: "msg omp-notice" },
+		h(
+			"details",
+			{ className: "activity" },
+			h("summary", { className: "activity-row" }, line),
+			h(
+				"div",
+				{ className: "activity-body" },
+				h(
+					"p",
+					{ className: "skill-proposal-reason" },
+					`${proposal.stale ? "The skill changed after this proposal. " : ""}${proposal.reason}`,
+				),
+				truncatedPre(proposal.diff, "activity-pre"),
+				h(
+					"div",
+					{ className: "skill-update-actions" },
+					...buttons,
+					button("Open diff", "secondary-button", actions.openDiff),
+				),
 			),
 		),
 	);

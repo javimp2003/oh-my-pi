@@ -70,7 +70,7 @@ export const cfgSkillsSelfImprove = register({
 		group: "Commands & Skills",
 		label: "Skill Self-Improvement",
 		description:
-			"After a task that tripped while using your skills, omp corrects those skills in place (history and revert kept)",
+			"After each task that relied on your skills, omp proposes skill corrections for you to approve (VS Code: chat header and Skills view; CLI: omp skill proposals)",
 	},
 });
 

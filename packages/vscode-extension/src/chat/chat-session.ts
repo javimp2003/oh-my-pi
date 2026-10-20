@@ -18,6 +18,7 @@ import { renameStoredSession } from "../sessions/rename";
 import { guessSessionDir, listSessions, relativeTime, sessionLabel } from "../sessions/session-store";
 import { isNoWorkspaceSession, noWorkspaceSessionDir } from "../no-workspace";
 import { runOmp } from "../settings/settings-panel";
+import type { SkillProposalStore } from "../skills/proposals";
 import { webviewHtml } from "../webview-html";
 import {
 	type AgentHost,
@@ -64,6 +65,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 			deleteSession(sessionFile: string, label: string): Promise<void>;
 		},
 		readonly pool: AgentPool,
+		/** Pending skill proposals of every session, shown in the header. */
+		readonly proposals: SkillProposalStore,
 	) {
 		surface.webview.options = {
 			enableScripts: true,
@@ -76,6 +79,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 			}),
 			// Running/finished marks in the history panel follow every session of the window.
 			pool.onDidChangeActivity(() => this.post({ type: "sessionActivity", activity: pool.activities() })),
+			proposals.onDidChange(() => this.post({ type: "skillProposals", proposals: proposals.proposals })),
 		);
 	}
 
@@ -396,6 +400,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 				return;
 			case "ready":
 				this.#webviewReady = true;
+				this.post({ type: "skillProposals", proposals: this.proposals.proposals });
 				if (this.#host) await this.#host.replay(this);
 				else this.post({ type: "status", status: NO_PROCESS });
 				return;
@@ -487,8 +492,23 @@ export class ChatSession implements vscode.Disposable, HostView {
 					);
 				}
 				return;
-			case "dismissSkillCuration":
-				this.#host?.dismissSkillCuration();
+			case "approveSkillProposal":
+				try {
+					await this.proposals.approve(request.id);
+					this.#notice("info", "Skill proposal applied.");
+				} catch (error) {
+					this.#notice("error", `Could not apply the proposal: ${errorMessage(error)}`);
+				}
+				return;
+			case "rejectSkillProposal":
+				try {
+					await this.proposals.reject(request.id);
+				} catch (error) {
+					this.#notice("error", `Could not reject the proposal: ${errorMessage(error)}`);
+				}
+				return;
+			case "openSkillProposalDiff":
+				await this.proposals.openDiff(request.id);
 				return;
 			case "openFile":
 				await openWorkspaceFile(request.path, request.line);

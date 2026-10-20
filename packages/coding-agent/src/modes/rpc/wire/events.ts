@@ -152,26 +152,27 @@ export const eventDefs = {
 		{ type: "'goal_updated'", goal: "Goal | null", "state?": "GoalModeState" },
 		"Goal mode changed, by a host `goal` command or the agent's `goal` tool.",
 	),
-	SkillUpdate: doc(
+	SkillProposalNotice: doc(
 		{
+			id: doc("string", "Proposal id; `omp skill approve|reject <id>` decides it."),
 			skill: "string",
-			id: doc("string", "Skill-history entry id; `omp skill revert <id>` undoes the edit."),
 			summary: "string",
-			files: doc("string[]", "Edited files, relative to the skill directory."),
-			diff: doc("string", "Compact unified diff of every edited file."),
+			reason: doc("string", "The transcript evidence the curator gave for the change."),
+			files: doc("string[]", "Files the proposal changes, relative to the skill directory."),
+			diff: doc("string", "Compact unified diff of every changed file."),
 		},
-		"One skill edit recorded by skill self-improvement.",
+		"A skill change proposed by skill self-improvement, awaiting the user's decision.",
 	),
 	SkillCurationEvent: doc(
 		{
 			type: "'skill_curation'",
 			status: "'running' | 'done'",
-			updates: doc(
-				"SkillUpdate[]",
-				"Edits the curation turn recorded; empty while running or when nothing changed.",
+			proposals: doc(
+				"SkillProposalNotice[]",
+				"Proposals this curation turn created; empty while running or when it proposed nothing.",
 			),
 		},
-		"Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`).",
+		"Skill self-improvement: a private turn reviewing the skills a finished task relied on started (`running`) or ended (`done`).",
 	),
 	QueueUpdateEvent: doc(
 		{

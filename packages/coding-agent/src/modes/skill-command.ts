@@ -1,5 +1,10 @@
 import type { ImageContent, TextContent } from "@oh-my-pi/pi-ai";
-import { buildSkillPromptMessage, getSkillSlashCommandName, parseSkillInvocation } from "../extensibility/skills";
+import {
+	buildSkillInvocationMessage,
+	getSkillSlashCommandName,
+	parseSkillInvocation,
+	resolveSkillInvocation,
+} from "../extensibility/skills";
 import { type CustomMessage, SKILL_PROMPT_MESSAGE_TYPE, type SkillPromptDetails } from "../session/messages";
 import type { InteractiveModeContext } from "./types";
 
@@ -63,12 +68,10 @@ export async function buildSkillCommandPrompt(
 	streamingBehavior: "steer" | "followUp",
 	images?: ImageContent[],
 ): Promise<BuiltSkillCommandPrompt | undefined> {
-	const parsed = parseSkillInvocation(text);
-	if (!parsed) return undefined;
-	const skill = ctx.skillCommands.get(getSkillSlashCommandName({ name: parsed.name }));
-	if (!skill) return undefined;
+	const invocation = resolveSkillInvocation(text, name => ctx.skillCommands.get(getSkillSlashCommandName({ name })));
+	if (!invocation) return undefined;
 
-	const built = await buildSkillPromptMessage(skill, parsed, "user");
+	const built = await buildSkillInvocationMessage(invocation.skills, invocation);
 	const textBlock: TextContent = { type: "text", text: built.message };
 	const promptContent = images && images.length > 0 ? [textBlock, ...images] : built.message;
 

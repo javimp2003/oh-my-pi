@@ -66,6 +66,9 @@ export interface SkillPromptDetails {
 	 *  a plain user bubble. Absent on sessions recorded before chips existed. */
 	prompt?: string;
 	lineCount: number;
+	/** Every skill a multi-skill invocation loaded, in the order typed (`name`/`path`
+	 *  are the first). Absent when the prompt invoked one skill. */
+	skills?: Array<{ name: string; path: string }>;
 	/** Internal: compact label shown for a queued custom message. Optional —
 	 *  non-streaming skill prompts never set it. Stripped from persisted
 	 *  `details` by `SessionManager.appendCustomMessageEntry` via the

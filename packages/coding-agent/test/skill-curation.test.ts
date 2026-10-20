@@ -3,12 +3,19 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
-import { Snowflake } from "@oh-my-pi/pi-utils";
+import { prompt, Snowflake } from "@oh-my-pi/pi-utils";
 import { isSelfImprovableSkill, type Skill } from "../src/extensibility/skills";
 import { SKILL_PROMPT_MESSAGE_TYPE } from "../src/session/messages";
 import { listSkillHistory, revertSkillHistoryEntry, writeSkillHistoryEntry } from "../src/skill-curation/history";
-import { collectCurationSignals, renderTaskTranscript } from "../src/skill-curation/signals";
+import {
+	approveSkillProposal,
+	listSkillProposals,
+	rejectSkillProposal,
+	writeSkillProposal,
+} from "../src/skill-curation/proposals";
+import { collectCurationSignals, renderTaskTranscript, skillAnchors } from "../src/skill-curation/signals";
 import { SkillEditTool } from "../src/skill-curation/skill-edit-tool";
+import curationTemplate from "../src/prompts/skills/curation.md" with { type: "text" };
 
 const SKILL_FILE = `---
 name: demo
@@ -35,9 +42,17 @@ function skillAt(name: string, provider = "native"): Skill {
 }
 
 function readCall(id: string, target: string): AgentMessage {
+	return toolCall(id, "read", { path: target });
+}
+
+function bashCall(id: string, command: string): AgentMessage {
+	return toolCall(id, "bash", { command });
+}
+
+function toolCall(id: string, name: string, args: Record<string, unknown>): AgentMessage {
 	return {
 		role: "assistant",
-		content: [{ type: "toolCall", id, name: "read", arguments: { path: target } }],
+		content: [{ type: "toolCall", id, name, arguments: args }],
 		api: "openai-responses",
 		provider: "openai",
 		model: "test",
@@ -68,71 +83,136 @@ afterEach(async () => {
 	await fs.rm(root, { recursive: true, force: true });
 });
 
+const NO_ANCHORS = new Map();
+
 describe("collectCurationSignals", () => {
-	it("finds a used skill when a tool fails after it is read, and flags a late read", () => {
+	it("reviews a task that read a skill even when no tool failed, and flags a late read", () => {
 		const demo = skillAt("demo");
-		const afterRead = collectCurationSignals(
-			[readCall("r1", "skill://demo"), toolResult("r1", false), toolResult("b1", true)],
+		const clean = collectCurationSignals(
+			[
+				readCall("r1", "skill://demo"),
+				toolResult("r1", false),
+				bashCall("b1", "ls -l demo"),
+				toolResult("b1", false),
+			],
 			0,
 			[demo],
 			root,
+			NO_ANCHORS,
 		);
-		expect(afterRead).toEqual({ candidates: [{ skill: demo, readLate: false, earlier: false }], errorCount: 1 });
+		expect(clean).toEqual({
+			candidates: [{ skill: demo, uses: ["read"], matched: [], readLate: false, earlier: false }],
+			errorCount: 0,
+		});
 
 		const lateRead = collectCurationSignals(
 			[toolResult("b1", true), readCall("r1", path.join(demo.baseDir, "SKILL.md:1-5")), toolResult("r1", false)],
 			0,
 			[demo],
 			root,
+			NO_ANCHORS,
 		);
-		expect(lateRead?.candidates).toEqual([{ skill: demo, readLate: true, earlier: false }]);
+		expect(lateRead?.candidates[0]).toMatchObject({ readLate: true, earlier: false });
 	});
 
-	it("keeps a skill an earlier task loaded as a candidate, but counts only this task's failures", () => {
+	it("reviews a later task that runs a command the loaded skill documents, and only that kind of task", () => {
 		const demo = skillAt("demo");
-		const earlierTask = [readCall("r1", "skill://demo"), toolResult("r1", false), toolResult("b0", true)];
-		const signals = collectCurationSignals(
-			[...earlierTask, toolResult("b1", true)],
+		const anchors = new Map([
+			[demo, skillAnchors("---\nname: demo\n---\n```bash\nexport A=1 && kubectl get ns | grep x\n```\n")],
+		]);
+		const earlierTask = [readCall("r1", "skill://demo"), toolResult("r1", false)];
+		const related = collectCurationSignals(
+			[...earlierTask, bashCall("b1", "kubectl get pods -n x"), toolResult("b1", false)],
 			earlierTask.length,
 			[demo],
 			root,
+			anchors,
 		);
-		expect(signals).toEqual({ candidates: [{ skill: demo, readLate: false, earlier: true }], errorCount: 1 });
-		// The earlier task's failure alone does not make this task trip.
+		expect(related?.candidates).toEqual([
+			{ skill: demo, uses: ["commands"], matched: ["`kubectl`"], readLate: false, earlier: true },
+		]);
 		expect(
-			collectCurationSignals([...earlierTask, toolResult("b1", false)], earlierTask.length, [demo], root),
+			collectCurationSignals(
+				[...earlierTask, bashCall("b1", "ls -la"), toolResult("b1", true)],
+				earlierTask.length,
+				[demo],
+				root,
+				anchors,
+			),
 		).toBeUndefined();
 	});
 
-	it("needs both a used skill and a failure that is not the skill read itself", () => {
-		const demo = skillAt("demo");
-		expect(
-			collectCurationSignals([readCall("r1", "skill://demo"), toolResult("r1", false)], 0, [demo], root),
-		).toBeUndefined();
-		// A failing read of the skill file is not a task failure.
-		expect(
-			collectCurationSignals([readCall("r1", "skill://demo"), toolResult("r1", true)], 0, [demo], root),
-		).toBeUndefined();
-		// A skill outside the editable set is ignored.
-		expect(
-			collectCurationSignals([readCall("r1", "skill://other"), toolResult("b1", true)], 0, [demo], root),
-		).toBeUndefined();
+	it("sees a script of the skill in a command however its path is spelled", () => {
+		const windows: Skill = { ...skillAt("demo"), baseDir: "C:\\Users\\me\\.claude\\skills\\demo" };
+		const earlierTask = [readCall("r1", "skill://demo"), toolResult("r1", false)];
+		const signals = collectCurationSignals(
+			[
+				...earlierTask,
+				bashCall("b1", "py /c/Users/me/.claude/skills/demo/scripts/run.py --dry"),
+				toolResult("b1", false),
+			],
+			earlierTask.length,
+			[windows],
+			root,
+			NO_ANCHORS,
+		);
+		expect(signals?.candidates[0]?.uses).toEqual(["scripts"]);
 	});
 
-	it("counts a /skill: invocation as use", () => {
+	it("ignores skills never loaded, and does not count a failed read of the skill as a task failure", () => {
 		const demo = skillAt("demo");
+		expect(
+			collectCurationSignals([readCall("r1", "skill://other"), toolResult("b1", true)], 0, [demo], root, NO_ANCHORS),
+		).toBeUndefined();
+		expect(
+			collectCurationSignals([readCall("r1", "skill://demo"), toolResult("r1", true)], 0, [demo], root, NO_ANCHORS)
+				?.errorCount,
+		).toBe(0);
+	});
+
+	it("counts every skill of a /skill: invocation as use, not only the first", () => {
+		const demo = skillAt("demo");
+		const other = skillAt("other");
 		const invoked: AgentMessage = {
 			role: "custom",
 			customType: SKILL_PROMPT_MESSAGE_TYPE,
 			content: "body",
 			display: true,
-			details: { name: "demo", path: demo.filePath },
+			details: {
+				name: "demo",
+				path: demo.filePath,
+				skills: [
+					{ name: "demo", path: demo.filePath },
+					{ name: "other", path: other.filePath },
+				],
+			},
 			attribution: "user",
 			timestamp: 0,
 		};
-		expect(collectCurationSignals([invoked, toolResult("b1", true)], 0, [demo], root)?.candidates).toEqual([
-			{ skill: demo, readLate: false, earlier: false },
+		const candidates = collectCurationSignals([invoked], 0, [demo, other], root, NO_ANCHORS)?.candidates;
+		expect(candidates?.map(candidate => [candidate.skill.name, candidate.uses])).toEqual([
+			["demo", ["invoked"]],
+			["other", ["invoked"]],
 		]);
+	});
+});
+
+describe("skillAnchors", () => {
+	it("takes the programs a skill's shell code runs and the hosts it names, without generic utilities", () => {
+		const anchors = skillAnchors(
+			[
+				"---",
+				"name: demo",
+				"---",
+				"Deploy with `gcloud run deploy api`.",
+				"```console",
+				"$ sudo FOO=1 /usr/bin/terraform plan",
+				"```",
+				"Docs: https://api.example.com/v1",
+			].join("\n"),
+		);
+		expect([...anchors.commands].sort()).toEqual(["gcloud", "terraform"]);
+		expect([...anchors.hosts]).toEqual(["api.example.com"]);
 	});
 });
 
@@ -177,18 +257,21 @@ describe("SkillEditTool", () => {
 			old_text: "ls --long-format demo",
 			new_text: "ls -l demo",
 			summary: "Uses ls -l to list the demo folder",
+			reason: "ls rejected --long-format; ls -l listed the folder",
 			...params,
 		});
 
-	it("applies a unique replacement and records before/after", async () => {
+	it("stages replacements without touching disk, each building on the previous one", async () => {
 		const demo = skillAt("demo");
 		const tool = new SkillEditTool([demo]);
-		const result = await edit(tool, {});
-		expect(result.isError).toBeUndefined();
-		expect(await Bun.file(demo.filePath).text()).toContain("ls -l demo");
-		const file = tool.edits.get("demo")?.files.get(demo.filePath);
+		expect((await edit(tool, {})).isError).toBeUndefined();
+		expect((await edit(tool, { old_text: "ls -l demo", new_text: "ls -la demo" })).isError).toBeUndefined();
+		expect(await Bun.file(demo.filePath).text()).toBe(SKILL_FILE);
+		const record = tool.edits.get("demo");
+		const file = record?.files.get(demo.filePath);
 		expect(file?.before).toBe(SKILL_FILE);
-		expect(file?.after).toBe(SKILL_FILE.replace("ls --long-format demo", "ls -l demo"));
+		expect(file?.after).toBe(SKILL_FILE.replace("ls --long-format demo", "ls -la demo"));
+		expect(record?.reasons).toHaveLength(2);
 	});
 
 	it("rejects ambiguous text, escapes, frontmatter damage and unknown skills without writing", async () => {
@@ -206,6 +289,7 @@ describe("SkillEditTool", () => {
 				"limit is 1024",
 			],
 			[{ skill: "other" }, "Editable skills: demo"],
+			[{ reason: "  " }, "reason must be non-empty"],
 		];
 		for (const [params, message] of cases) {
 			const result = await edit(tool, params);
@@ -240,5 +324,67 @@ describe("skill history", () => {
 		await Bun.write(demo.filePath, `${after}\nEdited by hand.\n`);
 		await expect(revertSkillHistoryEntry(second.id, agentDir)).rejects.toThrow("changed since the update: SKILL.md");
 		expect(await Bun.file(demo.filePath).text()).toBe(`${after}\nEdited by hand.\n`);
+	});
+});
+
+describe("skill proposals", () => {
+	const after = SKILL_FILE.replace("ls --long-format demo", "ls -l demo");
+
+	it("applies an approved proposal once, recording it in the skill history", async () => {
+		const agentDir = path.join(root, "agent");
+		const demo = skillAt("demo");
+		const files = [{ path: demo.filePath, relativePath: "SKILL.md", before: SKILL_FILE, after }];
+		const proposal = await writeSkillProposal({ skill: "demo", summary: "Uses ls -l", reason: "r", files }, agentDir);
+		const [listed] = await listSkillProposals({}, agentDir);
+		expect(listed).toMatchObject({ id: proposal.id, status: "pending", stale: false });
+		expect(listed.diff).toContain("+ To list the demo folder run: `ls -l demo`");
+
+		const { history } = await approveSkillProposal(proposal.id, agentDir);
+		expect(await Bun.file(demo.filePath).text()).toBe(after);
+		expect((await listSkillHistory({ skill: "demo" }, agentDir)).map(entry => entry.id)).toEqual([history.id]);
+		expect(await listSkillProposals({}, agentDir)).toEqual([]);
+		await expect(approveSkillProposal(proposal.id, agentDir)).rejects.toThrow("already approved");
+	});
+
+	it("refuses an outdated proposal without writing, and lets it be rejected with a reason", async () => {
+		const agentDir = path.join(root, "agent");
+		const demo = skillAt("demo");
+		const files = [{ path: demo.filePath, relativePath: "SKILL.md", before: SKILL_FILE, after }];
+		const proposal = await writeSkillProposal({ skill: "demo", summary: "Uses ls -l", reason: "r", files }, agentDir);
+		await Bun.write(demo.filePath, `${SKILL_FILE}\nEdited by hand.\n`);
+		expect((await listSkillProposals({}, agentDir))[0]?.stale).toBe(true);
+		await expect(approveSkillProposal(proposal.id, agentDir)).rejects.toThrow("outdated");
+		expect(await Bun.file(demo.filePath).text()).toBe(`${SKILL_FILE}\nEdited by hand.\n`);
+
+		await rejectSkillProposal(proposal.id, " not needed ", agentDir);
+		expect(await listSkillProposals({}, agentDir)).toEqual([]);
+		expect((await listSkillProposals({ status: "all" }, agentDir))[0]).toMatchObject({
+			status: "rejected",
+			rejectReason: "not needed",
+		});
+	});
+});
+
+describe("curation prompt", () => {
+	it("shows pending and rejected proposals and asks for silent missteps when nothing failed", () => {
+		const text = prompt.render(curationTemplate, {
+			transcript: "USER: hi",
+			errorCount: 0,
+			skills: [
+				{
+					name: "demo",
+					filePath: "/s/demo/SKILL.md",
+					content: SKILL_FILE,
+					used: "read",
+					pending: [{ summary: "Uses ls -l", diff: "--- SKILL.md\n+ x" }],
+					rejected: [{ summary: "Adds a note", reason: "not needed" }],
+					hasPending: true,
+					hasRejected: true,
+				},
+			],
+		});
+		expect(text).toContain('<pending-proposals skill="demo">');
+		expect(text).toContain("- Adds a note — reason: not needed");
+		expect(text).toContain("No tool call failed");
 	});
 });

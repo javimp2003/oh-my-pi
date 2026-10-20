@@ -6,6 +6,7 @@
  */
 import type {
 	AgentMessage,
+	CommandOutput,
 	AssistantMessage,
 	ChatRequest,
 	ChatUpdate,
@@ -141,6 +142,11 @@ function isPrompt(message: AgentMessage): message is Extract<AgentMessage, { rol
 	return message.role === "custom" && message.customType === "skill-prompt";
 }
 
+/** What a local slash command printed (`/shake`, `/compact`…), live or replayed from storage. */
+function commandOutputElement(text: string): HTMLElement {
+	return h("div", { className: "msg command-output" }, truncatedPre(text, "activity-pre"));
+}
+
 /**
  * A skill invocation as the user wrote it: the draft with each `/skill:name`
  * token as a chip, and the loaded SKILL.md (the message content sent to the
@@ -159,7 +165,11 @@ function skillBubble(details: SkillPromptDetails, skillText: string, onEdit?: ()
 	const folded = h(
 		"details",
 		{ className: "skill-details" },
-		h("summary", null, `Skill ${details.name} · ${lines} ${lines === 1 ? "line" : "lines"}`),
+		h(
+			"summary",
+			null,
+			`${details.skills?.length ? `Skills ${details.skills.map(skill => skill.name).join(", ")}` : `Skill ${details.name}`} · ${lines} ${lines === 1 ? "line" : "lines"}`,
+		),
 		prompt,
 	);
 	return h(
@@ -426,7 +436,8 @@ export class Transcript {
 		this.#editor = editor;
 	}
 
-	setHistory(messages: AgentMessage[]): void {
+	/** Rebuild the transcript; `commandOutputs` (oldest first) go where they appeared, by timestamp. */
+	setHistory(messages: AgentMessage[], commandOutputs: readonly CommandOutput[] = []): void {
 		cancelAnimationFrame(this.#frame);
 		this.#frame = 0;
 		this.#pendingUpdates.clear();
@@ -449,11 +460,20 @@ export class Transcript {
 			}
 			turnStart = turnEnd = undefined;
 		};
+		let nextOutput = 0;
+		/** Show every command output printed before `timestamp`. */
+		const outputsBefore = (timestamp: number) => {
+			while (nextOutput < commandOutputs.length && commandOutputs[nextOutput].timestamp < timestamp) {
+				this.#list.append(commandOutputElement(commandOutputs[nextOutput].text));
+				nextOutput++;
+			}
+		};
 		for (const message of messages) {
 			if (isPrompt(message) && lastStop !== "toolUse") {
 				closeTurn();
 				turnStart = message.timestamp;
 			}
+			outputsBefore(message.timestamp);
 			if (message.role === "assistant") {
 				const view = new AssistantView(
 					`h${this.#list.childElementCount}`,
@@ -469,6 +489,7 @@ export class Transcript {
 			}
 		}
 		closeTurn();
+		outputsBefore(Number.POSITIVE_INFINITY);
 		for (const card of this.#tools.values()) if (card.status === "pending") card.setStatus("none");
 		this.#pinned = true;
 		this.#afterChange();
@@ -517,7 +538,7 @@ export class Transcript {
 	}
 
 	appendCommandOutput(text: string): void {
-		this.#list.append(h("div", { className: "msg command-output" }, truncatedPre(text, "activity-pre")));
+		this.#list.append(commandOutputElement(text));
 		this.#afterChange();
 	}
 

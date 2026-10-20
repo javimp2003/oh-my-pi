@@ -7,7 +7,7 @@ import type { Goal } from "@oh-my-pi/pi-tui/tools/goal";
 import type { GoalModeState } from "../goals/state";
 import type { ConfiguredThinkingLevel } from "@oh-my-pi/pi-tui/thinking";
 import type { TodoItem } from "@oh-my-pi/pi-tui/tools/todo";
-import type { SkillUpdateDetails } from "../skill-curation/controller";
+import type { SkillProposalNotice } from "../skill-curation/proposals";
 import type { CustomMessage } from "./messages";
 import type { CacheWarmingRefreshEnd, CacheWarmingRefreshStart } from "./cache-warmer";
 
@@ -83,9 +83,9 @@ export type AgentSessionEvent =
 	  }
 	| { type: "goal_updated"; goal: Goal | null; state?: GoalModeState }
 	// Skill self-improvement (`skills.selfImprove`): `running` while a private
-	// curation turn reviews the skills a finished task used; `done` when it ends,
-	// with the edits it recorded (empty when it changed nothing).
-	| { type: "skill_curation"; status: "running" | "done"; updates: SkillUpdateDetails[] }
+	// curation turn reviews the skills a finished task relied on; `done` when it
+	// ends, with the proposals it created (empty when it proposed nothing).
+	| { type: "skill_curation"; status: "running" | "done"; proposals: SkillProposalNotice[] }
 	// Coalesced snapshot of the displayable steering/follow-up queue: emitted
 	// whenever it differs from the last `queue_update` (enqueue, dequeue on
 	// delivery, remove, clear/restore, live-steering adoption/withdrawal, or

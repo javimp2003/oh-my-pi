@@ -19,6 +19,7 @@ import { compareSkillOrder, scanSkillsFromDir } from "../discovery/helpers";
 import { allowsSkillTokens, SKILL_TOKEN_RE } from "@oh-my-pi/pi-tui/prompt/skill-tokens";
 import autoloadTemplate from "../prompts/skills/autoload.md" with { type: "text" };
 import userInvocationTemplate from "../prompts/skills/user-invocation.md" with { type: "text" };
+import multiUserInvocationTemplate from "../prompts/skills/user-invocation-multi.md" with { type: "text" };
 import { SKILLSHARE_PROVIDER_ID } from "../discovery/skillshare";
 import type { SkillPromptDetails } from "../session/messages";
 import { expandTilde } from "../tools/path-utils";
@@ -725,6 +726,81 @@ export async function buildSkillPromptMessage(
 			args: trimmedArgs || undefined,
 			prompt: input.prompt,
 			lineCount: body ? body.split("\n").length : 0,
+		},
+	};
+}
+
+/** A user `/skill:` invocation resolved to skills: every distinct known token of the draft, in order. */
+export interface ResolvedSkillInvocation<S> extends SkillPromptInput {
+	skills: S[];
+	prompt: string;
+}
+
+/**
+ * Resolve every `/skill:<name>` token of a user draft, not just the first, so
+ * a prompt naming several skills loads all of them. The first token must name
+ * a known skill (else this is not an invocation); later known tokens join it
+ * and leave `args`, unknown ones stay in `args` as typed, repeats are dropped.
+ */
+export function resolveSkillInvocation<S extends { name: string }>(
+	text: string,
+	resolve: (name: string) => S | undefined,
+): ResolvedSkillInvocation<S> | undefined {
+	const parsed = parseSkillInvocation(text);
+	if (!parsed) return undefined;
+	const first = resolve(parsed.name);
+	if (!first) return undefined;
+	const skills = [first];
+	const args = parsed.args
+		.replace(new RegExp(SKILL_TOKEN_RE.source, "g"), (token: string, lead: string, name: string) => {
+			const skill = resolve(name);
+			if (!skill) return token;
+			if (!skills.some(known => known.name === skill.name)) skills.push(skill);
+			return lead;
+		})
+		.replace(/[ \t]{2,}/g, " ")
+		.trim();
+	return { skills, args, prompt: parsed.prompt };
+}
+
+/**
+ * The user-attributed message for a resolved invocation. One skill renders as
+ * before; several render with equal weight in one message — each skill's full
+ * body and directory, in the order typed — so none is favoured by being the
+ * only one expanded.
+ */
+export async function buildSkillInvocationMessage(
+	skills: readonly Pick<Skill, "name" | "filePath" | "baseDir">[],
+	input: SkillPromptInput,
+): Promise<BuiltSkillPromptMessage> {
+	const [first, ...rest] = skills;
+	if (!first) throw new Error("no skill to invoke");
+	if (rest.length === 0) return buildSkillPromptMessage(first, input, "user");
+	const loaded = await Promise.all(
+		skills.map(async skill => {
+			const content = await Bun.file(skill.filePath).text();
+			const body = parseFrontmatter(content, { source: skill.filePath, repair: false, level: "off" }).body.trim();
+			return { name: skill.name, baseDir: skill.baseDir, path: skill.filePath, body };
+		}),
+	);
+	const trimmedArgs = input.args.trim();
+	const message = prompt
+		.render(multiUserInvocationTemplate, {
+			count: loaded.length,
+			names: loaded.map(skill => `"${skill.name}"`).join(", "),
+			skills: loaded,
+			userArgs: trimmedArgs || undefined,
+		})
+		.trim();
+	return {
+		message,
+		details: {
+			name: first.name,
+			path: first.filePath,
+			args: trimmedArgs || undefined,
+			prompt: input.prompt,
+			lineCount: loaded.reduce((total, skill) => total + (skill.body ? skill.body.split("\n").length : 0), 0),
+			skills: loaded.map(skill => ({ name: skill.name, path: skill.path })),
 		},
 	};
 }

@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildSkillPromptMessage, type Skill } from "@oh-my-pi/pi-coding-agent/extensibility/skills";
+import {
+	buildSkillInvocationMessage,
+	buildSkillPromptMessage,
+	resolveSkillInvocation,
+	type Skill,
+} from "@oh-my-pi/pi-coding-agent/extensibility/skills";
 import { removeWithRetries, Snowflake } from "@oh-my-pi/pi-utils";
 
 async function createSkill(body: string): Promise<{ dir: string; skill: Skill }> {
@@ -105,6 +110,55 @@ describe("buildSkillPromptMessage", () => {
 			expect(built.details.lineCount).toBe(1);
 		} finally {
 			await removeWithRetries(dir);
+		}
+	});
+});
+
+describe("multi-skill invocations", () => {
+	const known = new Map(["a", "b"].map(name => [name, { name }]));
+	const resolve = (name: string) => known.get(name);
+
+	test("resolves every known skill token in order, leaving unknown tokens and dropping repeats", () => {
+		expect(resolveSkillInvocation("/skill:a compare with /skill:b and /skill:zzz /skill:a", resolve)).toEqual({
+			skills: [{ name: "a" }, { name: "b" }],
+			args: "compare with and /skill:zzz",
+			prompt: "/skill:a compare with /skill:b and /skill:zzz /skill:a",
+		});
+		expect(resolveSkillInvocation("check /skill:b then /skill:a", resolve)?.skills).toEqual([
+			{ name: "b" },
+			{ name: "a" },
+		]);
+		expect(resolveSkillInvocation("/skill:zzz then /skill:a", resolve)).toBeUndefined();
+	});
+
+	test("expands every invoked skill in one message with equal framing", async () => {
+		const first = await createSkill("First skill steps.");
+		const second = await createSkill("Second skill steps.\nMore.");
+		try {
+			const skills = [first.skill, { ...second.skill, name: "auditor" }];
+			const built = await buildSkillInvocationMessage(skills, { args: "check the deploy", prompt: "p" });
+			expect(built.message).toContain('User invoked 2 skills together: "reviewer", "auditor"');
+			expect(built.message).toContain(
+				`<skill name="reviewer" directory="${first.dir}">\nFirst skill steps.\n</skill>`,
+			);
+			expect(built.message).toContain(
+				`<skill name="auditor" directory="${second.dir}">\nSecond skill steps.\nMore.\n</skill>`,
+			);
+			expect(built.message).toContain("User: check the deploy");
+			expect(built.details).toMatchObject({
+				name: "reviewer",
+				lineCount: 3,
+				skills: [
+					{ name: "reviewer", path: first.skill.filePath },
+					{ name: "auditor", path: second.skill.filePath },
+				],
+			});
+
+			const single = await buildSkillInvocationMessage([first.skill], { args: "x" });
+			expect(single).toEqual(await buildSkillPromptMessage(first.skill, { args: "x" }, "user"));
+		} finally {
+			await removeWithRetries(first.dir);
+			await removeWithRetries(second.dir);
 		}
 	});
 });

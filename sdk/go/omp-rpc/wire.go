@@ -4426,28 +4426,31 @@ func (v GoalUpdatedEvent) MarshalJSON() ([]byte, error) {
 	return encodeObject(plain(v), `"type":"goal_updated"`, nil)
 }
 
-// One skill edit recorded by skill self-improvement.
-type SkillUpdate struct {
-	Skill string `json:"skill"`
-	// Skill-history entry id; `omp skill revert <id>` undoes the edit.
+// A skill change proposed by skill self-improvement, awaiting the user's decision.
+type SkillProposalNotice struct {
+	// Proposal id; `omp skill approve|reject <id>` decides it.
 	ID      string `json:"id"`
+	Skill   string `json:"skill"`
 	Summary string `json:"summary"`
-	// Edited files, relative to the skill directory.
+	// The transcript evidence the curator gave for the change.
+	Reason string `json:"reason"`
+	// Files the proposal changes, relative to the skill directory.
 	Files []string `json:"files"`
-	// Compact unified diff of every edited file.
+	// Compact unified diff of every changed file.
 	Diff string `json:"diff"`
 }
 
-func (v *SkillUpdate) UnmarshalJSON(data []byte) error {
-	return decodeWith(data, "SkillUpdate", v.decodeFrom)
+func (v *SkillProposalNotice) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SkillProposalNotice", v.decodeFrom)
 }
 
-func (v *SkillUpdate) decodeFrom(raw map[string]json.RawMessage) error {
-	var out SkillUpdate
-	d := fieldDecoder{raw: raw, owner: "SkillUpdate"}
-	d.required("skill", &out.Skill)
+func (v *SkillProposalNotice) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SkillProposalNotice
+	d := fieldDecoder{raw: raw, owner: "SkillProposalNotice"}
 	d.required("id", &out.ID)
+	d.required("skill", &out.Skill)
 	d.required("summary", &out.Summary)
+	d.required("reason", &out.Reason)
 	d.required("files", &out.Files)
 	d.required("diff", &out.Diff)
 	if d.err != nil {
@@ -4457,11 +4460,11 @@ func (v *SkillUpdate) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
-// Skill self-improvement: a private turn reviewing the skills a finished task used started (`running`) or ended (`done`).
+// Skill self-improvement: a private turn reviewing the skills a finished task relied on started (`running`) or ended (`done`).
 type SkillCurationEvent struct {
 	Status SkillCurationEventStatus `json:"status"`
-	// Edits the curation turn recorded; empty while running or when nothing changed.
-	Updates []SkillUpdate `json:"updates"`
+	// Proposals this curation turn created; empty while running or when it proposed nothing.
+	Proposals []SkillProposalNotice `json:"proposals"`
 }
 
 func (v *SkillCurationEvent) UnmarshalJSON(data []byte) error {
@@ -4473,7 +4476,7 @@ func (v *SkillCurationEvent) decodeFrom(raw map[string]json.RawMessage) error {
 	d := fieldDecoder{raw: raw, owner: "SkillCurationEvent"}
 	d.constant("type", "skill_curation")
 	d.required("status", &out.Status)
-	d.required("updates", &out.Updates)
+	d.required("proposals", &out.Proposals)
 	if d.err != nil {
 		return d.err
 	}

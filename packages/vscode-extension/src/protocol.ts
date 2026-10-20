@@ -18,7 +18,6 @@ import type {
 	RpcAgentEvent,
 	SessionState,
 	SessionStats,
-	SkillUpdate,
 	ThinkingLevel,
 } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
 
@@ -32,7 +31,6 @@ export type {
 	RpcAgentEvent,
 	SessionState,
 	SessionStats,
-	SkillUpdate,
 	TextContent,
 	ThinkingContent,
 	ThinkingLevel,
@@ -50,6 +48,23 @@ export interface ModelChoice {
 	contextWindow: number | null;
 }
 
+/** One proposal of `omp skill proposals --json`: a skill change omp suggests, awaiting the user's decision. */
+export interface SkillProposalSummary {
+	/** Passed to `omp skill approve|reject`. */
+	id: string;
+	skill: string;
+	createdAt: number;
+	summary: string;
+	/** The evidence omp gives for the change. */
+	reason: string;
+	/** Paths relative to the skill directory. */
+	files: string[];
+	diff: string;
+	status: "pending" | "approved" | "rejected";
+	/** The skill changed after the proposal: it can only be discarded. */
+	stale: boolean;
+}
+
 /** `details` of omp's `skill-prompt` custom message (packages/tui/src/chat/messages.ts `SkillPromptDetails`). */
 export interface SkillPromptDetails {
 	name: string;
@@ -57,6 +72,8 @@ export interface SkillPromptDetails {
 	/** The draft as submitted, `/skill:<name>` token in place; absent on older sessions. */
 	prompt?: string;
 	lineCount?: number;
+	/** Every skill a multi-skill invocation loaded, in the order typed; absent for one skill. */
+	skills?: Array<{ name: string; path: string }>;
 }
 
 export function isSkillPromptDetails(details: unknown): details is SkillPromptDetails {
@@ -100,6 +117,12 @@ export interface SessionListItem {
 	noWorkspace: boolean;
 }
 
+/** Text a local slash command printed, and when (epoch ms, comparable with message timestamps). */
+export interface CommandOutput {
+	timestamp: number;
+	text: string;
+}
+
 /** Lifecycle of the omp process behind a chat view. */
 export type AgentStatus =
 	| { phase: "starting" }
@@ -113,9 +136,10 @@ export type ChatUpdate =
 	/**
 	 * Replace the whole transcript (startup, session switch, new session).
 	 * Messages are in chronological order; tool results follow their assistant
-	 * message and pair with its tool calls by `toolCallId`.
+	 * message and pair with its tool calls by `toolCallId`. `commandOutputs` are
+	 * what local slash commands printed in the session, placed by timestamp.
 	 */
-	| { type: "history"; messages: AgentMessage[] }
+	| { type: "history"; messages: AgentMessage[]; commandOutputs: CommandOutput[] }
 	/**
 	 * One live session event exactly as omp emitted it (`message_start`,
 	 * `message_update`, `message_end`, `tool_execution_*`, `agent_start`,
@@ -173,12 +197,10 @@ export type ChatUpdate =
 	| { type: "planReview"; id: string; title: string; content: string; path?: string; options: string[] }
 	/** omp withdrew the plan review (the turn was aborted); disable its buttons. */
 	| { type: "planReviewClosed"; id: string }
-	/**
-	 * Skill self-improvement of the open session: `running` while omp reviews the
-	 * skills the last task used; `done` once it changed skills (`updates` are the
-	 * edits); `idle` otherwise.
-	 */
-	| { type: "skillCuration"; status: "idle" | "running" | "done"; updates: SkillUpdate[] };
+	/** omp is reviewing the skills the last task of the open session relied on (`running`), or not (`idle`). */
+	| { type: "skillCuration"; status: "idle" | "running" }
+	/** Pending skill proposals of every session, newest first. */
+	| { type: "skillProposals"; proposals: SkillProposalSummary[] };
 
 /** Chat webview → host. */
 export type ChatRequest =
@@ -214,8 +236,12 @@ export type ChatRequest =
 	| { type: "openPlan"; path: string }
 	/** Revert one of omp's self-improvement edits to a skill (`omp skill revert <id>`), from its `skill-update` card. */
 	| { type: "revertSkillUpdate"; id: string }
-	/** The skill updates of the last curation were seen: clear the header indicator. */
-	| { type: "dismissSkillCuration" }
+	/** Apply a skill proposal (`omp skill approve <id>`). */
+	| { type: "approveSkillProposal"; id: string }
+	/** Decline a skill proposal (asks for an optional reason, then `omp skill reject <id>`). */
+	| { type: "rejectSkillProposal"; id: string }
+	/** Show a skill proposal's changes in a diff editor. */
+	| { type: "openSkillProposalDiff"; id: string }
 	| { type: "openSettings" }
 	| { type: "login" }
 	| { type: "compact" }

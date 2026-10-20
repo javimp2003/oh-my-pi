@@ -1,20 +1,37 @@
 /**
- * Which editable skills a finished task used, and whether it tripped.
+ * Which editable skills a finished task relied on.
  *
- * A task "used" a skill when it read one of the skill's files (`read` of
+ * A skill is "loaded" once the conversation read one of its files (`read` of
  * `skill://<name>[/…]` or of a path inside the skill directory) or the user
- * invoked it (`/skill:<name>`). It "tripped" when a tool call failed. Only
- * tasks that did both are worth a curation turn.
+ * invoked it (`/skill:<name>`); it stays loaded while that message is in the
+ * live context. A task relied on a loaded skill when it read or invoked it,
+ * used the skill's own files (scripts, references), or ran commands / reached
+ * endpoints the skill's SKILL.md documents. Every such task gets a curation
+ * turn — no tool error is required.
  */
+import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { Message } from "@oh-my-pi/pi-ai";
+import { parseFrontmatter } from "@oh-my-pi/pi-utils";
 import type { Skill } from "../extensibility/skills";
-import { convertToLlm, SKILL_PROMPT_MESSAGE_TYPE } from "../session/messages";
+import { convertToLlm, SKILL_PROMPT_MESSAGE_TYPE, type SkillPromptDetails } from "../session/messages";
+
+/** How a task relied on a skill. */
+export type SkillUse = "read" | "invoked" | "scripts" | "commands";
+
+/** What a skill documents that a task can be seen using: program names and endpoint hosts (lower-case). */
+export interface SkillAnchors {
+	commands: ReadonlySet<string>;
+	hosts: ReadonlySet<string>;
+}
 
 export interface CurationCandidate {
 	skill: Skill;
-	/** The skill was first used only after a tool had already failed: its description may not trigger in time. */
+	uses: SkillUse[];
+	/** Up to five documented commands (`` `kubectl` ``) or hosts this task used. */
+	matched: string[];
+	/** The skill was first read or invoked in this task only after a tool had already failed: its description may not trigger in time. */
 	readLate: boolean;
 	/** The skill entered the conversation in an earlier task and was still in context: this task may lean on it without reading it again. */
 	earlier: boolean;
@@ -44,22 +61,16 @@ export function matchSkillPath(target: string, skills: readonly Skill[], cwd: st
 	return skills.find(skill => absolute === skill.filePath || absolute.startsWith(skill.baseDir + path.sep));
 }
 
-/**
- * Curation candidates for the task that starts at `messages[taskStart]`:
- * `messages` is the session's live context, so a skill an earlier task read or
- * invoked still counts while it stays in context (compaction drops it). Every
- * such skill in `skills` is a candidate, provided a tool call of this task
- * failed. A failed read of a skill file itself is not counted as a failure.
- */
-export function collectCurationSignals(
-	messages: readonly AgentMessage[],
-	taskStart: number,
-	skills: readonly Skill[],
-	cwd: string,
-): CurationSignals | undefined {
-	const firstUse = new Map<Skill, number>();
-	const skillReadCallIds = new Set<string>();
-	const errors: number[] = [];
+interface SkillLoad {
+	skill: Skill;
+	index: number;
+	kind: "read" | "invoked";
+	/** The `read` call that loaded it. */
+	callId?: string;
+}
+
+function skillLoads(messages: readonly AgentMessage[], skills: readonly Skill[], cwd: string): SkillLoad[] {
+	const loads: SkillLoad[] = [];
 	messages.forEach((message, index) => {
 		if (message.role === "assistant") {
 			for (const block of message.content) {
@@ -67,33 +78,276 @@ export function collectCurationSignals(
 				const target = block.arguments.path;
 				if (typeof target !== "string") continue;
 				const skill = matchSkillPath(target, skills, cwd);
-				if (!skill) continue;
-				skillReadCallIds.add(block.id);
-				if (!firstUse.has(skill)) firstUse.set(skill, index);
+				if (skill) loads.push({ skill, index, kind: "read", callId: block.id });
 			}
 		} else if (message.role === "custom" && message.customType === SKILL_PROMPT_MESSAGE_TYPE) {
-			const details = message.details;
-			const name = details && typeof details === "object" && "name" in details ? details.name : undefined;
-			const skill = skills.find(candidate => candidate.name === name);
-			if (skill && !firstUse.has(skill)) firstUse.set(skill, index);
-		} else if (
-			index >= taskStart &&
-			message.role === "toolResult" &&
-			message.isError &&
-			!skillReadCallIds.has(message.toolCallId)
-		) {
-			errors.push(index);
+			const details = message.details as Partial<SkillPromptDetails> | undefined;
+			const names = details?.skills?.map(entry => entry.name) ?? (details?.name ? [details.name] : []);
+			for (const name of names) {
+				const skill = skills.find(candidate => candidate.name === name);
+				if (skill) loads.push({ skill, index, kind: "invoked" });
+			}
 		}
 	});
-	if (firstUse.size === 0 || errors.length === 0) return undefined;
-	return {
-		candidates: [...firstUse].map(([skill, used]) => ({
-			skill,
-			readLate: used >= taskStart && errors[0] < used,
-			earlier: used < taskStart,
-		})),
-		errorCount: errors.length,
+	return loads;
+}
+
+/** Skills of `skills` that `messages` read or invoked, with the index where each was first loaded. */
+export function loadedSkills(
+	messages: readonly AgentMessage[],
+	skills: readonly Skill[],
+	cwd: string,
+): Map<Skill, number> {
+	const first = new Map<Skill, number>();
+	for (const load of skillLoads(messages, skills, cwd)) if (!first.has(load.skill)) first.set(load.skill, load.index);
+	return first;
+}
+
+/** Shell builtins, text utilities and interpreters: too common to tie a command to one skill. */
+const GENERIC_COMMANDS: Record<string, true> = Object.fromEntries(
+	[
+		"cd",
+		"ls",
+		"dir",
+		"cat",
+		"type",
+		"echo",
+		"printf",
+		"grep",
+		"rg",
+		"findstr",
+		"sed",
+		"awk",
+		"head",
+		"tail",
+		"export",
+		"set",
+		"unset",
+		"cp",
+		"copy",
+		"mv",
+		"move",
+		"rm",
+		"del",
+		"mkdir",
+		"touch",
+		"pwd",
+		"which",
+		"where",
+		"sort",
+		"uniq",
+		"wc",
+		"xargs",
+		"tee",
+		"true",
+		"false",
+		"test",
+		"sleep",
+		"exit",
+		"if",
+		"then",
+		"else",
+		"fi",
+		"for",
+		"do",
+		"done",
+		"while",
+		"case",
+		"esac",
+		"function",
+		"return",
+		"read",
+		"clear",
+		"less",
+		"more",
+		"find",
+		"chmod",
+		"chown",
+		"ln",
+		"tr",
+		"cut",
+		"diff",
+		"date",
+		"source",
+		"bash",
+		"sh",
+		"zsh",
+		"pwsh",
+		"powershell",
+		"cmd",
+		"node",
+		"bun",
+		"deno",
+		"python",
+		"python3",
+		"py",
+		"start",
+		"open",
+	].map(name => [name, true]),
+);
+const COMMAND_WRAPPERS: Record<string, true> = { sudo: true, time: true, env: true, nohup: true, exec: true };
+const SHELL_FENCES: Record<string, true> = Object.fromEntries(
+	["", "sh", "bash", "shell", "zsh", "console", "terminal", "powershell", "ps1", "pwsh", "cmd", "bat"].map(info => [
+		info,
+		true,
+	]),
+);
+const PROMPT_RE = /^\s*(?:PS(?: [^>]*)?>|\$|>)\s+/;
+const SEGMENT_SPLIT_RE = /&&|\|\||[|;\n`]|\$\(/;
+const FENCE_RE = /^(```|~~~)[ \t]*([\w+-]*)[^\n]*\n([\s\S]*?)^\1[ \t]*$/gm;
+const INLINE_CODE_RE = /`([^`\n]+)`/g;
+const HOST_RE = /https?:\/\/([^/\s"'`)>\]]+)/gi;
+const ANCHOR_RE = /^[a-z][\w.+-]+$/;
+
+/** The program each command in `text` runs: env assignments and wrappers (`sudo`, `env`…) skipped, basename, lower-case. */
+export function commandHeads(text: string): string[] {
+	const heads: string[] = [];
+	for (const line of text.split("\n")) {
+		for (const segment of line.replace(PROMPT_RE, "").split(SEGMENT_SPLIT_RE)) {
+			const tokens = segment.trim().split(/\s+/);
+			let index = 0;
+			while (
+				index < tokens.length &&
+				(/^\w+=/.test(tokens[index]) || COMMAND_WRAPPERS[tokens[index].toLowerCase()])
+			) {
+				index++;
+			}
+			const token = tokens[index]?.replace(/^["'(]+|["')]+$/g, "");
+			if (!token) continue;
+			const head = (token.split(/[\\/]/).pop() ?? "").replace(/\.(exe|cmd|bat|ps1|sh)$/i, "").toLowerCase();
+			if (head) heads.push(head);
+		}
+	}
+	return heads;
+}
+
+/** What `skillMd` documents: programs its shell code runs and hosts its URLs name. */
+export function skillAnchors(skillMd: string): SkillAnchors {
+	let body = skillMd;
+	try {
+		body = parseFrontmatter(skillMd, { source: "SKILL.md", level: "off", repair: false }).body;
+	} catch {
+		// Unparseable frontmatter: scan the whole file.
+	}
+	const code: string[] = [];
+	const prose = body.replace(FENCE_RE, (_match, _fence: string, info: string, content: string) => {
+		if (SHELL_FENCES[info.toLowerCase()]) code.push(content);
+		return "";
+	});
+	for (const match of prose.matchAll(INLINE_CODE_RE)) code.push(match[1]);
+	const commands = new Set<string>();
+	for (const head of commandHeads(code.join("\n"))) {
+		if (ANCHOR_RE.test(head) && !GENERIC_COMMANDS[head]) commands.add(head);
+	}
+	const hosts = new Set<string>();
+	for (const match of body.matchAll(HOST_RE)) hosts.add(match[1].toLowerCase());
+	return { commands, hosts };
+}
+
+/** How tool arguments can name the skill directory: as is, in Git Bash form (`/c/…`), under `~`, or as `skill://`. */
+function skillPathNeedles(skill: Skill): string[] {
+	const base = skill.baseDir.replaceAll("\\", "/").toLowerCase();
+	const needles = [base, `skill://${skill.name.toLowerCase()}`];
+	const drive = /^([a-z]):\//.exec(base);
+	if (drive) needles.push(`/${drive[1]}/${base.slice(3)}`);
+	const home = os.homedir().replaceAll("\\", "/").toLowerCase();
+	if (base.startsWith(`${home}/`)) needles.push(`~${base.slice(home.length)}`);
+	return needles;
+}
+
+function collectStrings(value: unknown, out: string[]): void {
+	if (typeof value === "string") out.push(value);
+	else if (Array.isArray(value)) for (const item of value) collectStrings(item, out);
+	else if (value && typeof value === "object") for (const item of Object.values(value)) collectStrings(item, out);
+}
+
+const USE_ORDER: readonly SkillUse[] = ["read", "invoked", "scripts", "commands"];
+const MAX_MATCHED = 5;
+
+/**
+ * Curation candidates for the task that starts at `messages[taskStart]`.
+ * `messages` is the session's live context: a skill an earlier task loaded
+ * still counts while it stays in context (compaction drops it). Every loaded
+ * skill in `skills` this task relied on is a candidate; `anchors` holds what
+ * each SKILL.md documents. A failed read of a skill file is not a task failure.
+ */
+export function collectCurationSignals(
+	messages: readonly AgentMessage[],
+	taskStart: number,
+	skills: readonly Skill[],
+	cwd: string,
+	anchors: ReadonlyMap<Skill, SkillAnchors>,
+): CurationSignals | undefined {
+	const firstLoad = new Map<Skill, number>();
+	const skillReadCallIds = new Set<string>();
+	const usage = new Map<Skill, { uses: Set<SkillUse>; matched: Set<string>; loadInTask?: number }>();
+	const use = (skill: Skill) => {
+		let entry = usage.get(skill);
+		if (!entry) {
+			entry = { uses: new Set(), matched: new Set() };
+			usage.set(skill, entry);
+		}
+		return entry;
 	};
+	for (const load of skillLoads(messages, skills, cwd)) {
+		if (load.callId) skillReadCallIds.add(load.callId);
+		if (!firstLoad.has(load.skill)) firstLoad.set(load.skill, load.index);
+		if (load.index < taskStart) continue;
+		const entry = use(load.skill);
+		entry.uses.add(load.kind);
+		entry.loadInTask ??= load.index;
+	}
+	if (firstLoad.size === 0) return undefined;
+	const needles = new Map([...firstLoad.keys()].map(skill => [skill, skillPathNeedles(skill)]));
+	const errors: number[] = [];
+	for (let index = taskStart; index < messages.length; index++) {
+		const message = messages[index];
+		if (message.role === "toolResult") {
+			if (message.isError && !skillReadCallIds.has(message.toolCallId)) errors.push(index);
+			continue;
+		}
+		if (message.role !== "assistant") continue;
+		for (const block of message.content) {
+			if (block.type !== "toolCall" || skillReadCallIds.has(block.id)) continue;
+			// JSON escapes `\` as `\\`: fold both to `/` so Windows paths compare like POSIX ones.
+			const haystack = JSON.stringify(block.arguments).replaceAll("\\\\", "/").toLowerCase();
+			const strings: string[] = [];
+			collectStrings(block.arguments, strings);
+			const heads = commandHeads(strings.join("\n"));
+			for (const [skill, loadedAt] of firstLoad) {
+				// A call made before the skill entered the conversation did not follow it.
+				if (loadedAt > index) continue;
+				if (needles.get(skill)?.some(needle => haystack.includes(needle))) use(skill).uses.add("scripts");
+				const documented = anchors.get(skill);
+				if (!documented) continue;
+				for (const head of heads) {
+					if (!documented.commands.has(head)) continue;
+					const entry = use(skill);
+					entry.uses.add("commands");
+					entry.matched.add(`\`${head}\``);
+				}
+				for (const host of documented.hosts) {
+					if (!haystack.includes(host)) continue;
+					const entry = use(skill);
+					entry.uses.add("commands");
+					entry.matched.add(host);
+				}
+			}
+		}
+	}
+	const candidates: CurationCandidate[] = [];
+	for (const [skill, loadedAt] of firstLoad) {
+		const entry = usage.get(skill);
+		if (!entry || entry.uses.size === 0) continue;
+		candidates.push({
+			skill,
+			uses: USE_ORDER.filter(kind => entry.uses.has(kind)),
+			matched: [...entry.matched].slice(0, MAX_MATCHED),
+			readLate: entry.loadInTask !== undefined && errors[0] !== undefined && errors[0] < entry.loadInTask,
+			earlier: loadedAt < taskStart,
+		});
+	}
+	return candidates.length > 0 ? { candidates, errorCount: errors.length } : undefined;
 }
 
 type Block = Exclude<Message["content"], string>[number];

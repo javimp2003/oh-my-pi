@@ -7,10 +7,12 @@
  */
 import * as vscode from "vscode";
 import type { CheckpointStore } from "../checkpoints/store";
+import type { CommandOutputStore } from "./command-outputs";
 import { readConfig } from "../config";
 import type { AgentHost, SessionTarget } from "./agent-host";
 import { AgentPool } from "./agent-pool";
 import { ChatSession, type ChatSurface } from "./chat-session";
+import type { SkillProposalStore } from "../skills/proposals";
 
 type SessionCommands = ChatSession["commands"];
 
@@ -36,8 +38,11 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 		readonly log: vscode.OutputChannel,
 		readonly commands: SessionCommands,
 		checkpoints: CheckpointStore,
+		/** Pending skill proposals every chat header shows. */
+		readonly proposals: SkillProposalStore,
+		commandOutputs: CommandOutputStore,
 	) {
-		this.pool = new AgentPool(log, checkpoints);
+		this.pool = new AgentPool(log, checkpoints, commandOutputs);
 		this.pool.onNeedsAttention(host => void this.#offerHost(host));
 	}
 
@@ -124,7 +129,7 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 	}
 
 	#createView(surface: ChatSurface): ChatSession {
-		const session = new ChatSession(surface, this.extensionUri, this.log, this.commands, this.pool);
+		const session = new ChatSession(surface, this.extensionUri, this.log, this.commands, this.pool, this.proposals);
 		session.onDidChange(() => {
 			if (session === this.active) this.#onDidChangeActive.fire(session);
 		});

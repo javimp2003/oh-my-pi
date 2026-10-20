@@ -55,7 +55,7 @@ import {
 } from "../../extensibility/extensions";
 import { runExtensionCompact } from "../../extensibility/extensions/compact-handler";
 import { getSessionSlashCommands } from "../../extensibility/extensions/get-commands-handler";
-import { buildSkillPromptMessage, parseSkillInvocation } from "../../extensibility/skills";
+import { buildSkillInvocationMessage, resolveSkillInvocation } from "../../extensibility/skills";
 import { MCPManager } from "../../mcp/manager";
 import type { MCPServerConfig } from "../../mcp/types";
 import { loadAllExtensions } from "../../modes/components/extensions/state-manager";
@@ -1058,15 +1058,13 @@ export class AcpAgent implements Agent {
 		if (!record.session.skillsSettings?.enableSkillCommands) {
 			return false;
 		}
-		const parsed = parseSkillInvocation(text);
-		if (!parsed) {
+		const invocation = resolveSkillInvocation(text, name =>
+			record.session.skills.find(candidate => candidate.name === name),
+		);
+		if (!invocation) {
 			return false;
 		}
-		const skill = record.session.skills.find(candidate => candidate.name === parsed.name);
-		if (!skill) {
-			return false;
-		}
-		const built = await buildSkillPromptMessage(skill, parsed, "user");
+		const built = await buildSkillInvocationMessage(invocation.skills, invocation);
 		await record.session.promptCustomMessage(
 			{
 				customType: SKILL_PROMPT_MESSAGE_TYPE,

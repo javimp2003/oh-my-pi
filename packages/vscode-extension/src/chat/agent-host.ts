@@ -27,6 +27,7 @@ import {
 	type WrittenFile,
 } from "../checkpoints/snapshots";
 import type { CheckpointStore, RepoCheckpoint } from "../checkpoints/store";
+import type { CommandOutputStore } from "./command-outputs";
 import { playCompletionSound } from "../sounds";
 import { ompCommand, readConfig, workspaceCwd, workspaceRoots } from "../config";
 import { ensureNoWorkspaceFolder, rememberNoWorkspaceSession } from "../no-workspace";
@@ -137,7 +138,7 @@ export interface HostView {
 type PlanReview = Extract<ChatUpdate, { type: "planReview" }>;
 type SkillCuration = Extract<ChatUpdate, { type: "skillCuration" }>;
 
-const CURATION_IDLE: SkillCuration = { type: "skillCuration", status: "idle", updates: [] };
+const CURATION_IDLE: SkillCuration = { type: "skillCuration", status: "idle" };
 
 export class AgentHost implements vscode.Disposable {
 	#process: OmpProcess | undefined;
@@ -168,7 +169,7 @@ export class AgentHost implements vscode.Disposable {
 	readonly #statusTexts = new Map<string, string>();
 	/** Plan reviews awaiting a decision, by request id; re-sent to views that attach later. */
 	readonly #planReviews = new Map<string, { update: PlanReview; resolve(value: string | undefined): void }>();
-	/** Skill self-improvement of the open session, re-sent to views that attach later. */
+	/** Whether omp is reviewing the open session's skills, re-sent to views that attach later. */
 	#curation: SkillCuration = CURATION_IDLE;
 	readonly #onDidChange = new vscode.EventEmitter<AgentHost>();
 	/** Fires when the process, session, title, model, busy or settled state changes. */
@@ -183,6 +184,8 @@ export class AgentHost implements vscode.Disposable {
 		private readonly checkpoints?: CheckpointStore,
 		/** Runs omp in the no-workspace folder instead of the workspace (see no-workspace.ts). */
 		readonly noWorkspace = false,
+		/** Keeps what local slash commands printed, to show it again when the transcript is rebuilt. */
+		private readonly commandOutputs?: CommandOutputStore,
 	) {
 		this.#dialogs = new DialogBridge({
 			respond: response => this.#process?.respond(response),
@@ -255,11 +258,6 @@ export class AgentHost implements vscode.Disposable {
 		if (process) await this.#sendSnapshot(process, [view]);
 		for (const review of this.#planReviews.values()) view.post(review.update);
 		view.post(this.#curation);
-	}
-
-	/** The user saw the last curation's skill updates: clear the indicator in every view. */
-	dismissSkillCuration(): void {
-		if (this.#curation.status === "done") this.#setCuration(CURATION_IDLE);
 	}
 
 	#setCuration(curation: SkillCuration): void {
@@ -842,18 +840,23 @@ export class AgentHost implements vscode.Disposable {
 			case "available_commands_update":
 				this.post({ type: "commands", commands: frame.commands });
 				break;
-			case "command_output":
+			case "command_output": {
 				this.post({ type: "commandOutput", text: frame.text });
+				const sessionFile = this.sessionFile;
+				if (sessionFile && this.commandOutputs) {
+					this.commandOutputs
+						.add(sessionFile, { timestamp: Date.now(), text: frame.text })
+						.catch(error => this.log.appendLine(`[error] Could not save command output: ${errorMessage(error)}`));
+				}
 				break;
+			}
 			case "session_info_update":
 				if (frame.title) this.#title = frame.title;
 				break;
 			case "skill_curation":
-				// A curation that changed nothing leaves nothing to show.
+				// Its proposals reach the views through the shared proposal store.
 				this.#setCuration(
-					frame.status === "done" && frame.updates.length === 0
-						? CURATION_IDLE
-						: { type: "skillCuration", status: frame.status, updates: frame.updates },
+					frame.status === "running" ? { type: "skillCuration", status: "running" } : CURATION_IDLE,
 				);
 				break;
 			case "prompt_result":
@@ -948,8 +951,11 @@ export class AgentHost implements vscode.Disposable {
 		};
 		await this.#refreshState();
 		const messages = await this.#history(process);
+		const sessionFile = this.sessionFile;
+		const commandOutputs =
+			sessionFile && this.commandOutputs ? await this.commandOutputs.load(sessionFile).catch(() => []) : [];
 		if (this.#process !== process) return;
-		send({ type: "history", messages });
+		send({ type: "history", messages, commandOutputs });
 		const [commands] = await Promise.all([
 			process.request("get_available_commands").catch(() => undefined),
 			this.#sendThinkingLevels(targets).catch(error => this.log.appendLine(String(error))),

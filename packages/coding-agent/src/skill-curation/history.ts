@@ -38,12 +38,18 @@ export interface SkillHistorySummary {
 	revertedAt?: number;
 }
 
-const ENTRY_ID_RE = /^[^/\\]+\/\d+$/;
+/** `<skill key>/<createdAt>`: the id shape of history entries and proposals. */
+export const SKILL_ENTRY_ID_RE = /^[^/\\]+\/\d+$/;
 const DIFF_CONTEXT_LINES = 2;
 const MAX_DIFF_LINES = 80;
 
 export function skillHistoryDir(agentDir: string = getAgentDir()): string {
 	return path.join(agentDir, "skill-history");
+}
+
+/** A skill name as a directory name: `/` becomes `__`. */
+export function skillKey(name: string): string {
+	return name.replaceAll("/", "__");
 }
 
 /** Record one curation edit; `createdAt` is now. */
@@ -52,7 +58,7 @@ export async function writeSkillHistoryEntry(
 	agentDir?: string,
 ): Promise<SkillHistoryEntry> {
 	const createdAt = Date.now();
-	const key = input.skill.replaceAll("/", "__");
+	const key = skillKey(input.skill);
 	const entry: SkillHistoryEntry = { id: `${key}/${createdAt}`, createdAt, ...input };
 	await Bun.write(path.join(skillHistoryDir(agentDir), key, `${createdAt}.json`), JSON.stringify(entry, null, 2));
 	return entry;
@@ -120,7 +126,7 @@ export function formatSkillHistory(entries: readonly SkillHistorySummary[]): str
  * file changed since the edit.
  */
 export async function revertSkillHistoryEntry(id: string, agentDir?: string): Promise<SkillHistoryEntry> {
-	if (!ENTRY_ID_RE.test(id)) throw new Error(`unknown history entry: ${id}`);
+	if (!SKILL_ENTRY_ID_RE.test(id)) throw new Error(`unknown history entry: ${id}`);
 	const entryPath = path.join(skillHistoryDir(agentDir), `${id}.json`);
 	let entry: SkillHistoryEntry;
 	try {

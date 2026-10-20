@@ -1,7 +1,9 @@
 /**
- * Skill curation (`skills.selfImprove`): after a task that used the user's own
- * skills and hit tool errors, run one private side turn that may correct those
- * skills in place, then record each edit in the skill history and announce it.
+ * Skill curation (`skills.selfImprove`): after every task that relied on a
+ * loaded skill of the user's (see `signals.ts`), run one private side turn that
+ * may stage corrections to those skills; each skill's staged changes become a
+ * proposal the user approves or rejects (`proposals.ts`). Nothing is written to
+ * a skill without that approval.
  *
  * Installed once per top-level session; every settled task re-reads the live
  * setting. A "task" is a stretch of runs from the first `agent_start` until the
@@ -14,26 +16,23 @@ import { logger, prompt } from "@oh-my-pi/pi-utils";
 import { getModelMatchPreferences, resolveModelRoleValue } from "../config/model-resolver";
 import type { Settings } from "../config/settings";
 import { cfgSkillsSelfImprove, cfgSkillsSelfImproveThirdParty } from "../extensibility/settings";
-import { isSelfImprovableSkill } from "../extensibility/skills";
+import { isSelfImprovableSkill, type Skill } from "../extensibility/skills";
 import curationTemplate from "../prompts/skills/curation.md" with { type: "text" };
 import type { AgentSession } from "../session/agent-session";
 import type { Tool } from "../tools";
-import { compactSkillDiff, writeSkillHistoryEntry } from "./history";
-import { type CurationSignals, collectCurationSignals, renderTaskTranscript } from "./signals";
+import { listSkillProposals, proposalDiff, type SkillProposalNotice, writeSkillProposal } from "./proposals";
+import {
+	type CurationSignals,
+	collectCurationSignals,
+	loadedSkills,
+	renderTaskTranscript,
+	type SkillAnchors,
+	skillAnchors,
+} from "./signals";
 import { SkillEditTool } from "./skill-edit-tool";
 
-export const SKILL_UPDATE_MESSAGE_TYPE = "skill-update";
-
-/** Details of a `skill-update` message (the VS Code extension renders them as a card). */
-export interface SkillUpdateDetails {
-	skill: string;
-	id: string;
-	summary: string;
-	files: string[];
-	diff: string;
-}
-
-const NOTICE_ATTEMPTS = 3;
+/** Rejected proposals of a skill shown to the curator so it does not propose them again. */
+const MAX_REJECTED_SHOWN = 5;
 
 /**
  * The model a curation turn runs on: the `curator` model role
@@ -115,16 +114,23 @@ export class SkillCurationController {
 			if (session.getPlanModeState()?.enabled || session.getGoalModeState()?.enabled) return;
 			const last = messages.findLast(message => message.role === "assistant");
 			if (last?.role === "assistant" && (last.stopReason === "aborted" || last.stopReason === "error")) return;
-			const taskMessages = messages.slice(start);
+			const cwd = session.sessionManager.getCwd();
 			const thirdParty = cfgSkillsSelfImproveThirdParty.get(this.#settings);
-			const signals = collectCurationSignals(
-				messages,
-				start,
-				session.skills.filter(skill => isSelfImprovableSkill(skill, thirdParty)),
-				session.sessionManager.getCwd(),
-			);
+			const editable = session.skills.filter(skill => isSelfImprovableSkill(skill, thirdParty));
+			const contents = new Map<Skill, string>();
+			for (const skill of loadedSkills(messages, editable, cwd).keys()) {
+				try {
+					contents.set(skill, await Bun.file(skill.filePath).text());
+				} catch (error) {
+					logger.warn("Skill curation could not read a skill", { skill: skill.name, error: String(error) });
+				}
+			}
+			if (contents.size === 0) return;
+			const anchors = new Map<Skill, SkillAnchors>();
+			for (const [skill, content] of contents) anchors.set(skill, skillAnchors(content));
+			const signals = collectCurationSignals(messages, start, [...contents.keys()], cwd, anchors);
 			// Not awaited: the next task is tracked while curation runs.
-			if (signals) void this.#curate(signals, renderTaskTranscript(taskMessages));
+			if (signals) void this.#curate(signals, renderTaskTranscript(messages.slice(start)), contents);
 		} catch (error) {
 			logger.warn("Skill curation check failed", { error: String(error) });
 		} finally {
@@ -132,24 +138,37 @@ export class SkillCurationController {
 		}
 	}
 
-	async #curate(signals: CurationSignals, transcript: string): Promise<void> {
-		const skills: Array<{ name: string; filePath: string; readLate: boolean; earlier: boolean; content: string }> =
-			[];
-		for (const { skill, readLate, earlier } of signals.candidates) {
+	async #curate(signals: CurationSignals, transcript: string, contents: ReadonlyMap<Skill, string>): Promise<void> {
+		const skills = [];
+		for (const { skill, uses, matched, readLate, earlier } of signals.candidates) {
+			let pending: Array<{ summary: string; diff: string }> = [];
+			let rejected: Array<{ summary: string; reason?: string }> = [];
 			try {
-				skills.push({
-					name: skill.name,
-					filePath: skill.filePath,
-					readLate,
-					earlier,
-					content: await Bun.file(skill.filePath).text(),
-				});
+				const decisions = await listSkillProposals({ skill: skill.name, status: "all", limit: 20 });
+				pending = decisions
+					.filter(entry => entry.status === "pending")
+					.map(entry => ({ summary: entry.summary, diff: entry.diff }));
+				rejected = decisions
+					.filter(entry => entry.status === "rejected")
+					.slice(0, MAX_REJECTED_SHOWN)
+					.map(entry => ({ summary: entry.summary, reason: entry.rejectReason }));
 			} catch (error) {
-				logger.warn("Skill curation could not read a skill", { skill: skill.name, error: String(error) });
+				logger.warn("Skill curation could not list proposals", { skill: skill.name, error: String(error) });
 			}
+			skills.push({
+				name: skill.name,
+				filePath: skill.filePath,
+				content: contents.get(skill),
+				used: `${uses.join(", ")}${matched.length > 0 ? ` (${matched.join(", ")})` : ""}`,
+				readLate,
+				earlier,
+				pending,
+				rejected,
+				hasPending: pending.length > 0,
+				hasRejected: rejected.length > 0,
+			});
 		}
-		if (skills.length === 0) return;
-		const updates: SkillUpdateDetails[] = [];
+		const notices: SkillProposalNotice[] = [];
 		this.#session.emitSkillCuration("running");
 		try {
 			const tool = new SkillEditTool(signals.candidates.map(candidate => candidate.skill));
@@ -160,65 +179,40 @@ export class SkillCurationController {
 					read ? [read, tool] : [tool],
 				);
 			} catch (error) {
-				// Edits already written still count.
+				// Changes staged before the failure still become proposals.
 				logger.warn("Skill curation failed", { error: String(error) });
 			}
+			const sessionFile = this.#session.sessionManager.getSessionFile();
 			for (const record of tool.edits.values()) {
 				const files = [...record.files]
 					.filter(([, file]) => file.before !== file.after)
 					.map(([filePath, file]) => ({ path: filePath, ...file }));
 				if (files.length === 0) continue;
-				const summary = record.summaries.join("; ");
 				try {
-					const entry = await writeSkillHistoryEntry({ skill: record.skill.name, summary, files });
-					updates.push({
-						skill: entry.skill,
-						id: entry.id,
-						summary,
+					const proposal = await writeSkillProposal({
+						skill: record.skill.name,
+						summary: record.summaries.join("; "),
+						reason: record.reasons.join("\n"),
+						files,
+						sessionFile,
+					});
+					notices.push({
+						id: proposal.id,
+						skill: proposal.skill,
+						summary: proposal.summary,
+						reason: proposal.reason,
 						files: files.map(file => file.relativePath),
-						diff: files
-							.map(file => `--- ${file.relativePath}\n${compactSkillDiff(file.before, file.after)}`)
-							.join("\n"),
+						diff: proposalDiff(files),
 					});
 				} catch (error) {
-					logger.warn("Skill curation could not record an edit", {
+					logger.warn("Skill curation could not record a proposal", {
 						skill: record.skill.name,
 						error: String(error),
 					});
 				}
 			}
 		} finally {
-			// Before the transcript notices: those wait for the session to go idle.
-			this.#session.emitSkillCuration("done", updates);
-		}
-		for (const details of updates) {
-			try {
-				await this.#announce(details);
-			} catch (error) {
-				logger.warn("Skill curation could not announce an edit", { skill: details.skill, error: String(error) });
-			}
-		}
-	}
-
-	/**
-	 * Show the edit in the transcript. An idle display append paints in the TUI and
-	 * reaches RPC clients; while the user's next task runs it would be injected into
-	 * that turn instead, so wait for idle and give up after a few tries (the history
-	 * keeps the edit either way).
-	 */
-	async #announce(details: SkillUpdateDetails): Promise<void> {
-		const session = this.#session;
-		for (let attempt = 0; attempt < NOTICE_ATTEMPTS && !session.isDisposed; attempt++) {
-			await session.waitForIdle();
-			if (session.isStreaming || session.queuedMessageCount > 0) continue;
-			await session.sendCustomMessage({
-				customType: SKILL_UPDATE_MESSAGE_TYPE,
-				content: `Skill \`${details.skill}\` updated: ${details.summary}\nRevert: /skill-history revert ${details.id}`,
-				display: true,
-				attribution: "agent",
-				details,
-			});
-			return;
+			this.#session.emitSkillCuration("done", notices);
 		}
 	}
 }

@@ -1,18 +1,17 @@
 /**
- * Top bar: π mark, session title (renamable in place), a skill-curation
- * indicator beside it (a spinner while omp reviews the skills the last task used,
- * then a button opening the skill updates it made), a "No workspace" badge on
- * chats without a workspace, and New chat / New chat without workspace / History /
- * Settings icon buttons.
+ * Top bar: π mark, session title (renamable in place), skill self-improvement
+ * beside it (a spinner while omp reviews the skills the last task relied on, and
+ * a button counting the skill proposals awaiting a decision, which opens them
+ * with Approve / Reject), a "No workspace" badge on chats without a workspace,
+ * and New chat / New chat without workspace / History / Settings icon buttons.
  */
-import type { ChatRequest, SessionState, SessionStats, SkillUpdate } from "../../src/protocol";
-import { button, h, iconButton } from "../dom";
+import type { ChatRequest, SessionState, SessionStats, SkillProposalSummary } from "../../src/protocol";
+import { h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
-import { skillUpdateElement } from "./notices";
+import { skillProposalElement } from "./notices";
 
 type Post = (request: ChatRequest) => void;
-type CurationStatus = "idle" | "running" | "done";
 
 export class Header {
 	readonly element: HTMLElement;
@@ -35,13 +34,14 @@ export class Header {
 		icon("globe"),
 		"No workspace",
 	);
-	#curationStatus: CurationStatus = "idle";
-	#curationRunning = h("span", {
+	#curationRunning = false;
+	#proposalCount = 0;
+	#curationSpinner = h("span", {
 		className: "curation-spinner",
 		hidden: true,
 		role: "status",
-		ariaLabel: "Improving skills",
-		dataset: { tooltip: "omp is reviewing the skills this task used" },
+		ariaLabel: "Reviewing skills",
+		dataset: { tooltip: "omp is reviewing the skills this task relied on" },
 	});
 	#curationCount = h("span", { className: "curation-count" });
 	#curationDone = h(
@@ -53,15 +53,11 @@ export class Header {
 	#curationList = h("div", { className: "curation-list" });
 	#curationPanel = h(
 		"div",
-		{ className: "curation-panel", hidden: true, role: "dialog", ariaLabel: "Skill updates" },
+		{ className: "curation-panel", hidden: true, role: "dialog", ariaLabel: "Skill proposals" },
 		h(
 			"div",
 			{ className: "curation-panel-head" },
-			h("span", { className: "curation-panel-title" }, "Skill updates"),
-			button("Dismiss", "secondary-button", () => {
-				this.#closeCurationPanel();
-				this.post({ type: "dismissSkillCuration" });
-			}),
+			h("span", { className: "curation-panel-title" }, "Skill proposals"),
 			iconButton("close", "Close", () => this.#closeCurationPanel()),
 		),
 		this.#curationList,
@@ -107,7 +103,7 @@ export class Header {
 			h("span", { className: "brand", ariaHidden: "true" }, "π"),
 			this.#title,
 			this.#input,
-			this.#curationRunning,
+			this.#curationSpinner,
 			this.#curationDone,
 			this.#rename,
 			this.#noWorkspace,
@@ -139,21 +135,29 @@ export class Header {
 		this.#render();
 	}
 
-	/** Skill self-improvement of the open session (host `skillCuration` update). */
-	setCuration(status: CurationStatus, updates: SkillUpdate[]): void {
-		this.#curationStatus = status;
-		const count = new Set(updates.map(update => update.skill)).size;
-		this.#curationCount.textContent = String(count);
+	/** Whether omp is reviewing the open session's skills (host `skillCuration` update). */
+	setCuration(status: "idle" | "running"): void {
+		this.#curationRunning = status === "running";
+		this.#render();
+	}
+
+	/** The skill proposals awaiting a decision, from every session (host `skillProposals` update). */
+	setProposals(proposals: SkillProposalSummary[]): void {
+		this.#proposalCount = proposals.length;
+		this.#curationCount.textContent = String(proposals.length);
 		setTooltip(
 			this.#curationDone,
-			`omp updated ${count} skill${count === 1 ? "" : "s"} after the last task — click to see the changes`,
+			`${proposals.length} skill change${proposals.length === 1 ? "" : "s"} proposed — click to review`,
 		);
 		this.#curationList.replaceChildren(
-			...updates.map(update =>
-				skillUpdateElement(update, () => this.post({ type: "revertSkillUpdate", id: update.id })),
+			...proposals.map(proposal =>
+				skillProposalElement(proposal, {
+					approve: () => this.post({ type: "approveSkillProposal", id: proposal.id }),
+					reject: () => this.post({ type: "rejectSkillProposal", id: proposal.id }),
+					openDiff: () => this.post({ type: "openSkillProposalDiff", id: proposal.id }),
+				}),
 			),
 		);
-		if (status !== "done") this.#closeCurationPanel();
 		this.#render();
 	}
 
@@ -211,8 +215,8 @@ export class Header {
 		this.#rename.hidden = !this.#canRename() || !this.#input.hidden;
 		this.#noWorkspace.hidden = this.#noWorkspace.dataset.on !== "true" || this.#historyOpen || !this.#input.hidden;
 		const curationVisible = !this.#historyOpen && this.#input.hidden;
-		this.#curationRunning.hidden = !curationVisible || this.#curationStatus !== "running";
-		this.#curationDone.hidden = !curationVisible || this.#curationStatus !== "done";
+		this.#curationSpinner.hidden = !curationVisible || !this.#curationRunning;
+		this.#curationDone.hidden = !curationVisible || this.#proposalCount === 0;
 		if (this.#curationDone.hidden) this.#closeCurationPanel();
 		setTooltip(this.#title, this.#canRename() ? `${text}\nDouble-click to rename` : text);
 	}

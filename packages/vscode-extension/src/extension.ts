@@ -2,6 +2,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { CheckpointStore } from "./checkpoints/store";
 import { errorMessage } from "./chat/agent-host";
+import { CommandOutputStore } from "./chat/command-outputs";
 import type { ChatSession } from "./chat/chat-session";
 import { ChatRegistry } from "./chat/chat-views";
 import { agentDir, readConfig, workspaceCwd } from "./config";
@@ -10,6 +11,8 @@ import { renameStoredSession } from "./sessions/rename";
 import { guessSessionDir, sessionLabel, sessionPaths } from "./sessions/session-store";
 import { SessionItem, SessionsTree, pickSession } from "./sessions/sessions-tree";
 import { SettingsPanel, openConfigFile, runOmp } from "./settings/settings-panel";
+import type { SkillProposalSummary } from "./protocol";
+import { SkillProposalStore } from "./skills/proposals";
 import { type HistoryEntry, SkillsTree, type SkillsNode } from "./skills/skills-tree";
 import { initSounds } from "./sounds";
 
@@ -18,6 +21,9 @@ export function activate(context: vscode.ExtensionContext): void {
 	const log = vscode.window.createOutputChannel("omp (custom)");
 	bindNoWorkspaceState(context.globalState);
 	const checkpoints = new CheckpointStore(path.join(context.globalStorageUri.fsPath, "checkpoints"));
+	const commandOutputs = new CommandOutputStore(path.join(context.globalStorageUri.fsPath, "command-outputs"));
+	const proposals = new SkillProposalStore(log);
+	context.subscriptions.push(proposals);
 	const chats: ChatRegistry = new ChatRegistry(
 		context.extensionUri,
 		log,
@@ -28,10 +34,12 @@ export function activate(context: vscode.ExtensionContext): void {
 			deleteSession: (sessionFile, label) => deleteSession(sessionFile, label),
 		},
 		checkpoints,
+		proposals,
+		commandOutputs,
 	);
 	// Running and finished-unseen marks for every session with a process in this window.
 	const tree = new SessionsTree(() => chats.pool.activities());
-	const skillsTree = new SkillsTree(log);
+	const skillsTree = new SkillsTree(log, proposals);
 	const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
 	statusBar.command = "ompCustom.focusChat";
 
@@ -166,6 +174,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		}
 		await chats.pool.stopSession(sessionFile);
 		await checkpoints.remove(sessionFile);
+		await commandOutputs.remove(sessionFile);
 		for (const file of sessionPaths(sessionFile)) {
 			await vscode.workspace.fs
 				.delete(vscode.Uri.file(file), { recursive: true, useTrash: true })
@@ -370,6 +379,25 @@ export function activate(context: vscode.ExtensionContext): void {
 				void vscode.window.showInformationMessage(`Reverted ${node.entry.skill}`);
 				await skillsTree.refresh();
 			}),
+		),
+		vscode.commands.registerCommand(
+			"ompCustom.approveSkillProposal",
+			run(async (node: SkillsNode) => {
+				if (node.kind !== "proposal") return;
+				await proposals.approve(node.proposal.id);
+				void vscode.window.showInformationMessage(`Applied the proposal to ${node.proposal.skill}`);
+			}),
+		),
+		vscode.commands.registerCommand(
+			"ompCustom.rejectSkillProposal",
+			run(async (node: SkillsNode) => {
+				if (node.kind !== "proposal") return;
+				await proposals.reject(node.proposal.id);
+			}),
+		),
+		vscode.commands.registerCommand(
+			"ompCustom.showSkillProposal",
+			run((proposal: SkillProposalSummary) => proposals.openDiff(proposal.id)),
 		),
 		vscode.commands.registerCommand("ompCustom.showLog", () => log.show()),
 	);

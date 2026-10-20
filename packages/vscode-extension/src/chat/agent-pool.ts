@@ -11,6 +11,7 @@
  */
 import * as vscode from "vscode";
 import type { CheckpointStore } from "../checkpoints/store";
+import type { CommandOutputStore } from "./command-outputs";
 import type { SessionActivity } from "../protocol";
 import { AgentHost } from "./agent-host";
 
@@ -36,11 +37,17 @@ export class AgentPool implements vscode.Disposable {
 	constructor(
 		readonly log: vscode.OutputChannel,
 		readonly checkpoints: CheckpointStore,
+		readonly commandOutputs: CommandOutputStore,
 	) {}
 
 	/** A new host; one for a chat without a workspace runs in the no-workspace folder and takes no file checkpoints. */
 	create(noWorkspace = false): AgentHost {
-		const host = new AgentHost(this.log, noWorkspace ? undefined : this.checkpoints, noWorkspace);
+		const host = new AgentHost(
+			this.log,
+			noWorkspace ? undefined : this.checkpoints,
+			noWorkspace,
+			this.commandOutputs,
+		);
 		this.#hosts.add(host);
 		host.onDidChange(() => this.#update(host));
 		host.onNeedsAttention(() => this.#onNeedsAttention.fire(host));

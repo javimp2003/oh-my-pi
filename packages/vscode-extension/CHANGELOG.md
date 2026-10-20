@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.15.0]
+
+### Changed
+
+- Skill self-improvement now asks before changing a skill: the button beside the session title counts omp's pending skill proposals (from every session) and opens them with omp's reason, the diff, Approve, Reject (with an optional reason omp learns from) and Open diff; the Skills view lists them under each skill with inline Approve / Reject. A proposal whose skill changed since shows as outdated and can only be discarded
+
+### Fixed
+
+- What local commands print in the chat (Clean up / `/shake`, Compact, `/session`…) no longer disappears when you leave the chat and come back or restart VS Code: it is kept per session and shown again where it appeared
+
 ## [0.14.0]
 
 ### Added

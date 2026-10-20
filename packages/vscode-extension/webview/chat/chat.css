@@ -1342,11 +1342,18 @@ code {
 	color: var(--c-fg-3);
 }
 
-/* Revert button under the diff of a `skill-update` notice. */
+/* Revert button under the diff of a `skill-update` notice; Approve / Reject / Open diff under a skill proposal. */
 .skill-update-actions {
 	display: flex;
 	justify-content: flex-end;
+	gap: 6px;
 	margin-top: 6px;
+}
+
+.skill-proposal-reason {
+	margin: 0 0 6px;
+	color: var(--c-fg-2);
+	white-space: pre-wrap;
 }
 
 .diff-add {

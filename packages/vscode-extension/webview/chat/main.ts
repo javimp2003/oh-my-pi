@@ -120,7 +120,7 @@ function handle(update: ChatUpdate): void {
 			setStatus(update.status);
 			break;
 		case "history":
-			transcript.setHistory(update.messages);
+			transcript.setHistory(update.messages, update.commandOutputs);
 			history.close();
 			break;
 		case "event": {
@@ -218,7 +218,10 @@ function handle(update: ChatUpdate): void {
 			openFind();
 			break;
 		case "skillCuration":
-			header.setCuration(update.status, update.updates);
+			header.setCuration(update.status);
+			break;
+		case "skillProposals":
+			header.setProposals(update.proposals);
 			break;
 	}
 }

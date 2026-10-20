@@ -11,7 +11,8 @@ const skillEditSchema = type({
 	"file?": type("string").describe("file inside the skill directory, relative to it; default SKILL.md"),
 	old_text: type("string").describe("exact text to replace; must occur exactly once"),
 	new_text: type("string").describe("replacement text; an empty string deletes old_text"),
-	summary: type("string").describe("one user-facing line: what the skill now gets right"),
+	summary: type("string").describe("one user-facing line: what the skill will now get right"),
+	reason: type("string").describe("evidence from the transcript: what went wrong and what showed the right version"),
 });
 
 export type SkillEditParams = typeof skillEditSchema.infer;
@@ -21,6 +22,7 @@ const MAX_DESCRIPTION_CHARS = 1024;
 /** Agent Skills guidance for the SKILL.md body. */
 const MAX_BODY_LINES = 500;
 const MAX_SUMMARY_CHARS = 200;
+const MAX_REASON_CHARS = 600;
 const MAX_FILE_BYTES = 256 * 1024;
 
 export interface SkillEditFile {
@@ -34,6 +36,7 @@ export interface SkillEditRecord {
 	/** By absolute path: content before the first edit and after the latest. */
 	files: Map<string, SkillEditFile>;
 	summaries: string[];
+	reasons: string[];
 }
 
 function failure(text: string): AgentToolResult {
@@ -41,9 +44,10 @@ function failure(text: string): AgentToolResult {
 }
 
 /**
- * The only write tool of a skill curation turn: exact-match replacements in
- * the files of the skills it was created for, keeping SKILL.md's frontmatter
- * valid and within the Agent Skills limits. Every edit is recorded in `edits`.
+ * The only write tool of a skill curation turn: stages exact-match replacements
+ * in the files of the skills it was created for, keeping SKILL.md's frontmatter
+ * valid and within the Agent Skills limits. Nothing touches disk — the
+ * controller turns each skill's staged files (`edits`) into a proposal.
  */
 export class SkillEditTool implements AgentTool<typeof skillEditSchema> {
 	readonly name = "skill_edit";
@@ -73,20 +77,31 @@ export class SkillEditTool implements AgentTool<typeof skillEditSchema> {
 		if (!summary || /[\r\n]/.test(summary) || summary.length > MAX_SUMMARY_CHARS) {
 			return failure(`summary must be one non-empty line of at most ${MAX_SUMMARY_CHARS} characters.`);
 		}
+		const reason = params.reason.trim();
+		if (!reason || reason.length > MAX_REASON_CHARS) {
+			return failure(`reason must be non-empty and at most ${MAX_REASON_CHARS} characters.`);
+		}
 		const absolute = path.resolve(skill.baseDir, params.file ?? "SKILL.md");
 		const relativePath = path.relative(skill.baseDir, absolute);
 		if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
 			return failure(`file must stay inside the skill directory ${skill.baseDir}.`);
 		}
 
+		const record = this.edits.get(skill.name);
+		const staged = record?.files.get(absolute);
 		let current: string;
-		try {
-			const stat = await fs.stat(absolute);
-			if (stat.size > MAX_FILE_BYTES) return failure(`${relativePath} is larger than ${MAX_FILE_BYTES} bytes.`);
-			current = await Bun.file(absolute).text();
-		} catch (error) {
-			if (isEnoent(error)) return failure(`${relativePath}: file not found; skill_edit only edits existing files.`);
-			throw error;
+		if (staged) {
+			current = staged.after;
+		} else {
+			try {
+				const stat = await fs.stat(absolute);
+				if (stat.size > MAX_FILE_BYTES) return failure(`${relativePath} is larger than ${MAX_FILE_BYTES} bytes.`);
+				current = await Bun.file(absolute).text();
+			} catch (error) {
+				if (isEnoent(error))
+					return failure(`${relativePath}: file not found; skill_edit only edits existing files.`);
+				throw error;
+			}
 		}
 		if (current.includes("\0")) return failure(`${relativePath} is not a text file.`);
 
@@ -104,18 +119,14 @@ export class SkillEditTool implements AgentTool<typeof skillEditSchema> {
 			if (invalid) return failure(invalid);
 		}
 
-		await Bun.write(absolute, next);
-		let record = this.edits.get(skill.name);
-		if (!record) {
-			record = { skill, files: new Map(), summaries: [] };
-			this.edits.set(skill.name, record);
-		}
-		const file = record.files.get(absolute);
-		if (file) file.after = next;
-		else record.files.set(absolute, { relativePath, before: current, after: next });
-		record.summaries.push(summary);
+		const target: SkillEditRecord = record ?? { skill, files: new Map(), summaries: [], reasons: [] };
+		this.edits.set(skill.name, target);
+		if (staged) staged.after = next;
+		else target.files.set(absolute, { relativePath, before: current, after: next });
+		target.summaries.push(summary);
+		target.reasons.push(reason);
 		return {
-			content: [{ type: "text", text: `Edited ${skill.name}/${relativePath}.` }],
+			content: [{ type: "text", text: `Staged ${skill.name}/${relativePath} (proposal for the user).` }],
 			details: { skill: skill.name, file: relativePath },
 		};
 	}

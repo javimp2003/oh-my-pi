@@ -81,9 +81,10 @@ export class SkillMessageComponent extends Container {
 			const name = details?.name?.trim() || "unknown";
 			const token = skillToken(name);
 			const prompt = details?.prompt ?? (details?.args ? `${token} ${details.args}` : token);
+			const invoked = invokedSkillPaths(details, name);
 			const display = collapseSkillTokens(
 				prompt,
-				candidate => candidate === name,
+				candidate => invoked.has(candidate),
 				() => {},
 			);
 			const label = skillChipLabel(name);
@@ -168,18 +169,19 @@ export class SkillMessageComponent extends Container {
 		const name = details?.name?.trim() || "unknown";
 		const token = skillToken(name);
 		const prompt = details?.prompt ?? (details?.args ? `${token} ${details.args}` : token);
-		// Display-only collapse: only the invoked skill becomes a chip; a second `/skill:` token the
+		// Display-only collapse: only skills that loaded become chips; a `/skill:` token the
 		// dispatcher ignored stays literal so the transcript never claims a skill that never loaded.
+		const invoked = invokedSkillPaths(details, name);
 		const display = collapseSkillTokens(
 			prompt,
-			candidate => candidate === name,
+			candidate => invoked.has(candidate),
 			() => {},
 		);
 		const label = skillChipLabel(name);
 		const leading = display.startsWith(label) && /^\s*$/.test(display.charAt(label.length));
 		const bubble: UserBubbleOptions = {
 			imageLinks: this.#imageLinks,
-			skillPath: candidate => (candidate === name ? details?.path : undefined),
+			skillPath: candidate => invoked.get(candidate),
 		};
 
 		if (!leading) {
@@ -303,4 +305,10 @@ class SkillCallout implements Component {
 		this.#lines = lines;
 		return lines;
 	}
+}
+
+/** Every skill the message loaded, by name, with its SKILL.md path (a multi-skill invocation lists them all). */
+function invokedSkillPaths(details: SkillPromptDetails | undefined, name: string): Map<string, string | undefined> {
+	if (details?.skills?.length) return new Map(details.skills.map(skill => [skill.name, skill.path]));
+	return new Map([[name, details?.path]]);
 }
