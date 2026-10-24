@@ -44,6 +44,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 	#host: AgentHost | undefined;
 	#hostSubscription: vscode.Disposable | undefined;
 	#webviewReady = false;
+	/** The session whose proposals the webview shows; `null` until first sent. */
+	#proposalsSessionFile: string | undefined | null = null;
 	readonly #disposables: vscode.Disposable[] = [];
 	readonly #onDidChange = new vscode.EventEmitter<ChatSession>();
 	/** Fires when the shown session, its process, title, model, or busy state changes. */
@@ -65,7 +67,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 			deleteSession(sessionFile: string, label: string): Promise<void>;
 		},
 		readonly pool: AgentPool,
-		/** Pending skill proposals of every session, shown in the header. */
+		/** Pending skill proposals of every session; the header shows the shown session's. */
 		readonly proposals: SkillProposalStore,
 	) {
 		surface.webview.options = {
@@ -79,7 +81,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 			}),
 			// Running/finished marks in the history panel follow every session of the window.
 			pool.onDidChangeActivity(() => this.post({ type: "sessionActivity", activity: pool.activities() })),
-			proposals.onDidChange(() => this.post({ type: "skillProposals", proposals: proposals.proposals })),
+			proposals.onDidChange(() => this.#postProposals(true)),
 		);
 	}
 
@@ -135,11 +137,30 @@ export class ChatSession implements vscode.Disposable, HostView {
 		previous?.detach(this);
 		this.#host = host;
 		host.attach(this);
-		this.#hostSubscription = host.onDidChange(() => this.#onDidChange.fire(this));
+		this.#hostSubscription = host.onDidChange(() => {
+			this.#postProposals(false);
+			this.#onDidChange.fire(this);
+		});
 		this.pool.seen(host.sessionFile);
 		if (this.#webviewReady) void host.replay(this).catch(error => this.log.appendLine(String(error)));
 		if (previous) this.pool.release(previous);
+		this.#postProposals(false);
 		this.#onDidChange.fire(this);
+	}
+
+	/**
+	 * Send the pending proposals the shown session's task produced; unless `force`,
+	 * only when the shown session changed since the last send.
+	 */
+	#postProposals(force: boolean): void {
+		if (!this.#webviewReady) return;
+		const sessionFile = this.#host?.sessionFile;
+		if (!force && sessionFile === this.#proposalsSessionFile) return;
+		this.#proposalsSessionFile = sessionFile;
+		const proposals = sessionFile
+			? this.proposals.proposals.filter(proposal => proposal.sessionFile === sessionFile)
+			: [];
+		this.post({ type: "skillProposals", proposals });
 	}
 
 	/**
@@ -400,7 +421,8 @@ export class ChatSession implements vscode.Disposable, HostView {
 				return;
 			case "ready":
 				this.#webviewReady = true;
-				this.post({ type: "skillProposals", proposals: this.proposals.proposals });
+				this.#postProposals(true);
+				this.post({ type: "sessionActivity", activity: this.pool.activities() });
 				if (this.#host) await this.#host.replay(this);
 				else this.post({ type: "status", status: NO_PROCESS });
 				return;

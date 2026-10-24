@@ -198,7 +198,7 @@ export const cfgDefaultThinkingLevel = register({
 	id: "defaultThinkingLevel",
 	type: "enum",
 	values: [...THINKING_EFFORTS, AUTO_THINKING],
-	default: "medium",
+	default: "high",
 	ui: {
 		tab: "model",
 		group: "Thinking",

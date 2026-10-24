@@ -49,6 +49,8 @@ export interface SkillProposalSummary {
 	status: SkillProposalStatus;
 	/** Pending only: a file on disk no longer matches what the proposal was based on, so it can only be rejected. */
 	stale: boolean;
+	/** Session whose task produced the proposal. */
+	sessionFile?: string;
 	decidedAt?: number;
 	rejectReason?: string;
 }
@@ -146,6 +148,7 @@ export async function listSkillProposals(
 			diff: proposalDiff(proposal.files),
 			status: proposal.status,
 			stale: proposal.status === "pending" && (await isStale(proposal)),
+			...(proposal.sessionFile !== undefined && { sessionFile: proposal.sessionFile }),
 			...(proposal.decidedAt !== undefined && { decidedAt: proposal.decidedAt }),
 			...(proposal.rejectReason !== undefined && { rejectReason: proposal.rejectReason }),
 		})),

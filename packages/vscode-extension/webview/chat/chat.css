@@ -29,7 +29,7 @@ body {
 	--r-2xl: 16px;
 	--r-3xl: 20px;
 	--gutter: 16px;
-	--thread-max: 48rem;
+	--thread-max: none;
 	--omp-accent: #febc38;
 	--omp-accent-fg: #1a1a1a;
 	--menu-bg: var(--vscode-editorWidget-background, var(--c-bg));
@@ -159,6 +159,36 @@ code {
 .icon-button:hover {
 	background: var(--c-hover);
 	color: var(--c-fg);
+}
+
+/* History's mark for chats that finished while you were in another one. */
+.icon-button:has(> .history-badge) {
+	position: relative;
+}
+
+.history-badge {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	width: 7px;
+	height: 7px;
+	border-radius: 9999px;
+	background: var(--vscode-testing-iconPassed, #3fb950);
+	box-shadow: 0 0 0 1.5px var(--vscode-sideBar-background, var(--c-bg));
+	pointer-events: none;
+	animation: history-badge-blink 1.2s ease-in-out infinite;
+}
+
+@keyframes history-badge-blink {
+	50% {
+		opacity: 0.2;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.history-badge {
+		animation: none;
+	}
 }
 
 .link-button {

@@ -274,6 +274,19 @@ describe("SkillEditTool", () => {
 		expect(record?.reasons).toHaveLength(2);
 	});
 
+	it("rewrites a whole file when old_text is omitted, still guarding the frontmatter", async () => {
+		const demo = skillAt("demo");
+		const tool = new SkillEditTool([demo]);
+		const rewritten = SKILL_FILE.replace("ls --long-format demo", "ls -l demo").concat(
+			"\nVerify with `ls -l demo`.\n",
+		);
+		expect((await edit(tool, { old_text: undefined, new_text: rewritten })).isError).toBeUndefined();
+		expect(tool.edits.get("demo")?.files.get(demo.filePath)?.after).toBe(rewritten);
+		const renamed = await edit(tool, { old_text: undefined, new_text: rewritten.replace("name: demo", "name: x") });
+		expect(renamed.isError).toBe(true);
+		expect(tool.edits.get("demo")?.files.get(demo.filePath)?.after).toBe(rewritten);
+	});
+
 	it("rejects ambiguous text, escapes, frontmatter damage and unknown skills without writing", async () => {
 		const demo = skillAt("demo");
 		const tool = new SkillEditTool([demo]);

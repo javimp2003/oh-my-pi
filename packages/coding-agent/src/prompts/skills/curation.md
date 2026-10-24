@@ -1,18 +1,18 @@
 [Skill maintenance — private; the user does not see this turn]
-This turn is not a user request. You are omp reviewing your own work: a task you just did for the user has finished and it relied on one or more of the user's skills. Your job here is skill maintenance: decide whether any of those skills misled you, was easy to misapply, or omitted something it should have stated, and propose a correction for those only. Your edits are staged as proposals: the user reviews each one and decides whether it is applied. Most tasks need no change; proposing nothing is the common, correct outcome, and every proposal costs the user a review.
+This turn is not a user request. You are omp reviewing your own work: a task you just did for the user has finished and it relied on one or more of the user's skills. Your job: decide, per skill, whether a change would meaningfully improve it, and stage that change if so. Leaving a skill unchanged is as valid an outcome as editing it: a well-functioning skill does not need to change after every review. When a change is warranted, it need not be minimal: you MAY rewrite, restructure, condense or delete, not only add. Your edits are staged as proposals the user reviews and approves or rejects.
 
 <task-transcript>
 {{transcript}}
 </task-transcript>
 
-The task relied on the skills below. `used` says how: `read` or `invoked` (during this task), `scripts` (the task ran or opened the skill's own files), `commands` (the task ran commands or reached endpoints the skill documents). `loaded-earlier`: the skill entered the conversation in an earlier task, so the transcript need not show it being read. {{#if errorCount}}{{errorCount}} tool call(s) failed in the task — not necessarily because of a skill.{{else}}No tool call failed: look for missteps that raised no error.{{/if}}
+The task relied on the skills below. `used` says how: `read` or `invoked` (during this task), `scripts` (the task ran or opened the skill's own files), `commands` (the task ran commands or reached endpoints the skill documents). `loaded-earlier`: the skill entered the conversation in an earlier task, so the transcript need not show it being read. `read-late`: the skill was read only after the task had started without it. {{#if errorCount}}{{errorCount}} tool call(s) failed in the task — not necessarily because of a skill.{{else}}No tool call failed: look for missteps that raised no error.{{/if}}
 {{#each skills}}
 <skill-file name="{{name}}" path="{{filePath}}" used="{{used}}"{{#if readLate}} read-late="true"{{/if}}{{#if earlier}} loaded-earlier="true"{{/if}}>
 {{content}}
 </skill-file>
 {{#if hasPending}}
 <pending-proposals skill="{{name}}">
-Awaiting the user's decision; never propose the same change again.
+Awaiting the user's decision; never propose the same change again. Your new edits apply to the skill as it is now, without these.
 {{#each pending}}
 - {{summary}}
 {{diff}}
@@ -29,39 +29,59 @@ The user declined these; propose one again only with new evidence that answers t
 {{/if}}
 {{/each}}
 
-A misstep, with or without a tool error:
-- A tool call failed because of what the skill says.
-- The user corrected or pushed back on something the agent did by following the skill.
-- The agent followed the skill, got a wrong or unexpected result, and had to change course.
-- The agent had to discover by trial something the skill should have stated: a prerequisite, flag, path, identifier or step order.
-- The agent misread an instruction that is ambiguous, buried or easy to miss, and the transcript shows the intended reading.
+Evaluate each skill as a whole, using the completed task as concrete evidence while considering its broader intended scope. Look for improvements that generalize beyond this task, but NEVER assume one successful run proves a procedure works in every case.
+- **Missteps** — where the skill misled, omitted or slowed the agent:
+  - A tool call failed because of what the skill says.
+  - The user corrected or pushed back on something the agent did by following the skill.
+  - The agent followed the skill, got a wrong or unexpected result, and had to change course.
+  - The agent had to discover by trial what the skill should have stated: a prerequisite, flag, path, identifier, step order or decision.
+  - The agent missed or misread an instruction that is ambiguous, buried or easy to skip.
+- **Content** — what is wrong, stale, contradictory, vague, duplicated, or dead weight that no agent needs; an instruction that covers one case where the rule should cover the class; a missing decision rule, failure path or verification step.
+- **Shape** — whether the agent finds the right instruction at the moment it needs it: critical rules first, steps in execution order, one place per fact.
+- **Trigger** — whether the frontmatter `description` accurately states the skill's purpose and when it should be selected.
 
-Per skill, propose a change ONLY when all three hold:
-1. **Attribution** — the misstep traces to the skill's own text: wrong, stale, ambiguous, buried or missing.
-2. **Proof** — the transcript shows the right version: a corrected call that succeeded, the user's explicit correction, or output that contradicts the skill. NEVER propose what the run did not confirm.
-3. **Recurrence** — another task following the skill as written would likely repeat the misstep.
+When warranted, you MAY:
+- Correct, rewrite or delete lines; generalize a case-specific instruction into the rule behind it, keeping the distinctions and exceptions other supported workflows rely on.
+- Reorder, merge, split or restructure sections; condense verbose passages; remove duplicated, obsolete or useless content.
+- Add missing steps, prerequisites, decision rules, failure handling and verification.
+- Rewrite the whole file when targeted edits cannot reach the right shape.
 
-All three hold? Propose the fix; a skill that misleads once misleads every later run.
+Description:
+- Rewrite it only when its text is demonstrably inaccurate, ambiguous, incomplete or misaligned with the skill's actual scope, or the transcript shows it contributed to late or wrong selection.
+- `read-late` alone NEVER proves the description caused it: the agent may have chosen to read the skill later for other reasons.
+- Third person, what the skill does + when to use it, ≤1024 characters.
 
-Not skill gaps — propose nothing:
-- The skill was clear and prominent; the agent ignored it anyway.
-- The misstep lies outside what the skill covers: other code, tools or steps of the task.
+Grounding:
+- Facts — commands, flags, paths, identifiers, endpoints, tool behavior — MUST come from the transcript, the skill itself, or what you verify in this turn by reading files or official documentation with your tools. NEVER add facts from memory alone; plausible but unverified → leave it out.
+- Clarity and structure changes need no misstep, but their benefit MUST be clear from the skill's text.
+- Delete content only when the transcript, the skill or a verified source shows it wrong, redundant or useless. NEVER drop guardrails, confirmations, warnings or stable facts merely because this task did not exercise them.
+
+Not skill gaps — never encode in the skill:
 - Environment or transient state: network, outages, expired credentials, a one-off permission denial, quota or rate limits, a tool missing on this machine.
 - Task-specific input: an ID or path the user got wrong, a resource not created yet, data unique to this task.
 - Missteps that are part of the work: probes and existence checks, empty searches, red tests before a fix, compile/lint errors in code being written, planned retries.
 - One-off agent slips: typos, malformed tool arguments, stale edit anchors.
-- The skill's approach failed once but an alternative worked, and nothing shows the skill's approach is wrong in general.
-- Taste: rewording, reordering or style with no misstep behind it.
-- The evidence cannot tell which of the above applies.
+- The skill's approach failed once but an alternative worked, and nothing shows the approach is wrong in general.
+- The agent ignored a rule that was already clear and prominent; a buried or ambiguous rule is a gap — make it prominent where it applies.
 
 Editing rules:
-- Fix the skill's own text where the wrong or missing instruction belongs: correct the line, add the missing flag to the step that uses it, make an easy-to-miss rule explicit where it applies. Write in the skill's own voice, as if it had always been right, and keep its purpose.
+- Write in the skill's own voice, as if it had always been right; keep its purpose.
+- Keep the skill's scope: allowed operations stay allowed; NEVER add restrictions the user did not write.
 - NEVER add sections such as "Lessons", "Experiences", "Notes", changelogs, dates, or anecdotes about this session.
-- Correct or remove statements the run proved false.
-- Smallest change that prevents the misstep; NEVER rewrite or reorganize unrelated parts.
 - Only durable knowledge: no values tied to this one task (ticket numbers, temporary names, timestamps); stable identifiers the domain relies on (project IDs, cluster names, base URLs) are fine. NEVER record secrets, tokens or credentials.
-- Change the frontmatter `description` only when the skill is `read-late` AND an earlier misstep is one the skill would have prevented — the description did not trigger in time. Third person, what it does + when to use it, ≤1024 characters.
-- Keep the skill's scope: if it allows writes, they stay allowed; NEVER add restrictions the user did not write.
-- `summary` tells the user what the skill will now get right; `reason` cites the transcript evidence.
+- Keep the skill concise and proportional to its scope; prefer consolidation over accumulation. NEVER sacrifice operational completeness for brevity. `skill_edit` refuses a body that grows past 500 lines.
+- `summary` tells the user what the skill will now get right; `reason` cites the evidence.
 
-Propose only when attribution, proof and recurrence all hold. Reply `done` when finished.
+Regression check — before staging, review the resulting skill as a whole and confirm the edit:
+- Preserves required behavior, supported workflows, safety constraints and user-authorized capabilities.
+- Keeps every necessary prerequisite, parameter, exception, fallback path and verification step.
+- Introduces no contradiction, broken reference or duplicated instruction elsewhere in the skill.
+- Replaces no actionable procedure with vague high-level guidance.
+- Reads and executes without knowledge from this task's transcript.
+For substantial rewrites, compare the original and revised text instruction by instruction and find any behavioral requirement lost or changed. An improvement that cannot be made without an unresolved regression risk → do not propose it.
+
+<critical>
+Propose a change only when it gives a meaningful, evidence-backed improvement to the skill's correctness, reliability, usability or maintainability, and the expected benefit justifies the disruption and risk the edit introduces. A well-functioning skill does not need to change after every review: prefer no proposal over speculative optimization or repeated stylistic adjustment.
+</critical>
+
+Reply `done` when finished.

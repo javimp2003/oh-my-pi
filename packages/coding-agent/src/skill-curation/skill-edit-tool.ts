@@ -9,10 +9,12 @@ import skillEditDescription from "../prompts/tools/skill-edit.md" with { type: "
 const skillEditSchema = type({
 	skill: type("string").describe("skill name as listed in the maintenance request"),
 	"file?": type("string").describe("file inside the skill directory, relative to it; default SKILL.md"),
-	old_text: type("string").describe("exact text to replace; must occur exactly once"),
-	new_text: type("string").describe("replacement text; an empty string deletes old_text"),
+	"old_text?": type("string").describe(
+		"exact text to replace; must occur exactly once; omit to rewrite the whole file",
+	),
+	new_text: type("string").describe("replacement text (an empty string deletes old_text), or the whole new file"),
 	summary: type("string").describe("one user-facing line: what the skill will now get right"),
-	reason: type("string").describe("evidence from the transcript: what went wrong and what showed the right version"),
+	reason: type("string").describe("evidence from the transcript or the skill: why this makes the skill better"),
 });
 
 export type SkillEditParams = typeof skillEditSchema.infer;
@@ -45,9 +47,10 @@ function failure(text: string): AgentToolResult {
 
 /**
  * The only write tool of a skill curation turn: stages exact-match replacements
- * in the files of the skills it was created for, keeping SKILL.md's frontmatter
- * valid and within the Agent Skills limits. Nothing touches disk — the
- * controller turns each skill's staged files (`edits`) into a proposal.
+ * or whole-file rewrites in the files of the skills it was created for, keeping
+ * SKILL.md's frontmatter valid and within the Agent Skills limits. Nothing
+ * touches disk — the controller turns each skill's staged files (`edits`) into a
+ * proposal.
  */
 export class SkillEditTool implements AgentTool<typeof skillEditSchema> {
 	readonly name = "skill_edit";
@@ -105,14 +108,20 @@ export class SkillEditTool implements AgentTool<typeof skillEditSchema> {
 		}
 		if (current.includes("\0")) return failure(`${relativePath} is not a text file.`);
 
-		if (!params.old_text) return failure("old_text must not be empty.");
-		const occurrences = current.split(params.old_text).length - 1;
-		if (occurrences !== 1) {
-			return failure(
-				`old_text occurs ${occurrences} times in ${relativePath}; it must occur exactly once (add surrounding text).`,
-			);
+		let next: string;
+		if (params.old_text === undefined) {
+			if (!params.new_text.trim()) return failure("a whole-file rewrite must not be empty.");
+			next = params.new_text;
+		} else {
+			if (!params.old_text) return failure("old_text must not be empty; omit it to rewrite the whole file.");
+			const occurrences = current.split(params.old_text).length - 1;
+			if (occurrences !== 1) {
+				return failure(
+					`old_text occurs ${occurrences} times in ${relativePath}; it must occur exactly once (add surrounding text).`,
+				);
+			}
+			next = current.replace(params.old_text, () => params.new_text);
 		}
-		const next = current.replace(params.old_text, () => params.new_text);
 
 		if (absolute === skill.filePath) {
 			const invalid = validateSkillFile(current, next, absolute);

@@ -176,6 +176,7 @@ function handle(update: ChatUpdate): void {
 			break;
 		case "sessionActivity":
 			history.setActivity(update.activity);
+			header.setActivity(update.activity);
 			break;
 		case "planReview":
 			history.close();

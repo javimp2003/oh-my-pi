@@ -4,8 +4,15 @@
  * a button counting the skill proposals awaiting a decision, which opens them
  * with Approve / Reject), a "No workspace" badge on chats without a workspace,
  * and New chat / New chat without workspace / History / Settings icon buttons.
+ * History carries a blinking green dot while another session finished unseen.
  */
-import type { ChatRequest, SessionState, SessionStats, SkillProposalSummary } from "../../src/protocol";
+import type {
+	ChatRequest,
+	SessionActivity,
+	SessionState,
+	SessionStats,
+	SkillProposalSummary,
+} from "../../src/protocol";
 import { h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
@@ -20,6 +27,7 @@ export class Header {
 	#input = h("input", { type: "text", className: "title-input", ariaLabel: "Session name", hidden: true });
 	#sessionTitle = "New chat";
 	#history: HTMLButtonElement;
+	#historyBadge = h("span", { className: "history-badge", hidden: true, ariaHidden: "true" });
 	#back: HTMLButtonElement;
 	#historyOpen = false;
 	/** A session is open (omp answered `get_state`), so it can be renamed. */
@@ -68,6 +76,7 @@ export class Header {
 		onHistory: () => void,
 	) {
 		this.#history = iconButton("history", "History", onHistory);
+		this.#history.append(this.#historyBadge);
 		this.#back = iconButton("back", "Back to chat", onHistory);
 		this.#back.hidden = true;
 		this.#rename = iconButton("pencil", "Rename chat", () => this.#startRename());
@@ -141,7 +150,7 @@ export class Header {
 		this.#render();
 	}
 
-	/** The skill proposals awaiting a decision, from every session (host `skillProposals` update). */
+	/** The skill proposals awaiting a decision that the shown session's task produced (host `skillProposals` update). */
 	setProposals(proposals: SkillProposalSummary[]): void {
 		this.#proposalCount = proposals.length;
 		this.#curationCount.textContent = String(proposals.length);
@@ -178,6 +187,18 @@ export class Header {
 		this.#back.hidden = !open;
 		if (open) this.#finishRename(false);
 		this.#render();
+	}
+
+	/** Sessions finished while unseen get a blinking dot on History (host `sessionActivity` update). */
+	setActivity(activity: Record<string, SessionActivity>): void {
+		const finished = Object.values(activity).filter(state => state === "done").length;
+		this.#historyBadge.hidden = finished === 0;
+		const label =
+			finished === 0
+				? "History"
+				: `History — ${finished} chat${finished === 1 ? "" : "s"} finished while you were away`;
+		this.#history.ariaLabel = label;
+		setTooltip(this.#history, label);
 	}
 
 	#canRename(): boolean {

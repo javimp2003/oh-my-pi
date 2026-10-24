@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.16.0]
+
+### Added
+
+- A small blinking green dot on the History icon while another chat has finished its task and you have not opened it yet, so you notice without opening History
+
+### Changed
+
+- The chat now uses the full width of the panel: widening the sidebar or editor tab no longer leaves empty margins on both sides of the messages and the input box
+- The skill proposals button beside the session title only counts and lists the proposals made in the session you are viewing; switching to another chat no longer shows them. The Skills view still lists every pending proposal
+
 ## [0.15.0]
 
 ### Changed

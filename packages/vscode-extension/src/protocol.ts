@@ -63,6 +63,8 @@ export interface SkillProposalSummary {
 	status: "pending" | "approved" | "rejected";
 	/** The skill changed after the proposal: it can only be discarded. */
 	stale: boolean;
+	/** Session whose task produced the proposal; absent for older proposals. */
+	sessionFile?: string;
 }
 
 /** `details` of omp's `skill-prompt` custom message (packages/tui/src/chat/messages.ts `SkillPromptDetails`). */
@@ -199,7 +201,7 @@ export type ChatUpdate =
 	| { type: "planReviewClosed"; id: string }
 	/** omp is reviewing the skills the last task of the open session relied on (`running`), or not (`idle`). */
 	| { type: "skillCuration"; status: "idle" | "running" }
-	/** Pending skill proposals of every session, newest first. */
+	/** Pending skill proposals of the shown session, newest first. */
 	| { type: "skillProposals"; proposals: SkillProposalSummary[] };
 
 /** Chat webview → host. */
