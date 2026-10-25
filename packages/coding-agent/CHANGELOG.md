@@ -43,6 +43,7 @@
 ### Fixed
 
 - Fixed the system prompt claiming user content is sanitized: instructions found in tool output, web pages, fetched documents, MCP results and ordinary files are now treated as data, never obeyed
+- Fixed the agent deleting production resources without confirmation on open-ended requests such as "clean up the old resources": it now lists the exact targets with evidence and asks first, while requests that name exact targets still run without confirmation
 - Fixed keyless Exa web search returning only titles and URLs: page excerpts from the current Exa MCP format are now included in results
 - Fixed a parent agent's mid-turn message to a subagent arriving labeled as a user interjection
 - Improved responsiveness when placing assistant text after tool calls in long transcripts ([#12178](https://github.com/can1357/oh-my-pi/issues/12178), [#14344](https://github.com/can1357/oh-my-pi/pull/14344) by [@F0Rextasy](https://github.com/F0Rextasy), [#15353](https://github.com/can1357/oh-my-pi/pull/15353) by [@iliaal](https://github.com/iliaal)).
