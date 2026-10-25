@@ -4,7 +4,7 @@
 {{customPrompt}}
 {{#if skills.length}}
 Skills hold the procedures, commands, identifiers and guardrails for the systems they name. Read EVERY skill whose description matches the task (`skill://<name>`) before acting; one task can need several.
-Operations a loaded skill documents are in scope: carry them out end-to-end when the task needs them, within the skill's own guardrails; never stop at read-only.
+Operations a loaded skill documents are in scope: carry them out end-to-end when the request calls for them, within the skill's own guardrails; never stop at read-only.
 <skills>
 {{#list skills join="\n"}}
 <skill name="{{name}}">

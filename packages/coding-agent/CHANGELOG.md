@@ -25,6 +25,7 @@
 
 ### Changed
 
+- Changed the default system prompt so the agent matches its work to the request: conceptual questions are answered without tool calls, requests for advice or review never change systems, live-state answers name their source layer (declared, desired, effective), and pushes to remote repositories happen only when explicitly asked
 - Changed prompts that invoke several skills (`/skill:a … /skill:b`) to load every one of them with equal weight in the same message, each with its full instructions and directory, instead of expanding only the first and leaving the others as plain text
 - Changed skill self-improvement to give the curator the whole finished task — your prompts (with invoked skills expanded), every reply, tool call and tool result, unabridged — instead of a 16,000-character tail; only the agent's thinking is left out
 - Changed skill self-improvement from minimal corrections to improving the whole skill when it is warranted: the curator may rewrite, reorder, condense or delete content, generalize case-specific instructions and fix an inaccurate description, as long as the change is evidence-backed, worth its disruption, and passes a regression check against the rest of the skill; an unchanged skill stays the expected outcome for one that already works. New facts must come from the task, the skill, or files and official docs the curator reads. `skill_edit` can rewrite a whole skill file by omitting `old_text`
@@ -41,6 +42,7 @@
 - RPC mode now emits `session_info_update` whenever the session title changes (auto-titling, `set_session_name`), not only after builtin slash commands
 ### Fixed
 
+- Fixed the system prompt claiming user content is sanitized: instructions found in tool output, web pages, fetched documents, MCP results and ordinary files are now treated as data, never obeyed
 - Fixed keyless Exa web search returning only titles and URLs: page excerpts from the current Exa MCP format are now included in results
 - Fixed a parent agent's mid-turn message to a subagent arriving labeled as a user interjection
 - Improved responsiveness when placing assistant text after tool calls in long transcripts ([#12178](https://github.com/can1357/oh-my-pi/issues/12178), [#14344](https://github.com/can1357/oh-my-pi/pull/14344) by [@F0Rextasy](https://github.com/F0Rextasy), [#15353](https://github.com/can1357/oh-my-pi/pull/15353) by [@iliaal](https://github.com/iliaal)).
