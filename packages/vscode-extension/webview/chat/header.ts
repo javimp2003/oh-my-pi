@@ -4,7 +4,7 @@
  * a button counting the skill proposals awaiting a decision, which opens them
  * with Approve / Reject), a "No workspace" badge on chats without a workspace,
  * and New chat / New chat without workspace / History / Settings icon buttons.
- * History carries a blinking green dot while another session finished unseen.
+ * History carries a blinking green badge counting the sessions that finished unseen.
  */
 import type {
 	ChatRequest,
@@ -189,10 +189,11 @@ export class Header {
 		this.#render();
 	}
 
-	/** Sessions finished while unseen get a blinking dot on History (host `sessionActivity` update). */
+	/** Sessions finished while unseen are counted on a blinking badge on History (host `sessionActivity` update). */
 	setActivity(activity: Record<string, SessionActivity>): void {
 		const finished = Object.values(activity).filter(state => state === "done").length;
 		this.#historyBadge.hidden = finished === 0;
+		this.#historyBadge.textContent = finished > 9 ? "9+" : String(finished);
 		const label =
 			finished === 0
 				? "History"

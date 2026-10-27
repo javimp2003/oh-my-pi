@@ -9,6 +9,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { parseQuotedPrompt } from "../quoted-prompt";
 
 export interface SessionSummary {
 	path: string;
@@ -276,7 +277,7 @@ async function findLastPrompt(
 }
 
 function promptText(content: unknown): string | undefined {
-	const text =
+	const joined =
 		typeof content === "string"
 			? content
 			: Array.isArray(content)
@@ -285,6 +286,8 @@ function promptText(content: unknown): string | undefined {
 						.map(block => block.text)
 						.join(" ")
 				: "";
+	// A reply to selected text lists as what the user wrote, not the wrapper around it.
+	const text = parseQuotedPrompt(joined)?.message ?? joined;
 	const firstLine = text.trim().split("\n")[0]?.trim();
 	return firstLine ? firstLine.slice(0, 200) : undefined;
 }

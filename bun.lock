@@ -306,9 +306,10 @@
     },
     "packages/vscode-extension": {
       "name": "omp-custom-vscode",
-      "version": "0.8.2",
+      "version": "0.17.0",
       "devDependencies": {
         "@oh-my-pi/pi-coding-agent": "catalog:",
+        "@oh-my-pi/pi-utils": "catalog:",
         "@types/bun": "catalog:",
         "@types/vscode": "1.90.0",
         "highlight.js": "^11.12.0",

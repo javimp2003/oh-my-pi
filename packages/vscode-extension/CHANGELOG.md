@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.17.0]
+
+### Added
+
+- Select text in one of omp's answers and click Reply to ask about it: the excerpt shows above the input box and the prompt is sent as a reply to that excerpt
+- ↑ / ↓ in an empty input box recall the prompts sent in the open chat (skill invocations, file mentions, images and replies included), ready to send or edit
+- History rows show a yellow pill counting the skill proposals awaiting a decision for that chat
+
+### Changed
+
+- The green badge on the History icon shows how many chats finished while you were away
+
+### Fixed
+
+- File links in chats without a workspace (relative to its folder, `~/…` or `local://…`) now open the file instead of reporting it missing
+
 ## [0.16.0]
 
 ### Added

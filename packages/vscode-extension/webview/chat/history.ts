@@ -5,10 +5,12 @@
  * `listSessions`; picking a row posts `openSession`, its pencil renames it in
  * place (`renameSession`), its trash deletes it after the host's confirmation
  * (`deleteSession`). Sessions working in the window show a spinner, those that
- * finished unseen a green dot.
+ * finished unseen a green dot, and those with skill proposals awaiting a
+ * decision a yellow pill counting them.
  */
 import type { ChatRequest, SessionActivity, SessionListItem } from "../../src/protocol";
 import { h, iconButton } from "../dom";
+import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
 
 type Post = (request: ChatRequest) => void;
@@ -123,6 +125,13 @@ export class HistoryPanel {
 		if (this.isOpen && this.#editing === undefined) this.#render();
 	}
 
+	/** Pending skill proposals changed somewhere: update the listed rows' curation pills. */
+	setProposalCounts(counts: Record<string, number>): void {
+		if (!this.#sessions) return;
+		for (const item of this.#sessions) item.proposals = counts[item.path] ?? 0;
+		if (this.isOpen && this.#editing === undefined) this.#render();
+	}
+
 	/**
 	 * Spinner while the session runs, green dot once it finished unseen, accent dot for
 	 * the open one; a fixed-width slot either way so every label lines up.
@@ -210,6 +219,19 @@ export class HistoryPanel {
 				{ className: "history-line" },
 				this.#marker(item),
 				label,
+				editing || item.proposals === 0
+					? null
+					: h(
+							"span",
+							{
+								className: "history-curation",
+								dataset: {
+									tooltip: `${item.proposals} skill change${item.proposals === 1 ? "" : "s"} proposed`,
+								},
+							},
+							icon("pencil"),
+							String(item.proposals),
+						),
 				editing ? null : h("span", { className: "history-age" }, item.age),
 				editing ? null : rename,
 				editing ? null : remove,

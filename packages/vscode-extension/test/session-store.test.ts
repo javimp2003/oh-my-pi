@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { quotedPrompt } from "../src/quoted-prompt";
 import { guessSessionDir, listSessions, sessionLabel } from "../src/sessions/session-store";
 
 const dirs: string[] = [];
@@ -50,6 +51,17 @@ describe("listSessions", () => {
 		expect(sessions.map(session => session.id)).toEqual(["b", "a"]);
 		expect(sessions.map(sessionLabel)).toEqual(["Named session", "first line"]);
 		expect(sessions[1]).toMatchObject({ messageCount: 4, truncated: false });
+	});
+
+	it("lists a reply to selected text by what the user wrote, not its wrapper", async () => {
+		const dir = await tempDir();
+		const file = path.join(dir, "2026-01-01_q.jsonl");
+		const prompts = [quotedPrompt("an excerpt", "mi pregunta\nmás"), quotedPrompt("other", "luego")];
+		await fs.writeFile(file, sessionFile({ id: "q", prompts }));
+
+		const [session] = await listSessions(dir);
+
+		expect(session).toMatchObject({ firstMessage: "mi pregunta", lastMessage: "luego" });
 	});
 
 	it("reads only a prefix of long sessions and reports the count as partial", async () => {

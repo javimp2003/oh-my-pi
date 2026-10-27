@@ -3,6 +3,6 @@
 	"include": ["src", "scripts", "test"],
 	"compilerOptions": {
 		"lib": ["ES2024"],
-		"types": ["bun", "vscode"]
+		"types": ["bun", "vscode", "assets"]
 	}
 }

@@ -8,6 +8,7 @@
  * sessions can work at once; an idle host is reused in place or stopped.
  */
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { SessionState } from "@oh-my-pi/pi-coding-agent/modes/rpc/wire/rpc-wire.generated";
@@ -16,7 +17,7 @@ import type { AgentStatus, ChatRequest, ChatUpdate, ModelChoice } from "../proto
 import { OmpCommandError, type OmpProcess } from "../rpc/omp-process";
 import { renameStoredSession } from "../sessions/rename";
 import { guessSessionDir, listSessions, relativeTime, sessionLabel } from "../sessions/session-store";
-import { isNoWorkspaceSession, noWorkspaceSessionDir } from "../no-workspace";
+import { isNoWorkspaceSession, noWorkspaceFolder, noWorkspaceSessionDir } from "../no-workspace";
 import { runOmp } from "../settings/settings-panel";
 import type { SkillProposalStore } from "../skills/proposals";
 import { webviewHtml } from "../webview-html";
@@ -29,6 +30,7 @@ import {
 	type SessionTarget,
 } from "./agent-host";
 import type { AgentPool } from "./agent-pool";
+import { mentionCandidates } from "./mentioned-file";
 
 export interface ChatSurface {
 	readonly webview: vscode.Webview;
@@ -81,7 +83,10 @@ export class ChatSession implements vscode.Disposable, HostView {
 			}),
 			// Running/finished marks in the history panel follow every session of the window.
 			pool.onDidChangeActivity(() => this.post({ type: "sessionActivity", activity: pool.activities() })),
-			proposals.onDidChange(() => this.#postProposals(true)),
+			proposals.onDidChange(() => {
+				this.#postProposals(true);
+				this.post({ type: "sessionProposals", counts: this.#proposalCounts() });
+			}),
 		);
 	}
 
@@ -161,6 +166,15 @@ export class ChatSession implements vscode.Disposable, HostView {
 			? this.proposals.proposals.filter(proposal => proposal.sessionFile === sessionFile)
 			: [];
 		this.post({ type: "skillProposals", proposals });
+	}
+
+	/** Pending proposals per session file, for the history panel's curation marks. */
+	#proposalCounts(): Record<string, number> {
+		const counts: Record<string, number> = {};
+		for (const { sessionFile } of this.proposals.proposals) {
+			if (sessionFile) counts[sessionFile] = (counts[sessionFile] ?? 0) + 1;
+		}
+		return counts;
 	}
 
 	/**
@@ -396,6 +410,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 			})),
 		);
 		const activity = this.pool.activities();
+		const proposals = this.#proposalCounts();
 		this.post({
 			type: "sessions",
 			sessions: groups.flatMap(({ noWorkspace, sessions }) =>
@@ -409,6 +424,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 					active: session.path === current,
 					activity: activity[session.path],
 					noWorkspace,
+					proposals: proposals[session.path] ?? 0,
 				})),
 			),
 		});
@@ -423,6 +439,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 				this.#webviewReady = true;
 				this.#postProposals(true);
 				this.post({ type: "sessionActivity", activity: this.pool.activities() });
+				this.post({ type: "sessionProposals", counts: this.#proposalCounts() });
 				if (this.#host) await this.#host.replay(this);
 				else this.post({ type: "status", status: NO_PROCESS });
 				return;
@@ -533,7 +550,10 @@ export class ChatSession implements vscode.Disposable, HostView {
 				await this.proposals.openDiff(request.id);
 				return;
 			case "openFile":
-				await openWorkspaceFile(request.path, request.line);
+				await openMentionedFile(request.path, request.line, {
+					noWorkspace: this.#host?.noWorkspace ?? false,
+					sessionFile: this.state?.sessionFile,
+				});
 				return;
 			case "openExternal":
 				await vscode.env.openExternal(vscode.Uri.parse(request.url, true));
@@ -545,11 +565,19 @@ export class ChatSession implements vscode.Disposable, HostView {
 	}
 }
 
-/** Open a file the transcript mentions at an optional 1-based line; see {@link resolveMentionedFile}. */
-export async function openWorkspaceFile(file: string, line?: number): Promise<void> {
-	const uri = await resolveMentionedFile(file);
+/**
+ * Open a file the transcript mentions at an optional 1-based line; see
+ * {@link resolveMentionedFile}. `noWorkspace`: the chat runs in the no-workspace folder.
+ */
+async function openMentionedFile(
+	file: string,
+	line: number | undefined,
+	chat: { noWorkspace: boolean; sessionFile?: string },
+): Promise<void> {
+	const uri = await resolveMentionedFile(file, chat);
 	if (!uri) {
-		void vscode.window.showWarningMessage(`omp: "${file}" was not found in this workspace.`);
+		const where = chat.noWorkspace ? noWorkspaceFolder() : "this workspace";
+		void vscode.window.showWarningMessage(`omp: "${file}" was not found in ${where}.`);
 		return;
 	}
 	const document = await vscode.workspace.openTextDocument(uri);
@@ -566,18 +594,28 @@ const SEARCH_EXCLUDE = "**/{node_modules,.git,.venv,venv,dist,build,out,target}/
 const MAX_MATCHES = 50;
 
 /**
- * The file behind a path the agent wrote. Agents cite paths relative to the
- * repository they work in (often a subfolder of the open folder, such as one repo
- * of several) or just a file name (`agent.md`), so a path missing under the
- * workspace folders is looked up anywhere in the workspace: one match opens, several
- * ask which one, none resolve to undefined.
+ * The file behind a path the agent wrote: a `local://` scratch file of the
+ * session, a `~`/absolute path, or a path relative to the folder the chat works
+ * in (the no-workspace folder for a chat without a workspace). Agents in a
+ * workspace also cite paths relative to the repository they work in (often a
+ * subfolder of the open folder, such as one repo of several) or just a file name
+ * (`agent.md`), so there a path missing under the workspace folders is looked up
+ * anywhere in the workspace: one match opens, several ask which one, none
+ * resolve to undefined.
  */
-async function resolveMentionedFile(file: string): Promise<vscode.Uri | undefined> {
-	if (path.isAbsolute(file)) return (await isFile(file)) ? vscode.Uri.file(file) : undefined;
-	const roots = [workspaceCwd(), ...(vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)];
-	for (const root of new Set(roots)) {
-		const candidate = path.join(root, file);
+async function resolveMentionedFile(
+	file: string,
+	chat: { noWorkspace: boolean; sessionFile?: string },
+): Promise<vscode.Uri | undefined> {
+	const roots = chat.noWorkspace
+		? [noWorkspaceFolder()]
+		: [workspaceCwd(), ...(vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)];
+	for (const candidate of mentionCandidates(file, { roots, sessionFile: chat.sessionFile, home: os.homedir() })) {
 		if (await isFile(candidate)) return vscode.Uri.file(candidate);
+	}
+	// The workspace search does not cover the no-workspace folder, nor names that are not relative paths.
+	if (chat.noWorkspace || file.startsWith("local://") || /^~([/\\]|$)/.test(file) || path.isAbsolute(file)) {
+		return undefined;
 	}
 	const relative = file.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
 	if (relative.startsWith("../")) return undefined;

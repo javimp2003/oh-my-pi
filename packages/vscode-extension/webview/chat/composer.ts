@@ -1,9 +1,12 @@
 /**
  * Bottom dock: notice banners, queued-message chips, and the composer card
- * (slash-command popup, pasted-image attachments, auto-growing textarea,
- * footer with attach, thinking toggle, model picker, context meter, and Send/Stop).
+ * (slash-command popup, the answer excerpt the next prompt replies to,
+ * pasted-image attachments, auto-growing textarea, footer with attach, thinking
+ * toggle, model picker, context meter, and Send/Stop). ↑/↓ in an empty draft
+ * recall the prompts sent in the shown chat.
  */
 import type { AvailableSlashCommand, ChatRequest, ImageContent, SessionState, SessionStats } from "../../src/protocol";
+import { parseQuotedPrompt, quotedPrompt } from "../../src/quoted-prompt";
 import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
@@ -12,6 +15,7 @@ import { DictationControl, type DictationState } from "./dictation";
 import { GhostText } from "./ghost-text";
 import { openLightbox } from "./lightbox";
 import { ModelPicker } from "./model-picker";
+import type { PromptRecall } from "./transcript";
 
 type Post = (request: ChatRequest) => void;
 type NoticeLevel = "info" | "warning" | "error";
@@ -31,6 +35,14 @@ export interface ComposerOptions {
 	localCommands: LocalCommand[];
 	/** The brain button toggled; `expanded` is the new state. */
 	onToggleThinking(expanded: boolean): void;
+	/** Prompts sent in the shown chat, oldest first (↑/↓ recall). */
+	promptHistory(): readonly PromptRecall[];
+}
+
+/** What the composer keeps across webview reloads: the draft and the excerpt it replies to. */
+export interface ComposerState {
+	draft: string;
+	quote?: string;
 }
 
 const MAX_SUGGESTIONS = 50;
@@ -94,11 +106,16 @@ export class Composer {
 	#dictationPreview = h("div", { className: "dictation-preview", hidden: true });
 	/** Grey word predictions after the caret, accepted with Tab or →. */
 	#ghost: GhostText;
+	/** Answer excerpt the next prompt replies to ("Reply" on selected text). */
+	#quote: string | undefined;
+	#quoteEl = h("div", { className: "composer-quote", hidden: true });
+	/** Recalled prompt shown (↑/↓): 0 is the newest; -1 while not browsing. */
+	#historyIndex = -1;
 
 	constructor(
 		private readonly post: Post,
-		private readonly saveDraft: (draft: string) => void,
-		draft: string,
+		private readonly saveState: (state: ComposerState) => void,
+		initial: ComposerState,
 		private readonly options: ComposerOptions,
 	) {
 		this.#send = h("button", { type: "button", className: "send-button", ariaLabel: "Send" }, icon("arrowUp"));
@@ -130,8 +147,14 @@ export class Composer {
 		};
 		this.#renderPlanToggle();
 		this.setCommands([]);
-		this.#input.value = draft;
-		this.#input.addEventListener("input", () => this.#onInput());
+		this.#input.value = initial.draft;
+		this.#quote = initial.quote;
+		this.#renderQuote();
+		// Typing ends browsing; programmatic changes fire no `input` event.
+		this.#input.addEventListener("input", () => {
+			this.#historyIndex = -1;
+			this.#onInput();
+		});
 		this.#input.addEventListener("keydown", event => this.#onKeyDown(event));
 		this.#input.addEventListener("paste", event => this.#onPaste(event));
 		this.#input.addEventListener("blur", () => setTimeout(() => this.#closePopup(), 150));
@@ -146,6 +169,7 @@ export class Composer {
 				"div",
 				{ className: "composer" },
 				this.#popup,
+				this.#quoteEl,
 				this.#attachments,
 				this.#dictationPreview,
 				this.#ghost.element,
@@ -244,11 +268,14 @@ export class Composer {
 
 	setQueue(steering: string[], followUp: string[], liveSteered = 0): void {
 		const chip = (text: string, queue: "steering" | "followUp", removable: boolean) => {
+			// A reply to an excerpt shows what the user wrote; removal still names the queued text.
+			const quoted = parseQuotedPrompt(text);
+			const shown = quoted ? `↩ ${quoted.message}` : text;
 			const el = h(
 				"div",
-				{ className: `queue-chip ${queue}`, dataset: { tooltip: text } },
+				{ className: `queue-chip ${queue}`, dataset: { tooltip: shown } },
 				h("span", { className: "queue-kind" }, queue === "steering" ? "Steer" : "Queued"),
-				h("span", { className: "queue-text" }, text),
+				h("span", { className: "queue-text" }, shown),
 			);
 			if (removable) {
 				const remove = button("×", "chip-remove", () => this.post({ type: "removeQueued", message: text, queue }));
@@ -278,6 +305,7 @@ export class Composer {
 		const before = value.slice(0, selectionStart);
 		const pad = before !== "" && !/\s$/.test(before) && !/^\s/.test(text) ? " " : "";
 		this.#input.setRangeText(pad + text, selectionStart, selectionEnd, "end");
+		this.#historyIndex = -1;
 		this.#onInput();
 		this.focus();
 	}
@@ -285,8 +313,23 @@ export class Composer {
 	/** Replace the draft (example prompts) and focus. */
 	fill(text: string): void {
 		this.#input.value = text;
+		this.#historyIndex = -1;
 		this.#onInput();
 		this.focus();
+	}
+
+	/** Make the next prompt a reply to `text`, an excerpt of an answer; replaces an earlier one. */
+	setQuote(text: string): void {
+		this.#quote = text;
+		this.#historyIndex = -1;
+		this.#renderQuote();
+		this.#save();
+		this.focus();
+	}
+
+	/** The shown chat changed: ↑ starts again from its newest prompt. */
+	resetHistoryNavigation(): void {
+		this.#historyIndex = -1;
 	}
 
 	focus(): void {
@@ -334,10 +377,14 @@ export class Composer {
 
 	#onInput(): void {
 		this.#dismissedFor = undefined;
-		this.saveDraft(this.#input.value);
+		this.#save();
 		this.#refresh();
 		this.#updatePopup();
 		this.#ghost.onInput();
+	}
+
+	#save(): void {
+		this.saveState({ draft: this.#input.value, quote: this.#quote });
 	}
 
 	#refresh(): void {
@@ -363,15 +410,33 @@ export class Composer {
 		const text = this.#input.value;
 		if ((text.trim() === "" && this.#images.length === 0) || this.#input.disabled) return;
 		const command = /^\s*\/(\S+)\s*([\s\S]*)$/.exec(text);
-		const local = this.#local.get(command?.[1] ?? "");
+		const name = command?.[1];
+		const local = this.#local.get(name ?? "");
 		if (local) {
-			// Local commands take no images; they stay attached for the next prompt.
+			// Local commands take no images or excerpt; they stay attached for the next prompt.
 			local.run(command?.[2]?.trim() ?? "");
 		} else {
-			this.post(this.#images.length > 0 ? { type: "prompt", text, images: this.#images } : { type: "prompt", text });
+			// A slash command (other than a skill) only runs as the first word: it never replies to an excerpt.
+			const isCommand =
+				name !== undefined &&
+				this.#commands.some(
+					entry => entry.source !== "skill" && (entry.name === name || entry.aliases?.includes(name)),
+				);
+			const quote = isCommand ? undefined : this.#quote;
+			const sent = quote === undefined ? text : quotedPrompt(quote, text);
+			this.post(
+				this.#images.length > 0
+					? { type: "prompt", text: sent, images: this.#images }
+					: { type: "prompt", text: sent },
+			);
 			this.#images = [];
 			this.#renderAttachments();
+			if (quote !== undefined) {
+				this.#quote = undefined;
+				this.#renderQuote();
+			}
 		}
+		this.#historyIndex = -1;
 		this.#input.value = "";
 		this.#onInput();
 	}
@@ -406,6 +471,7 @@ export class Composer {
 			...this.#images.map((image, index) => {
 				const remove = iconButton("close", "Remove image", () => {
 					this.#images.splice(index, 1);
+					this.#historyIndex = -1;
 					this.#renderAttachments();
 					this.#refresh();
 					this.focus();
@@ -427,6 +493,29 @@ export class Composer {
 			}),
 		);
 		this.#attachments.hidden = this.#images.length === 0;
+	}
+
+	/** The excerpt the next prompt replies to, with a button dropping it. */
+	#renderQuote(): void {
+		const quote = this.#quote;
+		this.#quoteEl.hidden = quote === undefined;
+		if (quote === undefined) {
+			this.#quoteEl.replaceChildren();
+			return;
+		}
+		const remove = iconButton("close", "Remove quote", () => {
+			this.#quote = undefined;
+			this.#historyIndex = -1;
+			this.#renderQuote();
+			this.#save();
+			this.focus();
+		});
+		remove.classList.add("composer-quote-remove");
+		this.#quoteEl.replaceChildren(
+			icon("reply"),
+			h("div", { className: "composer-quote-text", dataset: { tooltip: quote } }, quote),
+			remove,
+		);
 	}
 
 	#renderThinkingToggle(): void {
@@ -460,6 +549,13 @@ export class Composer {
 			}
 		}
 		if (this.#ghost.accept(event)) return;
+		const arrow = event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
+		if (arrow !== 0 && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+			if (this.#navigateHistory(arrow)) {
+				event.preventDefault();
+				return;
+			}
+		}
 		if (event.key === "Enter" && !event.shiftKey) {
 			event.preventDefault();
 			this.#submit();
@@ -473,6 +569,49 @@ export class Composer {
 			event.preventDefault();
 			this.post({ type: "abort" });
 		}
+	}
+
+	/**
+	 * ↑ (`step` 1, older) / ↓ (-1, newer) through the prompts sent in the shown
+	 * chat, as the terminal's editor does: browsing starts from an empty composer,
+	 * steps while the caret is on the first (↑) or last (↓) line, and ↓ past the
+	 * newest empties the composer again. False when the key should move the caret.
+	 */
+	#navigateHistory(step: 1 | -1): boolean {
+		const { value, selectionStart, selectionEnd } = this.#input;
+		if (selectionStart !== selectionEnd) return false;
+		const entries: PromptRecall[] = [];
+		for (const entry of this.options.promptHistory()) {
+			const previous = entries[0];
+			if (previous?.text === entry.text && previous.quote === entry.quote) continue;
+			entries.unshift(entry);
+		}
+		if (step === 1) {
+			if (this.#historyIndex === -1) {
+				const empty = value === "" && this.#images.length === 0 && this.#quote === undefined;
+				if (!empty || entries.length === 0) return false;
+			} else if (value.slice(0, selectionStart).includes("\n")) {
+				return false;
+			}
+			// At the oldest prompt ↑ stays put.
+			if (this.#historyIndex >= entries.length - 1) return true;
+		} else if (this.#historyIndex === -1 || value.slice(selectionEnd).includes("\n")) {
+			return false;
+		}
+		this.#historyIndex += step;
+		const entry = entries[this.#historyIndex];
+		this.#input.value = entry?.text ?? "";
+		this.#images = entry ? [...entry.images] : [];
+		this.#quote = entry?.quote;
+		this.#renderAttachments();
+		this.#renderQuote();
+		this.#onInput();
+		// A recalled `/command` must not open the slash popup while browsing.
+		this.#dismissedFor = this.#input.value;
+		this.#closePopup();
+		const end = this.#input.value.length;
+		this.#input.setSelectionRange(end, end);
+		return true;
 	}
 
 	/**
@@ -550,7 +689,7 @@ export class Composer {
 		const cursor = before.length + inserted.length;
 		this.#input.setSelectionRange(cursor, cursor);
 		this.#closePopup();
-		this.saveDraft(this.#input.value);
+		this.#save();
 		this.#refresh();
 		this.focus();
 	}

@@ -117,6 +117,8 @@ export interface SessionListItem {
 	activity?: SessionActivity;
 	/** A chat without a workspace (listed in the history panel's own section). */
 	noWorkspace: boolean;
+	/** Skill proposals awaiting a decision that this session's tasks produced. */
+	proposals: number;
 }
 
 /** Text a local slash command printed, and when (epoch ms, comparable with message timestamps). */
@@ -192,6 +194,8 @@ export type ChatUpdate =
 	| { type: "sessions"; sessions: SessionListItem[] }
 	/** Activity of every session that is running or finished unseen, by session file; sent when it changes. */
 	| { type: "sessionActivity"; activity: Record<string, SessionActivity> }
+	/** Pending skill proposals per session file (sessions without any are absent); sent when they change. */
+	| { type: "sessionProposals"; counts: Record<string, number> }
 	/**
 	 * omp asks to approve the plan it proposed: show it in the chat with `options`
 	 * as buttons and answer with `planDecision`. `path` is the plan file on disk.

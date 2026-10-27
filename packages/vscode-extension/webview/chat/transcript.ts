@@ -15,6 +15,7 @@ import type {
 	ToolResultMessage,
 } from "../../src/protocol";
 import { isSkillPromptDetails, isUserPrompt, type SkillPromptDetails, skillPromptDraft } from "../../src/protocol";
+import { parseQuotedPrompt, type QuotedPrompt, quotedPrompt } from "../../src/quoted-prompt";
 import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
@@ -22,6 +23,7 @@ import { fileLink, parseFileRef, thumbnail } from "./content";
 import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./markdown";
 import { MessageEditor } from "./message-editor";
+import { SelectionReply } from "./selection-reply";
 import { isSkillUpdateDetails, noticeElement, skillUpdateElement } from "./notices";
 import { PlanCard } from "./plan-card";
 import { ToolCard, truncatedPre } from "./tools";
@@ -113,10 +115,13 @@ function contentImages(content: string | Array<{ type: string }>): ImageContent[
 	return typeof content === "string" ? [] : (content.filter(block => block.type === "image") as ImageContent[]);
 }
 
-/** A prompt's bubble: plain text (pre-wrapped) and image thumbnails. */
-function bubble(text: string, images: ImageContent[], onEdit?: () => void): HTMLElement {
+/** A prompt's bubble: the excerpt it replies to, plain text (pre-wrapped), and image thumbnails. */
+function bubble(text: string, images: ImageContent[], onEdit?: () => void, quote?: string): HTMLElement {
 	const el = h("div", { className: "msg user" });
 	const body = h("div", { className: "bubble" });
+	if (quote !== undefined) {
+		body.append(h("div", { className: "bubble-quote", dataset: { tooltip: quote } }, quote));
+	}
 	if (text) body.append(h("div", { className: "bubble-text" }, text));
 	if (images.length > 0) {
 		body.append(h("div", { className: "thumbs" }, ...images.map(image => thumbnail(image))));
@@ -148,12 +153,18 @@ function commandOutputElement(text: string): HTMLElement {
 }
 
 /**
- * A skill invocation as the user wrote it: the draft with each `/skill:name`
- * token as a chip, and the loaded SKILL.md (the message content sent to the
- * model) folded below, as the terminal shows it.
+ * A skill invocation as the user wrote it: the excerpt it replies to (when
+ * `quoted`), the draft with each `/skill:name` token as a chip, and the loaded
+ * SKILL.md (the message content sent to the model) folded below, as the
+ * terminal shows it.
  */
-function skillBubble(details: SkillPromptDetails, skillText: string, onEdit?: () => void): HTMLElement {
-	const draft = skillPromptDraft(details);
+function skillBubble(
+	details: SkillPromptDetails,
+	skillText: string,
+	quoted: QuotedPrompt | undefined,
+	onEdit?: () => void,
+): HTMLElement {
+	const draft = quoted?.message ?? skillPromptDraft(details);
 	const text = h("div", { className: "bubble-text" });
 	for (const part of draft.split(/(\/skill:[\w.:-]+)/)) {
 		if (!part) continue;
@@ -175,7 +186,13 @@ function skillBubble(details: SkillPromptDetails, skillText: string, onEdit?: ()
 	return h(
 		"div",
 		{ className: "msg user" },
-		h("div", { className: "bubble" }, text, folded),
+		h(
+			"div",
+			{ className: "bubble" },
+			quoted && h("div", { className: "bubble-quote", dataset: { tooltip: quoted.selection } }, quoted.selection),
+			text,
+			folded,
+		),
 		messageActions(draft, onEdit),
 	);
 }
@@ -190,6 +207,13 @@ function isStep(el: Element): el is HTMLElement {
 interface PromptMark {
 	el: HTMLElement;
 	text: string;
+}
+
+/** A prompt sent in this chat as the composer recalls it (↑/↓): text, excerpt replied to, images. */
+export interface PromptRecall {
+	text: string;
+	quote?: string;
+	images: ImageContent[];
 }
 
 interface Slot {
@@ -349,6 +373,8 @@ export class Transcript {
 	#editor: MessageEditor | undefined;
 	/** Prompt bubbles in document order, for the pinned prompt. */
 	#prompts: PromptMark[] = [];
+	/** The editable prompts in order (oldest first), for the composer's ↑/↓ recall. */
+	#recall: PromptRecall[] = [];
 	/** The latest prompt scrolled out at the top, pinned above the conversation. */
 	#pinnedPrompt = h("button", { type: "button", className: "pinned-prompt", hidden: true });
 	/** Lays the pinned prompt out like the messages column, so it sits where its bubble does. */
@@ -374,6 +400,8 @@ export class Transcript {
 	constructor(
 		private readonly post: Post,
 		onExample: (prompt: string) => void,
+		/** "Reply" on text selected in an answer. */
+		onReply: (text: string) => void,
 	) {
 		const chips = EXAMPLE_PROMPTS.map(prompt => button(prompt, "example", () => onExample(prompt)));
 		this.#empty = h(
@@ -386,6 +414,7 @@ export class Transcript {
 		);
 		this.#scroller.append(this.#empty, this.#list, this.#working);
 		this.element = h("div", { className: "transcript-wrap" }, this.#scroller, this.#pinnedRow, this.#pill);
+		this.element.append(new SelectionReply(this.#scroller, this.element, onReply).element);
 		this.#pinnedPrompt.addEventListener("click", () => {
 			const mark = this.#pinnedMark;
 			if (!mark?.el.isConnected) return;
@@ -415,19 +444,33 @@ export class Transcript {
 		this.#afterChange();
 	}
 
+	/** The prompts sent in the shown chat, oldest first. */
+	recentPrompts(): readonly PromptRecall[] {
+		return this.#recall;
+	}
+
 	/** The host did not resend an edited prompt: its editor becomes editable again. */
 	editAborted(): void {
 		this.#editor?.reopen();
 	}
 
-	/** Edit the prompt `ordinal` in place; sending asks the host to rewind to it and resend. */
-	#editPrompt(element: HTMLElement, ordinal: number, text: string): void {
+	/**
+	 * Edit the prompt `ordinal` in place; sending asks the host to rewind to it and
+	 * resend. `original` is its text as sent; a reply to an excerpt (`quote`) edits
+	 * only the message and resends it replying to the same excerpt.
+	 */
+	#editPrompt(element: HTMLElement, ordinal: number, original: string, quote: QuotedPrompt | undefined): void {
 		this.#editor?.close();
 		const editor = new MessageEditor(
 			element,
-			text,
+			quote?.message ?? original,
 			edited => {
-				this.post({ type: "editMessage", fromEnd: this.#promptCount - 1 - ordinal, original: text, text: edited });
+				this.post({
+					type: "editMessage",
+					fromEnd: this.#promptCount - 1 - ordinal,
+					original,
+					text: quote ? quotedPrompt(quote.selection, edited) : edited,
+				});
 			},
 			() => {
 				if (this.#editor === editor) this.#editor = undefined;
@@ -448,6 +491,7 @@ export class Transcript {
 		this.#editor = undefined;
 		this.#promptCount = 0;
 		this.#prompts = [];
+		this.#recall = [];
 		this.#list.replaceChildren();
 		// A turn starts at a prompt that is not steering an unfinished turn (the last answer did not
 		// stop for tool calls) and ends at its last answer; finished turns get their "Worked for" line.
@@ -691,9 +735,18 @@ export class Transcript {
 			case "user": {
 				if (message.synthetic) return undefined;
 				const ordinal = this.#promptCount++;
-				const text = contentText(message.content);
-				const prompt = bubble(text, contentImages(message.content), () => this.#editPrompt(prompt, ordinal, text));
+				const raw = contentText(message.content);
+				const quoted = parseQuotedPrompt(raw);
+				const text = quoted?.message ?? raw;
+				const images = contentImages(message.content);
+				const prompt = bubble(
+					text,
+					images,
+					() => this.#editPrompt(prompt, ordinal, raw, quoted),
+					quoted?.selection,
+				);
 				this.#prompts.push({ el: prompt, text });
+				this.#recall.push({ text, quote: quoted?.selection, images });
 				el = prompt;
 				break;
 			}
@@ -709,14 +762,18 @@ export class Transcript {
 				) {
 					const details = message.details;
 					const draft = skillPromptDraft(details);
+					const quoted = parseQuotedPrompt(draft);
 					const ordinal = isUserPrompt(message) ? this.#promptCount++ : undefined;
 					const skill: HTMLElement = skillBubble(
 						details,
 						contentText(message.content),
-						ordinal === undefined ? undefined : () => this.#editPrompt(skill, ordinal, draft),
+						quoted,
+						ordinal === undefined ? undefined : () => this.#editPrompt(skill, ordinal, draft, quoted),
 					);
 					el = skill;
-					this.#prompts.push({ el, text: draft });
+					const text = quoted?.message ?? draft;
+					this.#prompts.push({ el, text });
+					if (ordinal !== undefined) this.#recall.push({ text, quote: quoted?.selection, images: [] });
 				} else if (
 					message.role === "custom" &&
 					message.customType === "skill-update" &&
@@ -901,7 +958,7 @@ export class Transcript {
 			event.preventDefault();
 			const href = link.dataset.href!;
 			if (/^https?:\/\//i.test(href)) this.post({ type: "openExternal", url: href });
-			else if (!/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("file:")) {
+			else if (!/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("file:") || href.startsWith("local://")) {
 				if (!href.startsWith("#")) this.post({ type: "openFile", ...parseFileRef(href) });
 			}
 		}

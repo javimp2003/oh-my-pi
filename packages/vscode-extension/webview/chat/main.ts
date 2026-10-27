@@ -6,15 +6,13 @@ import type { AgentStatus, ChatRequest, ChatUpdate } from "../../src/protocol";
 import { button, h } from "../dom";
 import { installTooltips } from "../tooltip";
 import { getVsCodeApi } from "../vscode-api";
-import { Composer } from "./composer";
+import { Composer, type ComposerState } from "./composer";
 import { Header } from "./header";
 import { HistoryPanel } from "./history";
 import { FindBar } from "./find";
 import { Transcript, brailleSpinner } from "./transcript";
 
-interface ChatViewState {
-	draft?: string;
-}
+type ChatViewState = Partial<ComposerState>;
 
 const vscode = getVsCodeApi<ChatRequest, ChatViewState>();
 const post = (request: ChatRequest) => vscode.postMessage(request);
@@ -25,22 +23,33 @@ const history = new HistoryPanel(post, open => {
 	header.setHistoryMode(open);
 	composer.element.hidden = open;
 });
-const composer = new Composer(post, draft => vscode.setState({ draft }), vscode.getState()?.draft ?? "", {
-	// TUI commands without an RPC handler, run by the chat itself.
-	localCommands: [
-		{ name: "new", description: "Start a new session", run: () => post({ type: "newSession" }) },
-		{
-			name: "resume",
-			description: "Resume a different session",
-			run: () => {
-				if (!history.isOpen) history.toggle();
+const saved = vscode.getState();
+const composer = new Composer(
+	post,
+	state => vscode.setState(state),
+	{ draft: saved?.draft ?? "", quote: saved?.quote },
+	{
+		// TUI commands without an RPC handler, run by the chat itself.
+		localCommands: [
+			{ name: "new", description: "Start a new session", run: () => post({ type: "newSession" }) },
+			{
+				name: "resume",
+				description: "Resume a different session",
+				run: () => {
+					if (!history.isOpen) history.toggle();
+				},
 			},
-		},
-		{ name: "settings", description: "Open settings", run: () => post({ type: "openSettings" }) },
-	],
-	onToggleThinking: expanded => transcript.setThinkingExpanded(expanded),
-});
-const transcript = new Transcript(post, prompt => composer.fill(prompt));
+			{ name: "settings", description: "Open settings", run: () => post({ type: "openSettings" }) },
+		],
+		onToggleThinking: expanded => transcript.setThinkingExpanded(expanded),
+		promptHistory: () => transcript.recentPrompts(),
+	},
+);
+const transcript = new Transcript(
+	post,
+	prompt => composer.fill(prompt),
+	text => composer.setQuote(text),
+);
 
 const statusSpinner = brailleSpinner();
 const statusLabel = h("div", { className: "status-label" });
@@ -121,6 +130,7 @@ function handle(update: ChatUpdate): void {
 			break;
 		case "history":
 			transcript.setHistory(update.messages, update.commandOutputs);
+			composer.resetHistoryNavigation();
 			history.close();
 			break;
 		case "event": {
@@ -177,6 +187,9 @@ function handle(update: ChatUpdate): void {
 		case "sessionActivity":
 			history.setActivity(update.activity);
 			header.setActivity(update.activity);
+			break;
+		case "sessionProposals":
+			history.setProposalCounts(update.counts);
 			break;
 		case "planReview":
 			history.close();

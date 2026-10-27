@@ -18,9 +18,11 @@ const SOURCE_EXTENSIONS =
 const FILE_WITH_KNOWN_EXT = new RegExp(`^[\\w@~./-]+\\.(?:${SOURCE_EXTENSIONS})(?::\\d+(?:-\\d+)?)?$`);
 const PATH_WITH_SLASH = /^(?:~|\.{1,2})?\/?[\w@.-]+(?:\/[\w@.-]+)+\.\w{1,10}(?::\d+(?:-\d+)?)?$/;
 
-/** Heuristic for inline code that names a file (`src/app.ts`, `README.md:12`). */
+/** Heuristic for inline code that names a file (`src/app.ts`, `README.md:12`, `local://plan.md`). */
 export function looksLikeFilePath(text: string): boolean {
-	if (text.length > 200 || /\s/.test(text) || /^[a-z]+:\/\//i.test(text)) return false;
+	if (text.length > 200 || /\s/.test(text)) return false;
+	if (/^local:\/\/\S+$/.test(text)) return true;
+	if (/^[a-z]+:\/\//i.test(text)) return false;
 	return FILE_WITH_KNOWN_EXT.test(text) || PATH_WITH_SLASH.test(text);
 }
 
