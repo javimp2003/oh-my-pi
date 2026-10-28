@@ -460,6 +460,7 @@ const DEFERRED_TITLE_MIN_WORDS = 40;
 /** Cap on the forked title request itself (measured p90 2.3s). */
 const TITLE_FORK_TIMEOUT_MS = 15_000;
 
+import { ScopeCheckpoint } from "./scope-checkpoint";
 import { LoopGuards, type StreamGuardsHost, StreamingEditGuard } from "./stream-guards";
 import { TodoTracker, type TodoTrackerHost } from "./todo-tracker";
 import { TtsrCoordinator, type TtsrCoordinatorHost } from "./ttsr-coordinator";
@@ -911,6 +912,7 @@ export class AgentSession implements SettingsScope {
 	#planModeReminderCount = 0;
 	#planModeReminderAwaitingProgress = false;
 	readonly #todo: TodoTracker;
+	readonly #scopeCheckpoint: ScopeCheckpoint;
 	readonly #modelMentions: ModelMentionRegistry;
 	#workPoolYieldItems: readonly WorkPoolYieldItem[] = [];
 	/** Item set matching the last successfully rebuilt provider prompt. The base
@@ -1749,6 +1751,11 @@ export class AgentSession implements SettingsScope {
 			consumeLastServedToolChoiceLabel: () => this.#toolChoiceQueue.consumeLastServedLabel(),
 		};
 		this.#todo = new TodoTracker(todoHost);
+		this.#scopeCheckpoint = new ScopeCheckpoint({
+			settings: this.settings,
+			agentKind: () => this.#agentKind,
+			planModeEnabled: () => this.#planModeState?.enabled === true,
+		});
 		this.#modelMentions = new ModelMentionRegistry({
 			sessionManager: this.sessionManager,
 			modelRegistry: this.#modelRegistry,
@@ -2027,6 +2034,8 @@ export class AgentSession implements SettingsScope {
 			// Mid-run todo reconciliation — evaluated at injection time so a turn
 			// that flips a todo just before this poll suppresses the nudge.
 			thunks.push(() => this.#todo.takeMidRunNudge());
+			// Long-run scope checkpoint — gated to the mid-work boundary inside take().
+			thunks.push(() => this.#scopeCheckpoint.take());
 			const contextNotesReminder = this.#experimentalContextNotesReminder;
 			if (contextNotesReminder) {
 				this.#experimentalContextNotesReminder = undefined;
@@ -3829,6 +3838,9 @@ export class AgentSession implements SettingsScope {
 		if (event.type === "message_end" && event.message.role === "toolResult") {
 			this.#todo.onToolResult(event.message.toolName, event.message.isError);
 		}
+		// Active-time, user-wait, and tool-round bookkeeping for the scope checkpoint; same
+		// synchronous requirement as the todo counter above.
+		this.#scopeCheckpoint.onAgentEvent(event);
 		// Track the settled assistant turn synchronously as well: agent_end
 		// maintenance reads `#lastAssistantMessage`, and when a turn's events all
 		// land in one tick its handler can run before this handler's post-emit
@@ -7873,6 +7885,7 @@ export class AgentSession implements SettingsScope {
 			this.#irc.flushPending();
 
 			this.#todo.resetCycle();
+			this.#scopeCheckpoint.resetCycle();
 			this.#resetPromptMaintenanceState();
 			this.#recovery.setAcceptTerminalEmptyStop(options?.acceptTerminalEmptyStop === true);
 
@@ -9897,6 +9910,7 @@ export class AgentSession implements SettingsScope {
 			this.sessionManager.appendServiceTierChange(this.#models.serviceTierEntry());
 
 			this.#todo.resetCycle();
+			this.#scopeCheckpoint.resetCycle();
 			this.#planReferenceSent = false;
 			this.#planReferencePath = "local://PLAN.md";
 			this.#advisors.resetSessionState();

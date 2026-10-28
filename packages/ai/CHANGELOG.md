@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed parallel tool calls from OpenAI-compatible gateways that reuse one stream index or send no ids (seen with GLM via LiteLLM) being merged into a single call that failed with "Tool call arguments are not valid JSON … Unexpected trailing characters"; each call now runs separately
+
 ## [18.9.1] - 2026-10-11
 
 ### Added

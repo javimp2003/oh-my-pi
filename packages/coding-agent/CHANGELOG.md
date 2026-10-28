@@ -22,6 +22,7 @@
 - Added `skills.selfImproveThirdParty` (off by default): skill self-improvement may also edit skills loaded from other tools' folders (`.claude`, `.agents`, `.codex`, `.github`, `.opencode`); plugin and registry skills stay untouched
 - Added the `skill_curation` RPC event: `running` while skill self-improvement reviews the skills the last task relied on, `done` with the proposals it created
 - Added `skills.descriptions`: `full` (default) lists each skill's description as written; `compressed` keeps the previous 12-word hints
+- Added a scope checkpoint for long requests (`model.scopeCheckpoint.enabled`, on by default; `model.scopeCheckpoint.minutes`, default 6): after that many active minutes and at least 8 tool rounds, the main agent gets a hidden reminder to re-check its remaining work against the request and drop investigation the answer no longer needs, with a second one at twice the time asking it to start wrapping up; plan mode and subagents are excluded, and time between runs or spent answering `ask` does not count
 
 ### Changed
 

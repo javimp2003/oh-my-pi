@@ -6,6 +6,7 @@ import type { ResolvedOpenAICompat } from "@oh-my-pi/pi-catalog/types";
 import { clinePassClientHeaders } from "@oh-my-pi/pi-catalog/wire/cline-pass";
 import {
 	$env,
+	classifyJsonPrefix,
 	logger,
 	parseStreamingJson,
 	parseStreamingJsonThrottled,
@@ -563,6 +564,79 @@ function mergeStreamingArgumentObjects(
 	return merged;
 }
 
+/** First non-whitespace char of a streamed arguments delta is `{`. */
+function startsJsonObjectDelta(delta: unknown): boolean {
+	if (typeof delta !== "string") return false;
+	for (let index = 0; index < delta.length; index++) {
+		const code = delta.charCodeAt(index);
+		if (code === 0x09 || code === 0x0a || code === 0x0d || code === 0x20) continue;
+		return code === 0x7b;
+	}
+	return false;
+}
+
+/**
+ * Whether a `tool_calls` delta routed to `block` actually opens a NEW sibling call.
+ * Gateways (LiteLLM-fronted vLLM/GLM observed) reuse `index` 0 for every parallel call
+ * or omit keys entirely, so index/currentBlock routing would append the second call's
+ * arguments to the first (`{...}{...}`). A sibling starts only once the block's buffer can
+ * no longer be extended (`classifyJsonPrefix` !== "prefix"), so legal continuations such as
+ * `{"command":"echo ` + `{1..3}"}` stay on the same call. An id change splits only on a
+ * call header (name or `{`): hosts minting a fresh id per chunk must not spawn phantom calls.
+ */
+function startsSiblingToolCall(
+	block: { id: string; name: string; partialArgs?: string | Record<string, unknown> },
+	incomingId: string | undefined,
+	incomingName: string,
+	rawArgs: unknown,
+): boolean {
+	const partial = block.partialArgs;
+	if (typeof partial !== "string" || partial.trim().length === 0) return false;
+	const opensObject = startsJsonObjectDelta(rawArgs);
+	if (classifyJsonPrefix(partial) !== "prefix") {
+		if (incomingId && block.id && incomingId !== block.id && (incomingName || opensObject)) return true;
+		if (incomingName && block.name && incomingName !== block.name) return true;
+		return opensObject;
+	}
+	return opensObject && classifyJsonPrefix(partial + (rawArgs as string)) === "invalid";
+}
+
+/**
+ * Top-level object texts of an arguments buffer that is two or more complete JSON objects
+ * back to back (`{...}{...}`, optional whitespace between) and nothing else; `undefined`
+ * otherwise. Gated on `classifyJsonPrefix` === "invalid" so a valid buffer is never scanned.
+ */
+function splitConcatenatedJsonObjects(text: string): string[] | undefined {
+	if (classifyJsonPrefix(text) !== "invalid") return undefined;
+	const segments: string[] = [];
+	let depth = 0;
+	let start = 0;
+	let inString = false;
+	let escaped = false;
+	for (let index = 0; index < text.length; index++) {
+		const code = text.charCodeAt(index);
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (code === 0x5c) escaped = true;
+			else if (code === 0x22) inString = false;
+			continue;
+		}
+		if (depth === 0) {
+			if (code === 0x09 || code === 0x0a || code === 0x0d || code === 0x20) continue;
+			if (code !== 0x7b) return undefined;
+			start = index;
+		}
+		if (code === 0x22) inString = true;
+		else if (code === 0x7b || code === 0x5b) depth++;
+		else if (code === 0x7d || code === 0x5d) {
+			depth--;
+			if (depth === 0) segments.push(text.slice(start, index + 1));
+		}
+	}
+	if (depth !== 0 || inString || segments.length < 2) return undefined;
+	return segments.every(segment => classifyJsonPrefix(segment) === "complete") ? segments : undefined;
+}
+
 /**
  * Check if conversation messages contain tool calls or tool results.
  * This is needed because Anthropic (via proxy) requires the tools param
@@ -1078,6 +1152,15 @@ const streamOpenAICompletionsOnce = (
 						stream.push({ type: "toolcall_delta", contentIndex, delta: fullJson, partial: output });
 					}
 				}
+				// Safety net for sibling calls the per-chunk boundary could not see (the boundary
+				// arrived mid-chunk, e.g. `"}{"command"…`): back-to-back complete objects become
+				// separate calls. Only for the newest block, so appended siblings keep every
+				// already-emitted contentIndex stable.
+				const siblingSegments =
+					typeof block.partialArgs === "string" && contentIndex === output.content.length - 1
+						? splitConcatenatedJsonObjects(block.partialArgs)
+						: undefined;
+				if (siblingSegments) block.partialArgs = siblingSegments[0];
 				block.arguments =
 					typeof block.partialArgs === "string" ? parseToolCallArguments(block.partialArgs) : block.partialArgs;
 				delete block.partialArgs;
@@ -1089,6 +1172,21 @@ const streamOpenAICompletionsOnce = (
 				if (pendingIndex >= 0) pendingToolCallBlocks.splice(pendingIndex, 1);
 				clearUnkeyedBatchSlot(block);
 				stream.push({ type: "toolcall_end", contentIndex, toolCall: block, partial: output });
+				if (!siblingSegments) return;
+				for (let index = 1; index < siblingSegments.length; index++) {
+					const segment = siblingSegments[index]!;
+					const sibling: ToolCallStreamBlock = {
+						type: "toolCall",
+						id: "",
+						name: block.name,
+						arguments: parseToolCallArguments(segment),
+					};
+					pushContentBlock(sibling);
+					const siblingIndex = blockIndex(sibling);
+					stream.push({ type: "toolcall_start", contentIndex: siblingIndex, partial: output });
+					stream.push({ type: "toolcall_delta", contentIndex: siblingIndex, delta: segment, partial: output });
+					stream.push({ type: "toolcall_end", contentIndex: siblingIndex, toolCall: sibling, partial: output });
+				}
 			};
 			const finishPendingToolCallBlocks = (): void => {
 				for (const block of Array.from(pendingToolCallBlocks)) {
@@ -1536,6 +1634,17 @@ const streamOpenAICompletionsOnce = (
 								block = currentBlock;
 							}
 
+							let siblingName = "";
+							if (
+								block &&
+								startsSiblingToolCall(block, toolCall.id, incomingName, toolCall.function?.arguments)
+							) {
+								// A same-name header absorbed by the finished call (no id, reused index) names the sibling.
+								siblingName = block.name;
+								finishToolCallBlock(block);
+								block = undefined;
+							}
+
 							if (!block) {
 								if (currentBlock?.type !== "toolCall") {
 									finishCurrentBlock(currentBlock);
@@ -1543,7 +1652,7 @@ const streamOpenAICompletionsOnce = (
 								block = {
 									type: "toolCall",
 									id: toolCall.id || "",
-									name: incomingName,
+									name: incomingName || siblingName,
 									arguments: {},
 									partialArgs: "",
 									streamIndex,
