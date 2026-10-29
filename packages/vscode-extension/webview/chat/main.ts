@@ -160,6 +160,7 @@ function handle(update: ChatUpdate): void {
 		case "state": {
 			const { state } = update;
 			header.setState(state, update.stats, update.title, update.noWorkspace);
+			history.setChatNoWorkspace(update.noWorkspace);
 			composer.picker.setCurrent(state.model);
 			if (state.thinkingLevel) composer.picker.setThinkingLevel(state.thinkingLevel);
 			composer.setUsage(state, update.stats);

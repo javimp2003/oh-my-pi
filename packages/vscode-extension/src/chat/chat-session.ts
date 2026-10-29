@@ -421,6 +421,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 					lastPrompt: session.singlePrompt ? undefined : session.lastMessage,
 					singlePrompt: session.singlePrompt,
 					age: relativeTime(session.modified),
+					modified: session.modified.getTime(),
 					active: session.path === current,
 					activity: activity[session.path],
 					noWorkspace,

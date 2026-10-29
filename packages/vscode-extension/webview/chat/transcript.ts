@@ -24,7 +24,7 @@ import { openLightbox } from "./lightbox";
 import { renderMarkdown } from "./markdown";
 import { MessageEditor } from "./message-editor";
 import { SelectionReply } from "./selection-reply";
-import { isSkillUpdateDetails, noticeElement, skillUpdateElement } from "./notices";
+import { hiddenNoticeElement, isSkillUpdateDetails, noticeElement, skillUpdateElement } from "./notices";
 import { PlanCard } from "./plan-card";
 import { ToolCard, truncatedPre } from "./tools";
 
@@ -752,7 +752,12 @@ export class Transcript {
 			}
 			case "custom":
 			case "hookMessage":
-				if (!message.display) return undefined;
+				// Hidden messages reached the model but not the TUI (harness reminders such as
+				// `scope-checkpoint`, todo nudges, rule injections): show them muted and folded.
+				if (!message.display) {
+					el = hiddenNoticeElement(message.customType, contentText(message.content));
+					break;
+				}
 				// Only a skill invocation is something the user wrote; the rest (background job results,
 				// process exits, extension notices) comes from omp and must not look like a prompt.
 				if (

@@ -1336,6 +1336,15 @@ code {
 	color: var(--c-fg-2);
 }
 
+.hidden-notice {
+	opacity: 0.6;
+}
+
+.hidden-notice:hover,
+.hidden-notice:focus-within {
+	opacity: 1;
+}
+
 .activity-diff {
 	flex: none;
 	display: flex;
@@ -1901,6 +1910,62 @@ code {
 
 .history-empty {
 	padding: 6px 8px;
+	color: var(--c-fg-3);
+}
+
+/* Unfolds the chats older than 24 hours under the recent ones; styled like the tabs above. */
+.history-older {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	height: 26px;
+	margin: 6px 0;
+	padding: 0 10px;
+	border: 1px dashed var(--c-border-heavy);
+	border-radius: var(--r-md);
+	background: transparent;
+	color: var(--c-fg-3);
+	font: inherit;
+	font-size: var(--fs-sm);
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.history-older .icon {
+	width: 13px;
+	height: 13px;
+}
+
+.history-older:hover {
+	border-style: solid;
+	background: var(--c-hover);
+	color: var(--c-fg);
+}
+
+.history-older:focus-visible {
+	outline: 1px solid var(--vscode-focusBorder);
+}
+
+.history-older-hint {
+	opacity: 0.7;
+}
+
+.history-older-hint::before {
+	content: "· ";
+}
+
+/* While searching the older matches show anyway: only a divider marks where they start. */
+.history-older.searching {
+	border: none;
+	border-top: 1px solid var(--c-border);
+	border-radius: 0;
+	cursor: default;
+}
+
+.history-older.searching:hover {
+	background: transparent;
 	color: var(--c-fg-3);
 }
 

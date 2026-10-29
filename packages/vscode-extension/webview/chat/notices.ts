@@ -33,6 +33,19 @@ export function noticeElement(customType: string, text: string, details: unknown
 	return h("div", { className: "msg omp-notice" }, ...rows.map(noticeRow));
 }
 
+/**
+ * A custom or hook message omp sent to the model without displaying it (harness
+ * reminders such as `scope-checkpoint`): a muted row whose body is the exact text
+ * the model received.
+ */
+export function hiddenNoticeElement(customType: string, text: string): HTMLElement {
+	return h(
+		"div",
+		{ className: "msg omp-notice hidden-notice" },
+		noticeRow({ icon: "eyeOff", verb: customType, label: "Hidden", body: text }),
+	);
+}
+
 /** Details of a `skill-update` message: omp corrected one of the user's skills after a task. */
 export interface SkillUpdateDetails {
 	skill: string;

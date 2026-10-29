@@ -280,6 +280,12 @@ describe("SkillEditTool", () => {
 		const rewritten = SKILL_FILE.replace("ls --long-format demo", "ls -l demo").concat(
 			"\nVerify with `ls -l demo`.\n",
 		);
+		const staged = await edit(tool, { old_text: undefined, new_text: rewritten });
+		expect(staged.isError).toBeUndefined();
+		expect(staged.content[0]).toMatchObject({ text: expect.stringContaining("8 → 10 lines (+2)") });
+		// A later edit of the same file reports its change against the file before the first edit.
+		const trimmed = await edit(tool, { old_text: "\nVerify with `ls -l demo`.\n", new_text: "" });
+		expect(trimmed.content[0]).toMatchObject({ text: expect.stringContaining("8 → 8 lines (±0)") });
 		expect((await edit(tool, { old_text: undefined, new_text: rewritten })).isError).toBeUndefined();
 		expect(tool.edits.get("demo")?.files.get(demo.filePath)?.after).toBe(rewritten);
 		const renamed = await edit(tool, { old_text: undefined, new_text: rewritten.replace("name: demo", "name: x") });

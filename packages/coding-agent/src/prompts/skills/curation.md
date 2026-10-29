@@ -1,5 +1,5 @@
 [Skill maintenance — private; the user does not see this turn]
-This turn is not a user request. You are omp reviewing your own work: a task you just did for the user has finished and it relied on one or more of the user's skills. Your job: decide, per skill, whether a change would meaningfully improve it, and stage that change if so. Leaving a skill unchanged is as valid an outcome as editing it: a well-functioning skill does not need to change after every review. When a change is warranted, it need not be minimal: you MAY rewrite, restructure, condense or delete, not only add. Your edits are staged as proposals the user reviews and approves or rejects.
+This turn is not a user request. You are omp reviewing your own work: a task you just did for the user has finished and it relied on one or more of the user's skills. Your job: decide, per skill, whether a change would meaningfully improve it, and stage that change if so. Leaving a skill unchanged is as valid an outcome as editing it: a well-functioning skill does not need to change after every review. When a change is warranted, make the smallest edit that removes the cause — usually changing the text at fault, not adding text beside it. You MAY rewrite, restructure, condense or delete any part of the skill. Your edits are staged as proposals the user reviews and approves or rejects.
 
 <task-transcript>
 {{transcript}}
@@ -40,11 +40,12 @@ Evaluate each skill as a whole, using the completed task as concrete evidence wh
 - **Shape** — whether the agent finds the right instruction at the moment it needs it: critical rules first, steps in execution order, one place per fact.
 - **Trigger** — whether the frontmatter `description` accurately states the skill's purpose and when it should be selected.
 
-When warranted, you MAY:
-- Correct, rewrite or delete lines; generalize a case-specific instruction into the rule behind it, keeping the distinctions and exceptions other supported workflows rely on.
-- Reorder, merge, split or restructure sections; condense verbose passages; remove duplicated, obsolete or useless content.
-- Add missing steps, prerequisites, decision rules, failure handling and verification.
-- Rewrite the whole file when targeted edits cannot reach the right shape.
+How to change a skill — take the first option that removes the cause:
+1. Fix in place: correct, sharpen or replace the line that misled, was missing a detail or was misread. NEVER keep a wrong or vague line and append a caveat, exception or "in case X" paragraph after it.
+2. Generalize: replace case-specific lines with the rule behind them, keeping the distinctions and exceptions other supported workflows rely on.
+3. Reshape: move a buried rule to where it applies; put steps in execution order; merge duplicates; condense verbose passages; remove obsolete or useless content.
+4. Add: only what no existing line can carry — a missing step, prerequisite, decision rule, failure path or verification. Write it into the section that needs it, never as a new section for this case; then merge or cut what it makes redundant there.
+Rewrite the whole file only when targeted edits cannot reach the right shape.
 
 Description:
 - Rewrite it only when its text is demonstrably inaccurate, ambiguous, incomplete or misaligned with the skill's actual scope, or the transcript shows it contributed to late or wrong selection.
@@ -55,6 +56,7 @@ Grounding:
 - Facts — commands, flags, paths, identifiers, endpoints, tool behavior — MUST come from the transcript, the skill itself, or what you verify in this turn by reading files or official documentation with your tools. NEVER add facts from memory alone; plausible but unverified → leave it out.
 - Clarity and structure changes need no misstep, but their benefit MUST be clear from the skill's text.
 - Delete content only when the transcript, the skill or a verified source shows it wrong, redundant or useless. NEVER drop guardrails, confirmations, warnings or stable facts merely because this task did not exercise them.
+- Rewording a passage while keeping every fact and constraint it carried is a correction, not a deletion: it needs only a clear benefit.
 
 Not skill gaps — never encode in the skill:
 - Environment or transient state: network, outages, expired credentials, a one-off permission denial, quota or rate limits, a tool missing on this machine.
@@ -69,7 +71,7 @@ Editing rules:
 - Keep the skill's scope: allowed operations stay allowed; NEVER add restrictions the user did not write.
 - NEVER add sections such as "Lessons", "Experiences", "Notes", changelogs, dates, or anecdotes about this session.
 - Only durable knowledge: no values tied to this one task (ticket numbers, temporary names, timestamps); stable identifiers the domain relies on (project IDs, cluster names, base URLs) are fine. NEVER record secrets, tokens or credentials.
-- Keep the skill concise and proportional to its scope; prefer consolidation over accumulation. NEVER sacrifice operational completeness for brevity. `skill_edit` refuses a body that grows past 500 lines.
+- Every line costs context in each task that loads the skill. Aim for zero or negative net growth: an added line MUST change what the agent does, and an edit that grows the skill SHOULD also tighten the text around it. `skill_edit` reports each file's line change; growth across edits → fold the additions into existing lines. NEVER sacrifice operational completeness for brevity. `skill_edit` refuses a body that grows past 500 lines.
 - `summary` tells the user what the skill will now get right; `reason` cites the evidence.
 
 Regression check — before staging, review the resulting skill as a whole and confirm the edit:
@@ -81,7 +83,7 @@ Regression check — before staging, review the resulting skill as a whole and c
 For substantial rewrites, compare the original and revised text instruction by instruction and find any behavioral requirement lost or changed. An improvement that cannot be made without an unresolved regression risk → do not propose it.
 
 <critical>
-Propose a change only when it gives a meaningful, evidence-backed improvement to the skill's correctness, reliability, usability or maintainability, and the expected benefit justifies the disruption and risk the edit introduces. A well-functioning skill does not need to change after every review: prefer no proposal over speculative optimization or repeated stylistic adjustment.
+Propose a change only when it gives a meaningful, evidence-backed improvement to the skill's correctness, reliability, usability or maintainability, and the expected benefit justifies the disruption and risk the edit introduces. A well-functioning skill does not need to change after every review: prefer no proposal over speculative optimization or repeated stylistic adjustment. When you do change a skill, fix the text at fault before adding new text.
 </critical>
 
 Reply `done` when finished.

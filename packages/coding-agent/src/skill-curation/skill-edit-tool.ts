@@ -45,6 +45,12 @@ function failure(text: string): AgentToolResult {
 	return { content: [{ type: "text", text }], isError: true };
 }
 
+function lineCount(text: string): number {
+	if (!text) return 0;
+	const parts = text.split("\n").length;
+	return text.endsWith("\n") ? parts - 1 : parts;
+}
+
 /**
  * The only write tool of a skill curation turn: stages exact-match replacements
  * or whole-file rewrites in the files of the skills it was created for, keeping
@@ -134,8 +140,17 @@ export class SkillEditTool implements AgentTool<typeof skillEditSchema> {
 		else target.files.set(absolute, { relativePath, before: current, after: next });
 		target.summaries.push(summary);
 		target.reasons.push(reason);
+		const linesBefore = lineCount(staged?.before ?? current);
+		const linesAfter = lineCount(next);
+		const delta = linesAfter - linesBefore;
+		const change = delta > 0 ? `+${delta}` : delta < 0 ? String(delta) : "±0";
 		return {
-			content: [{ type: "text", text: `Staged ${skill.name}/${relativePath} (proposal for the user).` }],
+			content: [
+				{
+					type: "text",
+					text: `Staged ${skill.name}/${relativePath} (proposal for the user): ${linesBefore} → ${linesAfter} lines (${change}).`,
+				},
+			],
 			details: { skill: skill.name, file: relativePath },
 		};
 	}

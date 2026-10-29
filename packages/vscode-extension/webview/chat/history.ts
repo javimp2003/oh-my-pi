@@ -1,12 +1,13 @@
 /**
  * Session history overlay: a searchable list of chats covering the transcript,
  * filtered by two tabs: the workspace's sessions or the chats without a
- * workspace (it opens on the open chat's group). Opening it asks the host for
- * `listSessions`; picking a row posts `openSession`, its pencil renames it in
- * place (`renameSession`), its trash deletes it after the host's confirmation
- * (`deleteSession`). Sessions working in the window show a spinner, those that
- * finished unseen a green dot, and those with skill proposals awaiting a
- * decision a yellow pill counting them.
+ * workspace (it opens on the open chat's group). Only chats active in the last
+ * 24 hours show at first; a button under them unfolds the older ones (a search
+ * shows them all). Opening it asks the host for `listSessions`; picking a row
+ * posts `openSession`, its pencil renames it in place (`renameSession`), its
+ * trash deletes it after the host's confirmation (`deleteSession`). Sessions
+ * working in the window show a spinner, those that finished unseen a green dot,
+ * and those with skill proposals awaiting a decision a yellow pill counting them.
  */
 import type { ChatRequest, SessionActivity, SessionListItem } from "../../src/protocol";
 import { h, iconButton } from "../dom";
@@ -14,6 +15,9 @@ import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
 
 type Post = (request: ChatRequest) => void;
+
+/** Chats modified within this window show without unfolding the older ones. */
+const RECENT_MS = 24 * 60 * 60 * 1000;
 
 export class HistoryPanel {
 	readonly element: HTMLElement;
@@ -36,6 +40,10 @@ export class HistoryPanel {
 	#noWorkspace = false;
 	/** Whether this opening picked its tab yet (from the first `sessions` answer). */
 	#tabPicked = false;
+	/** Whether the chats older than 24 hours are unfolded (folded again on every opening). */
+	#olderShown = false;
+	/** Group of the chat this view shows, from its `state`; the panel opens on it. */
+	#chatNoWorkspace: boolean | undefined;
 
 	constructor(
 		private readonly post: Post,
@@ -86,6 +94,7 @@ export class HistoryPanel {
 		this.element.hidden = false;
 		this.#sessions = undefined;
 		this.#tabPicked = false;
+		this.#olderShown = false;
 		this.#search.value = "";
 		this.#selected = 0;
 		this.#render();
@@ -100,19 +109,28 @@ export class HistoryPanel {
 		this.onModeChange(false);
 	}
 
+	/** The chat this view shows runs without a workspace (or in it): the panel opens on that group. */
+	setChatNoWorkspace(noWorkspace: boolean): void {
+		this.#chatNoWorkspace = noWorkspace;
+	}
+
 	setSessions(items: SessionListItem[]): void {
 		this.#sessions = items;
 		if (!this.#tabPicked) {
-			// Open on the open chat's group; on the other one when that group has no chats.
+			// Open on the open chat's group, even before its session is listed (a new chat has no
+			// file yet); without a chat, on the active row's group, else the one that has chats.
 			this.#tabPicked = true;
 			const active = items.find(item => item.active);
-			this.#noWorkspace = active
-				? active.noWorkspace
-				: !items.some(item => !item.noWorkspace) && items.some(item => item.noWorkspace);
-			this.#selected = Math.max(
-				0,
-				items.filter(item => item.noWorkspace === this.#noWorkspace).findIndex(item => item.active),
-			);
+			this.#noWorkspace =
+				this.#chatNoWorkspace ??
+				(active
+					? active.noWorkspace
+					: !items.some(item => !item.noWorkspace) && items.some(item => item.noWorkspace));
+			const group = items.filter(item => item.noWorkspace === this.#noWorkspace);
+			const index = group.findIndex(item => item.active);
+			// The open chat stays reachable when it is older than 24 hours.
+			if (index >= 0 && group[index].modified < Date.now() - RECENT_MS) this.#olderShown = true;
+			this.#selected = Math.max(0, index);
 		}
 		this.#render();
 	}
@@ -162,18 +180,60 @@ export class HistoryPanel {
 			`${item.label} ${item.firstPrompt ?? ""} ${item.lastPrompt ?? ""}`.toLowerCase().includes(needle),
 		);
 		this.#renderTabs(found);
-		this.#matches = found.filter(item => item.noWorkspace === this.#noWorkspace);
-		if (this.#matches.length === 0) {
+		const group = found.filter(item => item.noWorkspace === this.#noWorkspace);
+		if (group.length === 0) {
+			this.#matches = [];
 			const empty = this.#noWorkspace ? "No chats without a workspace yet" : "No chats in this workspace yet";
 			const inGroup = this.#sessions.some(item => item.noWorkspace === this.#noWorkspace);
 			this.#list.replaceChildren(h("div", { className: "history-empty" }, inGroup ? "No matches" : empty));
 			return;
 		}
-		this.#selected = Math.min(this.#selected, this.#matches.length - 1);
+		const cutoff = Date.now() - RECENT_MS;
+		const recent = group.filter(item => item.modified >= cutoff);
+		const older = group.filter(item => item.modified < cutoff);
+		// A search looks through every chat: its older matches show without unfolding.
+		const searching = needle !== "";
+		const olderVisible = searching || this.#olderShown;
+		this.#matches = olderVisible ? [...recent, ...older] : recent;
+		this.#selected = Math.max(0, Math.min(this.#selected, this.#matches.length - 1));
 		const rows = this.#matches.map((item, index) => this.#row(item, index));
-		this.#list.replaceChildren(...rows);
+		const children: HTMLElement[] = [];
+		if (recent.length === 0 && !searching) {
+			children.push(h("div", { className: "history-empty" }, "No chats in the last 24 hours"));
+		}
+		children.push(...rows.slice(0, recent.length));
+		if (older.length > 0) children.push(this.#olderDivider(older.length, searching));
+		children.push(...rows.slice(recent.length));
+		this.#list.replaceChildren(...children);
 		rows[this.#selected]?.scrollIntoView({ block: "nearest" });
 		this.#list.querySelector<HTMLInputElement>(".history-rename")?.focus();
+	}
+
+	/**
+	 * Between the last 24 hours and the older chats: a button that unfolds or folds
+	 * them, or a plain label while a search shows them anyway.
+	 */
+	#olderDivider(count: number, searching: boolean): HTMLElement {
+		const older = `${count} older chat${count === 1 ? "" : "s"}`;
+		if (searching) {
+			return h("div", { className: "history-older searching" }, h("span", null, `${older} · over 24 hours`));
+		}
+		const toggle = h(
+			"button",
+			{ type: "button", className: "history-older", ariaExpanded: String(this.#olderShown) },
+			icon(this.#olderShown ? "chevronUp" : "chevronDown"),
+			h("span", null, this.#olderShown ? "Hide older chats" : `Show ${older}`),
+			h("span", { className: "history-older-hint" }, "over 24 hours"),
+		);
+		// Keep focus in the search box, as the rows do.
+		toggle.addEventListener("mousedown", event => event.preventDefault());
+		toggle.addEventListener("click", () => {
+			this.#olderShown = !this.#olderShown;
+			// Folding hides a selected older row: go back to the newest chat.
+			if (!this.#olderShown) this.#selected = 0;
+			this.#render();
+		});
+		return toggle;
 	}
 
 	/** Tab labels with how many chats of each group match the search (no count while loading). */

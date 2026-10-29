@@ -113,6 +113,8 @@ export interface SessionListItem {
 	/** The session has a single prompt. */
 	singlePrompt: boolean;
 	age: string;
+	/** When the session file last changed (epoch ms); the panel folds chats older than 24 hours. */
+	modified: number;
 	active: boolean;
 	activity?: SessionActivity;
 	/** A chat without a workspace (listed in the history panel's own section). */

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0]
+
+### Added
+
+- Messages omp sends to the model without showing them (scope checkpoints, todo reminders, rule injections…) now appear in the chat as muted, folded "Hidden" rows; expand one to read the exact text the model received
+- History shows only the chats from the last 24 hours; a "Show N older chats" button under them unfolds the rest (a search always looks through every chat)
+
+### Fixed
+
+- History opened from a chat without a workspace now opens on the "No workspace" tab, also for a new chat that has no saved messages yet
+
 ## [0.17.0]
 
 ### Added
