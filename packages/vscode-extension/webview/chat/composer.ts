@@ -54,10 +54,10 @@ export interface ComposerState {
 }
 
 const MAX_SUGGESTIONS = 50;
-const PLACEHOLDER = "Ask omp anything. / for commands and skills";
+const PLACEHOLDER = "Ask MarIA Code anything. / for commands and skills";
 const PLACEHOLDER_BUSY = "Ask for follow-up changes";
 const PLACEHOLDER_PLAN = "Plan mode: describe what to plan";
-const PLACEHOLDER_DELEGATE = "Delegate mode: describe the task for omp's subagents";
+const PLACEHOLDER_DELEGATE = "Delegate mode: describe the task for MarIA Code's subagents";
 const PLACEHOLDER_LISTENING = "Listening… click the microphone to finish, Esc to cancel";
 const PLACEHOLDER_TRANSCRIBING = "Transcribing…";
 

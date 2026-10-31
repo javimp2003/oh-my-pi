@@ -33,6 +33,7 @@
 
 ### Changed
 
+- The agent now introduces itself as MarIA Code, Unicaja's technical agent, in both the coding and the general system prompt
 - Changed the default system prompt so the agent matches its work to the request: conceptual questions are answered without tool calls, requests for advice or review never change systems, live-state answers name their source layer (declared, desired, effective), and pushes to remote repositories happen only when explicitly asked
 - Changed the default system prompt for code work: a defect reported in local repository code is diagnosed and fixed (external systems stay read-only), and the agent reads code before changing it, takes build/test commands from the repo, fixes the same flaw in sibling code, never fakes success (hard-coded outputs, weakened or skipped tests, silenced type errors), leaves `.env`/credential files and changes it didn't make alone, recovers from failed edits by re-reading (rewriting the function after two failures), asks after three failed typecheck/lint rounds, runs typecheck/lint after the focused check, and cites changed code as `path:line`
 - Changed `lsp.diagnosticsOnEdit` to on by default: `edit` results now report the LSP errors the edit introduced, like `write` already did

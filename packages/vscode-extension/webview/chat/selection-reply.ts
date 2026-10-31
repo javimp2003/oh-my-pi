@@ -19,7 +19,7 @@ export class SelectionReply {
 			className: "selection-reply",
 			hidden: true,
 			ariaLabel: "Reply to selection",
-			dataset: { tooltip: "Ask omp about the selected text" },
+			dataset: { tooltip: "Ask MarIA Code about the selected text" },
 		},
 		icon("reply"),
 		"Reply",

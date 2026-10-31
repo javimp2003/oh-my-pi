@@ -37,7 +37,7 @@ export class Header {
 		{
 			className: "no-workspace-badge",
 			hidden: true,
-			dataset: { tooltip: "A chat without a workspace: omp runs in its own folder, not in this project" },
+			dataset: { tooltip: "A chat without a workspace: MarIA Code runs in its own folder, not in this project" },
 		},
 		icon("globe"),
 		"No workspace",
@@ -49,7 +49,7 @@ export class Header {
 		hidden: true,
 		role: "status",
 		ariaLabel: "Reviewing skills",
-		dataset: { tooltip: "omp is reviewing the skills this task relied on" },
+		dataset: { tooltip: "MarIA Code is reviewing the skills this task relied on" },
 	});
 	#curationCount = h("span", { className: "curation-count" });
 	#curationDone = h(
@@ -109,7 +109,7 @@ export class Header {
 		this.element = h(
 			"header",
 			{ className: "header" },
-			h("span", { className: "brand", ariaHidden: "true" }, "π"),
+			h("span", { className: "brand", ariaHidden: "true" }),
 			this.#title,
 			this.#input,
 			this.#curationSpinner,

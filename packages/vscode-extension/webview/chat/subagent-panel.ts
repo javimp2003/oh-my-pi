@@ -112,7 +112,7 @@ export class SubagentPanel {
 				? `${mode}. ${running > 0 ? `${running} subagent${running === 1 ? "" : "s"} running` : "Subagents finished"}: click to see them`
 				: this.#modeOn
 					? "Leave delegate mode"
-					: "Delegate mode: omp splits the task and runs it through subagents it picks per slice";
+					: "Delegate mode: MarIA Code splits the task and runs it through subagents it picks per slice";
 		setTooltip(this.#trigger, title);
 		this.#trigger.ariaLabel = title;
 	}
@@ -166,7 +166,7 @@ export class SubagentPanel {
 				? "No subagent is running."
 				: pendingWrapUp === 0
 					? "Every running agent was already asked to wrap up."
-					: "Ask every running agent to wrap up: finish the step in progress, skip optional work, and report what is done. omp integrates instead of starting new work.",
+					: "Ask every running agent to wrap up: finish the step in progress, skip optional work, and report what is done. MarIA Code integrates instead of starting new work.",
 		);
 		hurry.addEventListener("click", () => {
 			hurry.disabled = true;

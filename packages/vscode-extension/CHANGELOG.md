@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.20.0]
+
+### Changed
+
+- Rebranded the extension as MarIA Code for Unicaja: new name, MarIA Code logo in the activity bar, chat header, empty chat, editor tabs and terminal, and "MarIA Code" in titles, commands, notifications and settings. The engine (`omp`), the `ompCustom.*` settings and command IDs are unchanged; the extension ID is now `maria-code` and the package `maria-code.vsix`, so uninstall "omp (custom)" before installing it
+
 ## [0.19.0]
 
 ### Added

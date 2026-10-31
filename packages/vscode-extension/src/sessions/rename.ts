@@ -8,7 +8,7 @@ import { OmpProcess } from "../rpc/omp-process";
  */
 export async function renameStoredSession(sessionFile: string, name: string, log: vscode.OutputChannel): Promise<void> {
 	await vscode.window.withProgress(
-		{ location: vscode.ProgressLocation.Notification, title: "omp: renaming session…" },
+		{ location: vscode.ProgressLocation.Notification, title: "MarIA Code: renaming session…" },
 		async () => {
 			const process = new OmpProcess(await ompCommand(workspaceCwd()));
 			process.on("stderr", text => log.append(text));

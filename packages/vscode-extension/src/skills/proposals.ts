@@ -79,7 +79,7 @@ export class SkillProposalStore implements vscode.Disposable {
 	async reject(id: string): Promise<boolean> {
 		const reason = await vscode.window.showInputBox({
 			title: "Reject skill proposal",
-			prompt: "Why? (optional — omp will not propose it again without new evidence)",
+			prompt: "Why? (optional — MarIA Code will not propose it again without new evidence)",
 			ignoreFocusOut: true,
 		});
 		if (reason === undefined) return false;

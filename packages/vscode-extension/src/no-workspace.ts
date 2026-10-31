@@ -27,7 +27,7 @@ export function bindNoWorkspaceState(state: vscode.Memento): void {
 
 const AGENTS_MD = `# Chats without a workspace
 
-This folder is the working directory of omp chats opened without a workspace
+This folder is the working directory of MarIA Code chats opened without a workspace
 (the globe "+" in the VS Code chat). It is not a code project.
 
 - Expect platform and operations work as much as general tasks: checking and
@@ -37,7 +37,7 @@ This folder is the working directory of omp chats opened without a workspace
   Do not look for or assume a codebase here.
 - Save files the user asks for in this folder unless they give another path.
 
-(Written by the omp VS Code extension. Edit it to change how these chats behave;
+(Written by the MarIA Code VS Code extension. Edit it to change how these chats behave;
 the extension never overwrites it.)
 `;
 

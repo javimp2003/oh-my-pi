@@ -122,14 +122,14 @@ export class OmpProcess extends EventEmitter<OmpProcessEvents> {
 			const code = (error as NodeJS.ErrnoException).code;
 			this.#finish(
 				code === "ENOENT"
-					? `Could not find "${executable}". Install omp or set "ompCustom.executable" to its path.`
+					? `Could not find "${executable}". Install the MarIA Code engine (omp) or set "ompCustom.executable" to its path.`
 					: `Could not start "${executable}": ${error.message}`,
 			);
 		});
 		child.on("exit", (code, signal) => {
 			const tail = this.#stderrTail.trim().split("\n").slice(-6).join("\n");
 			const how = signal ? `was killed (${signal})` : `exited with code ${code}`;
-			this.#finish(tail ? `omp ${how}:\n${tail}` : `omp ${how}.`);
+			this.#finish(tail ? `MarIA Code ${how}:\n${tail}` : `MarIA Code ${how}.`);
 		});
 		await this.#ready.promise;
 	}
@@ -140,7 +140,7 @@ export class OmpProcess extends EventEmitter<OmpProcessEvents> {
 
 	/** Send a command and resolve with its `data`; rejects with {@link OmpCommandError} on failure. */
 	request<K extends OmpCommandName>(type: K, ...[params, timeoutMs]: RequestArgs<K>): Promise<OmpResult<K>> {
-		if (!this.running) return Promise.reject(new Error("omp is not running"));
+		if (!this.running) return Promise.reject(new Error("MarIA Code is not running"));
 		const id = `vsc_${this.#nextId++}`;
 		const limit = timeoutMs ?? (UNBOUNDED_COMMANDS[type] ? undefined : DEFAULT_TIMEOUT_MS);
 		const { promise, resolve, reject } = Promise.withResolvers<OmpResult<K>>();
@@ -149,7 +149,7 @@ export class OmpProcess extends EventEmitter<OmpProcessEvents> {
 				? undefined
 				: setTimeout(() => {
 						this.#pending.delete(id);
-						reject(new Error(`omp did not answer "${type}" within ${limit / 1000}s`));
+						reject(new Error(`MarIA Code did not answer "${type}" within ${limit / 1000}s`));
 					}, limit);
 		this.#pending.set(id, { resolve: data => resolve(data as OmpResult<K>), reject, timer });
 		this.#write({ ...params, id, type });
@@ -207,7 +207,7 @@ export class OmpProcess extends EventEmitter<OmpProcessEvents> {
 
 	#onChunk(chunk: ChunkFrame): { type?: unknown } | undefined {
 		if (chunk.index === 0) {
-			if (chunk.byteLength > MAX_REASSEMBLED_BYTES) throw new Error("omp frame exceeds the reassembly limit");
+			if (chunk.byteLength > MAX_REASSEMBLED_BYTES) throw new Error("MarIA Code frame exceeds the reassembly limit");
 			this.#chunks = { id: chunk.chunkId, count: chunk.count, byteLength: chunk.byteLength, parts: [], size: 0 };
 		}
 		const pending = this.#chunks;
@@ -260,7 +260,7 @@ export class OmpProcess extends EventEmitter<OmpProcessEvents> {
 	#onResponse(response: RpcResponse): void {
 		const pending = response.id === undefined ? undefined : this.#pending.get(response.id);
 		if (!pending) {
-			if (!response.success) this.emit("stderr", `omp ${response.command} failed: ${response.error}\n`);
+			if (!response.success) this.emit("stderr", `MarIA Code ${response.command} failed: ${response.error}\n`);
 			return;
 		}
 		this.#pending.delete(response.id!);

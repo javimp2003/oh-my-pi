@@ -28,7 +28,7 @@ export class SessionItem extends vscode.TreeItem {
 			[
 				`**${escapeMarkdown(sessionLabel(session))}**`,
 				...promptLines(session).map(escapeMarkdown),
-				activity === "running" ? "omp is working on this session." : undefined,
+				activity === "running" ? "MarIA Code is working on this session." : undefined,
 				activity === "done" ? "Finished while you were in another session." : undefined,
 				`${count} · ${session.modified.toLocaleString()}`,
 				`\`${session.id}\``,
@@ -126,7 +126,7 @@ export async function pickSession(
 		session,
 	}));
 	const picked = await vscode.window.showQuickPick(items, {
-		title: "omp: Switch Session",
+		title: "MarIA Code: Switch Session",
 		placeHolder: sessions.length ? "Search sessions" : "No sessions in this workspace yet",
 		matchOnDescription: true,
 		matchOnDetail: true,

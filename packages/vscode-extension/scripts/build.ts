@@ -35,5 +35,8 @@ for (const view of ["chat", "settings"]) {
 	if (!result.success) throw new AggregateError(result.logs, `${view} webview build failed`);
 	await fs.copyFile(path.join(root, `webview/${view}/${view}.css`), path.join(dist, "webview", `${view}.css`));
 }
+for (const asset of ["maria-mark.png", "maria-logo.png"]) {
+	await fs.copyFile(path.join(root, "media", asset), path.join(dist, "webview", asset));
+}
 
 console.log(`built ${path.relative(process.cwd(), dist)}`);

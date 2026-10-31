@@ -467,7 +467,7 @@ export class AgentHost implements vscode.Disposable {
 	async compact(): Promise<void> {
 		const process = this.#requireProcess();
 		await vscode.window.withProgress(
-			{ location: vscode.ProgressLocation.Notification, title: "omp: compacting context…" },
+			{ location: vscode.ProgressLocation.Notification, title: "MarIA Code: compacting context…" },
 			() => process.request("compact", {}),
 		);
 		await this.#sendSnapshot(process, this.#views);
@@ -600,7 +600,7 @@ export class AgentHost implements vscode.Disposable {
 
 	#requireProcess(): OmpProcess {
 		const process = this.process;
-		if (!process) throw new Error('omp is not running. Use "omp: Restart Agent Process".');
+		if (!process) throw new Error('MarIA Code is not running. Use "MarIA Code: Restart Agent Process".');
 		return process;
 	}
 
@@ -795,7 +795,9 @@ export class AgentHost implements vscode.Disposable {
 			} catch (error) {
 				if (!(error instanceof OmpCommandError)) throw error;
 				if (error.message.startsWith("Unknown command")) {
-					throw new Error("Editing messages needs a newer omp (one with the `navigate_tree` RPC command).");
+					throw new Error(
+						"Editing messages needs a newer MarIA Code engine (omp with the `navigate_tree` RPC command).",
+					);
 				}
 				if (error.code !== "session_busy" || attempt >= NAVIGATE_BUSY_RETRIES) throw error;
 				await sleep(NAVIGATE_BUSY_DELAY_MS);

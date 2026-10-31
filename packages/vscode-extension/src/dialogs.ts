@@ -64,7 +64,7 @@ export class DialogBridge {
 						: request.notifyType === "warning"
 							? vscode.window.showWarningMessage
 							: vscode.window.showInformationMessage;
-				void show(`omp: ${request.message}`);
+				void show(`MarIA Code: ${request.message}`);
 				return;
 			}
 			case "setStatus":
@@ -182,7 +182,7 @@ export class DialogBridge {
 		const opened = await vscode.env.openExternal(vscode.Uri.parse(target, true));
 		const message = instructions ?? "Finish signing in in your browser.";
 		const action = await vscode.window.showInformationMessage(
-			`omp: ${message}`,
+			`MarIA Code: ${message}`,
 			opened ? "Copy Link" : "Open Link",
 			...(opened ? [] : ["Copy Link"]),
 		);
@@ -204,7 +204,7 @@ async function askQuestion(
 		picked: question.multi ? index === question.recommended : undefined,
 	}));
 	items.push({ label: CUSTOM_ANSWER, alwaysShow: true });
-	const title = question.header ? `${question.header} (${step})` : `omp asks (${step})`;
+	const title = question.header ? `${question.header} (${step})` : `MarIA Code asks (${step})`;
 	const picked = question.multi
 		? await vscode.window.showQuickPick(
 				items,

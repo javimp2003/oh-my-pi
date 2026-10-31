@@ -407,8 +407,8 @@ export class Transcript {
 		this.#empty = h(
 			"div",
 			{ className: "empty" },
-			h("div", { className: "empty-brand", ariaHidden: "true" }, "π"),
-			h("div", { className: "empty-title" }, "What should omp build?"),
+			h("div", { className: "empty-brand", role: "img", ariaLabel: "MarIA Code · Unicaja" }),
+			h("div", { className: "empty-title" }, "What should MarIA Code build?"),
 			h("div", { className: "empty-hint" }, "Type / for commands and skills · Shift+Enter for a new line"),
 			h("div", { className: "examples" }, ...chips),
 		);

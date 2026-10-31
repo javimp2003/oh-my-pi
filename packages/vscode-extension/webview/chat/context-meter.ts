@@ -47,7 +47,7 @@ const CONTEXT_ACTIONS = [
 		label: "Clean up",
 		icon: "eraser",
 		command: "/shake",
-		help: "Clean up (/shake): drop heavy content from the context (old tool results and large blocks) without summarizing. Your messages and omp's answers stay as they are.",
+		help: "Clean up (/shake): drop heavy content from the context (old tool results and large blocks) without summarizing. Your messages and MarIA Code's answers stay as they are.",
 	},
 	{
 		label: "Handoff",

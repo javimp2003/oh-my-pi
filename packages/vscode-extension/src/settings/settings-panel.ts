@@ -58,12 +58,17 @@ export class SettingsPanel implements vscode.Disposable {
 	readonly #disposables: vscode.Disposable[] = [];
 
 	private constructor(extensionUri: vscode.Uri) {
-		this.#panel = vscode.window.createWebviewPanel("ompCustom.settings", "omp Settings", vscode.ViewColumn.Active, {
-			enableScripts: true,
-			retainContextWhenHidden: true,
-			localResourceRoots: [vscode.Uri.joinPath(extensionUri, "dist", "webview")],
-		});
-		this.#panel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "icon.png");
+		this.#panel = vscode.window.createWebviewPanel(
+			"ompCustom.settings",
+			"MarIA Code Settings",
+			vscode.ViewColumn.Active,
+			{
+				enableScripts: true,
+				retainContextWhenHidden: true,
+				localResourceRoots: [vscode.Uri.joinPath(extensionUri, "dist", "webview")],
+			},
+		);
+		this.#panel.iconPath = vscode.Uri.joinPath(extensionUri, "media", "maria-mark.png");
 		this.#panel.webview.html = webviewHtml(this.#panel.webview, extensionUri, "settings");
 		this.#disposables.push(
 			this.#panel.onDidDispose(() => this.dispose()),

@@ -18,7 +18,7 @@ import { initSounds } from "./sounds";
 
 export function activate(context: vscode.ExtensionContext): void {
 	initSounds(context.extensionUri);
-	const log = vscode.window.createOutputChannel("omp (custom)");
+	const log = vscode.window.createOutputChannel("MarIA Code");
 	bindNoWorkspaceState(context.globalState);
 	const checkpoints = new CheckpointStore(path.join(context.globalStorageUri.fsPath, "checkpoints"));
 	const commandOutputs = new CommandOutputStore(path.join(context.globalStorageUri.fsPath, "command-outputs"));
@@ -57,7 +57,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	/** The active chat, or an error message when none can be shown. */
 	const activeChat = async (): Promise<ChatSession | undefined> => {
 		const session = await chats.ensureActive();
-		if (!session) void vscode.window.showErrorMessage("omp: open the omp chat first.");
+		if (!session) void vscode.window.showErrorMessage("MarIA Code: open the MarIA Code chat first.");
 		return session;
 	};
 
@@ -92,18 +92,18 @@ export function activate(context: vscode.ExtensionContext): void {
 					description: provider.authenticated ? "$(check) signed in" : undefined,
 					provider,
 				})),
-			{ title: "omp: Log In", placeHolder: "Provider to sign in to" },
+			{ title: "MarIA Code: Log In", placeHolder: "Provider to sign in to" },
 		);
 		if (!picked) return;
 		await vscode.window.withProgress(
 			{
 				location: vscode.ProgressLocation.Notification,
-				title: `omp: signing in to ${picked.provider.name}…`,
+				title: `MarIA Code: signing in to ${picked.provider.name}…`,
 				cancellable: false,
 			},
 			() => process.request("login", { providerId: picked.provider.id }),
 		);
-		void vscode.window.showInformationMessage(`omp: signed in to ${picked.provider.name}.`);
+		void vscode.window.showInformationMessage(`MarIA Code: signed in to ${picked.provider.name}.`);
 		await chat.restart();
 	};
 
@@ -114,7 +114,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		const { providers } = await process.request("get_login_providers");
 		const provider = await vscode.window.showQuickPick(
 			providers.filter(entry => entry.authenticated).map(entry => ({ label: entry.name, entry })),
-			{ title: "omp: Log Out", placeHolder: "Provider to sign out of" },
+			{ title: "MarIA Code: Log Out", placeHolder: "Provider to sign out of" },
 		);
 		if (!provider) return;
 		const { accounts } = await process.request("get_logout_accounts", { providerId: provider.entry.id });
@@ -128,7 +128,7 @@ export function activate(context: vscode.ExtensionContext): void {
 							detail: account.detail,
 							account,
 						})),
-						{ title: `omp: Log Out of ${provider.label}` },
+						{ title: `MarIA Code: Log Out of ${provider.label}` },
 					);
 		if (!account) return;
 		const { remainingSource } = await process.request("logout", {
@@ -137,8 +137,8 @@ export function activate(context: vscode.ExtensionContext): void {
 		});
 		void vscode.window.showInformationMessage(
 			remainingSource
-				? `omp: signed out; ${provider.label} still authenticates via ${remainingSource}.`
-				: `omp: signed out of ${provider.label}.`,
+				? `MarIA Code: signed out; ${provider.label} still authenticates via ${remainingSource}.`
+				: `MarIA Code: signed out of ${provider.label}.`,
 		);
 	};
 
@@ -149,7 +149,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		if (!target) return;
 		const current = item ? sessionLabel(item.session) : chat?.title;
 		const name = await vscode.window.showInputBox({
-			title: "omp: Rename Session",
+			title: "MarIA Code: Rename Session",
 			value: current,
 			prompt: "New name",
 		});
@@ -164,7 +164,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	/** Delete a session after a modal confirmation; every chat showing it moves to a new session first. */
 	const deleteSession = async (sessionFile: string, label: string): Promise<void> => {
 		const choice = await vscode.window.showWarningMessage(
-			`Delete the omp session "${label}"?`,
+			`Delete the MarIA Code session "${label}"?`,
 			{ modal: true, detail: "The session file and its artifacts move to the trash." },
 			"Delete",
 		);
@@ -189,7 +189,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		const chat = await activeChat();
 		if (!chat?.process) return;
 		const models = await vscode.window.withProgress(
-			{ location: vscode.ProgressLocation.Window, title: "omp: loading models" },
+			{ location: vscode.ProgressLocation.Window, title: "MarIA Code: loading models" },
 			() => chat.availableModels(),
 		);
 		const current = chat.state?.model;
@@ -200,7 +200,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				detail: model.contextWindow ? `${Math.round(model.contextWindow / 1000)}K context` : undefined,
 				model,
 			})),
-			{ title: "omp: Select Model", matchOnDescription: true },
+			{ title: "MarIA Code: Select Model", matchOnDescription: true },
 		);
 		if (picked) await chat.setModel(picked.model.provider, picked.model.id);
 	};
@@ -211,12 +211,12 @@ export function activate(context: vscode.ExtensionContext): void {
 		if (!chat || !process) return;
 		const { levels } = await process.request("get_available_thinking_levels");
 		if (levels.length === 0) {
-			void vscode.window.showInformationMessage("omp: the current model has no thinking levels.");
+			void vscode.window.showInformationMessage("MarIA Code: the current model has no thinking levels.");
 			return;
 		}
 		const level = await vscode.window.showQuickPick(
 			levels.map(value => ({ label: `${value === chat.state?.thinkingLevel ? "$(check) " : ""}${value}`, value })),
-			{ title: "omp: Thinking Level" },
+			{ title: "MarIA Code: Thinking Level" },
 		);
 		if (level) await chat.setThinkingLevel(level.value);
 	};
@@ -254,7 +254,7 @@ export function activate(context: vscode.ExtensionContext): void {
 				await action(...args);
 			} catch (error) {
 				log.appendLine(`[error] ${errorMessage(error)}`);
-				void vscode.window.showErrorMessage(`omp: ${errorMessage(error)}`);
+				void vscode.window.showErrorMessage(`MarIA Code: ${errorMessage(error)}`);
 			}
 		};
 
@@ -349,12 +349,12 @@ export function activate(context: vscode.ExtensionContext): void {
 			run(() => {
 				const { executable, args, env } = readConfig();
 				const terminal = vscode.window.createTerminal({
-					name: "omp",
+					name: "MarIA Code",
 					shellPath: executable,
 					shellArgs: [...args],
 					cwd: workspaceCwd(),
 					env,
-					iconPath: vscode.Uri.joinPath(context.extensionUri, "media", "icon.png"),
+					iconPath: vscode.Uri.joinPath(context.extensionUri, "media", "maria-mark.png"),
 				});
 				terminal.show();
 			}),
@@ -420,7 +420,7 @@ function renderStatusBar(item: vscode.StatusBarItem, session: ChatSession | unde
 	const status = session.status;
 	const icon =
 		status.phase === "stopped" ? "$(error)" : busy || status.phase === "starting" ? "$(loading~spin)" : "$(sparkle)";
-	item.text = `${icon} omp${state?.model ? ` · ${state.model.id}` : ""}`;
+	item.text = `${icon} MarIA Code${state?.model ? ` · ${state.model.id}` : ""}`;
 	const lines = [
 		session.title ? `**${session.title}**` : "New session",
 		state?.contextUsage ? `Context: ${Math.round(state.contextUsage.percent)}%` : undefined,

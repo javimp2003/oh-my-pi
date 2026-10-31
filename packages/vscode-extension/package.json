@@ -1,8 +1,8 @@
 {
-	"name": "omp-custom-vscode",
-	"displayName": "omp (custom)",
-	"description": "Chat, sessions, models and settings for the omp coding agent inside VS Code",
-	"version": "0.19.0",
+	"name": "maria-code",
+	"displayName": "MarIA Code",
+	"description": "MarIA Code, the coding agent for Unicaja developers: chat, sessions, models and settings inside VS Code",
+	"version": "0.20.0",
 	"private": true,
 	"publisher": "javimp2003",
 	"license": "MIT",
@@ -21,8 +21,8 @@
 		"Programming Languages"
 	],
 	"keywords": [
-		"omp",
-		"oh-my-pi",
+		"maria-code",
+		"unicaja",
 		"agent",
 		"ai",
 		"chat"
@@ -31,7 +31,7 @@
 	"capabilities": {
 		"untrustedWorkspaces": {
 			"supported": false,
-			"description": "omp runs the agent program and tools configured for this workspace."
+			"description": "MarIA Code runs the agent program and tools configured for this workspace."
 		}
 	},
 	"activationEvents": [
@@ -42,15 +42,15 @@
 			"activitybar": [
 				{
 					"id": "ompCustom",
-					"title": "omp",
-					"icon": "media/activity.svg"
+					"title": "MarIA Code",
+					"icon": "media/activity.png"
 				}
 			],
 			"secondarySidebar": [
 				{
 					"id": "ompCustomChat",
-					"title": "omp",
-					"icon": "media/activity.svg"
+					"title": "MarIA Code",
+					"icon": "media/activity.png"
 				}
 			]
 		},
@@ -59,20 +59,20 @@
 				{
 					"type": "webview",
 					"id": "ompCustom.chat",
-					"name": "omp",
-					"icon": "media/activity.svg"
+					"name": "MarIA Code",
+					"icon": "media/activity.png"
 				}
 			],
 			"ompCustom": [
 				{
 					"id": "ompCustom.sessions",
 					"name": "Sessions",
-					"icon": "media/activity.svg"
+					"icon": "media/activity.png"
 				},
 				{
 					"id": "ompCustom.skills",
 					"name": "Skills",
-					"icon": "media/activity.svg"
+					"icon": "media/activity.png"
 				}
 			]
 		},
@@ -80,165 +80,165 @@
 			{
 				"command": "ompCustom.focusChat",
 				"title": "Open Chat",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(comment-discussion)"
 			},
 			{
 				"command": "ompCustom.openChatInEditor",
 				"title": "Open Chat in Editor",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(link-external)"
 			},
 			{
 				"command": "ompCustom.newSession",
 				"title": "New Session",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(add)"
 			},
 			{
 				"command": "ompCustom.showSessions",
 				"title": "Switch Session…",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(history)"
 			},
 			{
 				"command": "ompCustom.refreshSessions",
 				"title": "Refresh Sessions",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(refresh)"
 			},
 			{
 				"command": "ompCustom.openSession",
 				"title": "Open Session",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.renameSession",
 				"title": "Rename Session",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(edit)"
 			},
 			{
 				"command": "ompCustom.deleteSession",
 				"title": "Delete Session",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(trash)"
 			},
 			{
 				"command": "ompCustom.revealSessionFile",
 				"title": "Reveal Session File",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.refreshSkills",
 				"title": "Refresh Skills",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(refresh)"
 			},
 			{
 				"command": "ompCustom.showSkillChange",
 				"title": "Show Skill Change",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.revertSkillChange",
 				"title": "Revert Skill Change",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(discard)"
 			},
 			{
 				"command": "ompCustom.approveSkillProposal",
 				"title": "Approve Skill Proposal",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(check)"
 			},
 			{
 				"command": "ompCustom.rejectSkillProposal",
 				"title": "Reject Skill Proposal",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(close)"
 			},
 			{
 				"command": "ompCustom.showSkillProposal",
 				"title": "Show Skill Proposal",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.selectModel",
 				"title": "Select Model…",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.selectThinkingLevel",
 				"title": "Select Thinking Level…",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.addSelectionToChat",
 				"title": "Add Selection to Chat",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.addFileToChat",
 				"title": "Add File to Chat",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.toggleVoiceInput",
 				"title": "Toggle Voice Input",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.findInChat",
 				"title": "Find in Chat",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.openSettings",
 				"title": "Settings",
-				"category": "omp",
+				"category": "MarIA Code",
 				"icon": "$(gear)"
 			},
 			{
 				"command": "ompCustom.openConfigFile",
 				"title": "Open config.yml",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.login",
 				"title": "Log In to a Provider…",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.logout",
 				"title": "Log Out of a Provider…",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.compact",
 				"title": "Compact Context",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.abort",
 				"title": "Stop Response",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.restartAgent",
 				"title": "Restart Agent Process",
-				"category": "omp"
+				"category": "MarIA Code"
 			},
 			{
 				"command": "ompCustom.openInTerminal",
-				"title": "Open omp in Terminal",
-				"category": "omp",
+				"title": "Open MarIA Code in Terminal",
+				"category": "MarIA Code",
 				"icon": "$(terminal)"
 			},
 			{
 				"command": "ompCustom.showLog",
 				"title": "Show Log",
-				"category": "omp"
+				"category": "MarIA Code"
 			}
 		],
 		"menus": {
@@ -403,12 +403,12 @@
 			}
 		],
 		"configuration": {
-			"title": "omp (custom)",
+			"title": "MarIA Code",
 			"properties": {
 				"ompCustom.executable": {
 					"type": "string",
 					"default": "omp",
-					"markdownDescription": "Program that runs omp. `omp` uses the binary on your `PATH` (`omp.exe` on Windows). To run a source checkout, set this to `bun` and put the path to `packages/coding-agent/src/cli.ts` in `#ompCustom.args#`."
+					"markdownDescription": "Program that runs the MarIA Code engine. `omp` uses the binary on your `PATH` (`omp.exe` on Windows). To run a source checkout, set this to `bun` and put the path to `packages/coding-agent/src/cli.ts` in `#ompCustom.args#`."
 				},
 				"ompCustom.args": {
 					"type": "array",
@@ -416,7 +416,7 @@
 						"type": "string"
 					},
 					"default": [],
-					"description": "Arguments placed before omp's own flags (for example the path to cli.ts when the executable is bun)."
+					"description": "Arguments placed before the engine's own flags (for example the path to cli.ts when the executable is bun)."
 				},
 				"ompCustom.extraArgs": {
 					"type": "array",
@@ -424,7 +424,7 @@
 						"type": "string"
 					},
 					"default": [],
-					"markdownDescription": "Extra omp flags for the chat agent, such as `--model` or `--profile`."
+					"markdownDescription": "Extra engine flags for the chat agent, such as `--model` or `--profile`."
 				},
 				"ompCustom.env": {
 					"type": "object",
@@ -432,7 +432,7 @@
 						"type": "string"
 					},
 					"default": {},
-					"description": "Extra environment variables for the omp process (proxy, certificates, API keys)."
+					"description": "Extra environment variables for the MarIA Code process (proxy, certificates, API keys)."
 				},
 				"ompCustom.resumeLastSession": {
 					"type": "boolean",
@@ -455,7 +455,7 @@
 				"ompCustom.fileCheckpoints": {
 					"type": "boolean",
 					"default": true,
-					"description": "Before each prompt that starts a turn, snapshot the git repositories of the workspace (without touching branches, the index or history), so editing that prompt can restore the files omp changed since. Git-ignored files and files outside git repositories are not covered. Needs git on the PATH."
+					"description": "Before each prompt that starts a turn, snapshot the git repositories of the workspace (without touching branches, the index or history), so editing that prompt can restore the files MarIA Code changed since. Git-ignored files and files outside git repositories are not covered. Needs git on the PATH."
 				},
 				"ompCustom.completionSound": {
 					"type": "string",
@@ -465,12 +465,12 @@
 						"off"
 					],
 					"enumDescriptions": [
-						"Every time omp finishes a task",
+						"Every time MarIA Code finishes a task",
 						"Only while the VS Code window does not have focus (you are in another app)",
 						"Never"
 					],
 					"default": "always",
-					"description": "Play a short system sound on the machine running omp when it finishes a task (not when you stop it or it fails)."
+					"description": "Play a short system sound on the machine running MarIA Code when it finishes a task (not when you stop it or it fails)."
 				},
 				"ompCustom.askAlertSound": {
 					"type": "string",
@@ -480,17 +480,17 @@
 						"off"
 					],
 					"enumDescriptions": [
-						"Every time omp asks you something",
+						"Every time MarIA Code asks you something",
 						"Only while the VS Code window does not have focus (you are in another app)",
 						"Never"
 					],
 					"default": "always",
-					"description": "Play a short spoken alert on the machine running omp when it asks you questions (the ask tool) or waits for a plan approval, repeated every minute until you answer."
+					"description": "Play a short spoken alert on the machine running MarIA Code when it asks you questions (the ask tool) or waits for a plan approval, repeated every minute until you answer."
 				},
 				"ompCustom.noWorkspaceFolder": {
 					"type": "string",
 					"default": "~/omp-sin-workspace",
-					"description": "Folder that chats without a workspace (the globe \"+\" in the chat header) run in, created on first use. Their sessions, memory and the files they write without a path live there, shared by every window; an AGENTS.md written there on first use tells omp these chats are for general tasks (edit it to change that). `~` is your home folder."
+					"description": "Folder that chats without a workspace (the globe \"+\" in the chat header) run in, created on first use. Their sessions, memory and the files they write without a path live there, shared by every window; an AGENTS.md written there on first use tells MarIA Code these chats are for general tasks (edit it to change that). `~` is your home folder."
 				},
 				"ompCustom.voiceLanguage": {
 					"type": "string",
@@ -502,7 +502,7 @@
 	},
 	"scripts": {
 		"build": "bun scripts/build.ts",
-		"package": "bun scripts/build.ts && bunx @vscode/vsce package --no-dependencies --allow-missing-repository --out dist/omp-custom.vsix",
+		"package": "bun scripts/build.ts && bunx @vscode/vsce package --no-dependencies --allow-missing-repository --out dist/maria-code.vsix",
 		"check": "oxlint . && oxfmt --check --no-error-on-unmatched-pattern 'src/**/*.ts' 'webview/**/*.ts' 'scripts/**/*.ts' && bun run check:types",
 		"check:types": "tsgo -p tsconfig.json --noEmit && tsgo -p webview/tsconfig.json --noEmit",
 		"test": "bun test",

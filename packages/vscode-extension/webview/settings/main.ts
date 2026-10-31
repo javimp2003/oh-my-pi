@@ -58,7 +58,7 @@ document
 			h(
 				"header",
 				{ className: "header" },
-				h("div", { className: "title" }, h("h1", { textContent: "omp Settings" }), configPathEl),
+				h("div", { className: "title" }, h("h1", { textContent: "MarIA Code Settings" }), configPathEl),
 				h("div", { className: "actions" }, openConfigButton, refreshButton),
 			),
 			banner,

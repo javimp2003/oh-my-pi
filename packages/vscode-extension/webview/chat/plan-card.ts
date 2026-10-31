@@ -47,8 +47,8 @@ export class PlanCard {
 				setTooltip(
 					choice,
 					approve
-						? "Leave plan mode and let omp implement this plan"
-						: "Stay in plan mode: omp keeps refining the plan (send a message to say what to change)",
+						? "Leave plan mode and let MarIA Code implement this plan"
+						: "Stay in plan mode: MarIA Code keeps refining the plan (send a message to say what to change)",
 				);
 				return choice;
 			}),

@@ -267,7 +267,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 		const count = restored.files.length;
 		const kept = restored.conflicts.length;
 		if (count === 0 && kept === 0) return;
-		const parts = [`omp: restored ${count} ${count === 1 ? "file" : "files"}`];
+		const parts = [`MarIA Code: restored ${count} ${count === 1 ? "file" : "files"}`];
 		if (kept > 0) parts.push(`kept ${kept} you also changed: ${relativeList(restored.conflicts)}`);
 		const message = `${parts.join("; ")}.`;
 		if (count === 0) {
@@ -279,7 +279,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 			const skipped = await host.undoRestore(restored);
 			if (skipped.length > 0) {
 				void vscode.window.showWarningMessage(
-					`omp: undid the restore except for files changed since: ${relativeList(skipped)}.`,
+					`MarIA Code: undid the restore except for files changed since: ${relativeList(skipped)}.`,
 				);
 			}
 		} catch (error) {
@@ -336,7 +336,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 
 	#requireHost(): AgentHost {
 		const host = this.#host;
-		if (!host) throw new Error('omp is not running. Use "omp: Restart Agent Process".');
+		if (!host) throw new Error('MarIA Code is not running. Use "MarIA Code: Restart Agent Process".');
 		return host;
 	}
 
@@ -376,14 +376,14 @@ export class ChatSession implements vscode.Disposable, HostView {
 			this.post({ type: "dictation", state: "idle" });
 			if (!(error instanceof OmpCommandError)) throw error;
 			if (error.message.startsWith("Unknown command")) {
-				throw new Error("Voice input needs a newer omp (one with the dictation RPC commands).");
+				throw new Error("Voice input needs a newer MarIA Code engine (omp with the dictation RPC commands).");
 			}
 			if (error.code !== "no_dictation_model") throw error;
 			if (!(await confirmGroqSetup())) return;
 			const process = host.process;
 			if (!process) return;
 			await vscode.window.withProgress(
-				{ location: vscode.ProgressLocation.Notification, title: "omp: signing in to Groq…" },
+				{ location: vscode.ProgressLocation.Notification, title: "MarIA Code: signing in to Groq…" },
 				() => process.request("login", { providerId: "groq" }),
 			);
 			await this.#startDictation(host);
@@ -584,7 +584,7 @@ async function openMentionedFile(
 	const uri = await resolveMentionedFile(file, chat);
 	if (!uri) {
 		const where = chat.noWorkspace ? noWorkspaceFolder() : "this workspace";
-		void vscode.window.showWarningMessage(`omp: "${file}" was not found in ${where}.`);
+		void vscode.window.showWarningMessage(`MarIA Code: "${file}" was not found in ${where}.`);
 		return;
 	}
 	const document = await vscode.workspace.openTextDocument(uri);
@@ -634,7 +634,7 @@ async function resolveMentionedFile(
 		.map(uri => ({ label: vscode.workspace.asRelativePath(uri, true), uri }))
 		.sort((a, b) => a.label.length - b.label.length || a.label.localeCompare(b.label));
 	const picked = await vscode.window.showQuickPick(items, {
-		title: `omp: open ${relative}`,
+		title: `MarIA Code: open ${relative}`,
 		placeHolder: `${matches.length} files match "${relative}"`,
 	});
 	return picked?.uri;
@@ -666,12 +666,12 @@ async function confirmEdit(
 	if (fromEnd > 0) {
 		const later = fromEnd === 1 ? "the message after it" : `the ${fromEnd} messages after it`;
 		detail.push(
-			`omp continues the session from the edited message: ${later} and every answer to them are removed from the conversation.`,
+			`MarIA Code continues the session from the edited message: ${later} and every answer to them are removed from the conversation.`,
 		);
 	}
 	if (changed > 0) {
 		detail.push(
-			`Since this message omp changed ${changed} ${changed === 1 ? "file" : "files"}: ${relativeList([...plan.files, ...plan.conflicts])}. Restoring reverts only omp's changes; changes made by you or other sessions are kept.`,
+			`Since this message MarIA Code changed ${changed} ${changed === 1 ? "file" : "files"}: ${relativeList([...plan.files, ...plan.conflicts])}. Restoring reverts only MarIA Code's changes; changes made by you or other sessions are kept.`,
 		);
 		if (plan.conflicts.length > 0) {
 			detail.push(
@@ -684,7 +684,9 @@ async function confirmEdit(
 	}
 	const buttons = changed > 0 ? [RESTORE, KEEP] : [RESEND];
 	const choice = await vscode.window.showWarningMessage(
-		fromEnd > 0 ? "Edit this message and continue from it?" : "Restore the files omp changed since this message?",
+		fromEnd > 0
+			? "Edit this message and continue from it?"
+			: "Restore the files MarIA Code changed since this message?",
 		{ modal: true, detail: detail.join("\n\n") },
 		...buttons,
 	);
@@ -695,7 +697,7 @@ async function confirmEdit(
 		plan.conflicts.map(file => ({ label: vscode.workspace.asRelativePath(file), file })),
 		{
 			canPickMany: true,
-			title: "omp: files changed by omp and by someone else",
+			title: "MarIA Code: files changed by MarIA Code and by someone else",
 			placeHolder: "Pick the files to put back as they were before the message (other changes in them are lost)",
 		},
 	);
@@ -710,7 +712,7 @@ async function confirmEdit(
  */
 function explainError(message: string): string {
 	if (!/certificate/i.test(message)) return message;
-	return `${message}. Your network re-signs HTTPS with a certificate omp did not find: set NODE_EXTRA_CA_CERTS in the ompCustom.env setting to that certificate's .pem file (ask IT for it), or as a last resort set NODE_TLS_REJECT_UNAUTHORIZED to "0" there to stop checking certificates; then restart the chat.`;
+	return `${message}. Your network re-signs HTTPS with a certificate MarIA Code did not find: set NODE_EXTRA_CA_CERTS in the ompCustom.env setting to that certificate's .pem file (ask IT for it), or as a last resort set NODE_TLS_REJECT_UNAUTHORIZED to "0" there to stop checking certificates; then restart the chat.`;
 }
 
 /** Up to six workspace-relative paths, then "and N more". */
@@ -730,7 +732,7 @@ async function confirmGroqSetup(): Promise<boolean> {
 		{
 			modal: true,
 			detail:
-				"omp records your microphone and Groq turns speech into text with Whisper, in about a second; its free tier covers hours of audio a day. Sign in with an API key from console.groq.com/keys.",
+				"MarIA Code records your microphone and Groq turns speech into text with Whisper, in about a second; its free tier covers hours of audio a day. Sign in with an API key from console.groq.com/keys.",
 		},
 		SIGN_IN_TO_GROQ,
 	);

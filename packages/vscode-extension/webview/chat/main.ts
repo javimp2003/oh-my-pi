@@ -115,7 +115,7 @@ function setStatus(status: AgentStatus): void {
 	statusSpinner.element.hidden = status.phase !== "starting";
 	if (status.phase === "starting") statusSpinner.start();
 	else statusSpinner.stop();
-	statusLabel.textContent = status.phase === "starting" ? "Starting omp…" : "omp is not running";
+	statusLabel.textContent = status.phase === "starting" ? "Starting MarIA Code…" : "MarIA Code is not running";
 	statusMessage.textContent = status.phase === "stopped" ? status.message : "";
 	statusMessage.hidden = status.phase !== "stopped";
 	restart.hidden = status.phase !== "stopped";

@@ -88,11 +88,11 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 	openPanel(target: SessionTarget): ChatSession {
 		const panel = vscode.window.createWebviewPanel(
 			"ompCustom.chatPanel",
-			"omp",
+			"MarIA Code",
 			{ viewColumn: vscode.ViewColumn.Beside, preserveFocus: false },
 			{ enableScripts: true, retainContextWhenHidden: true },
 		);
-		panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "media", "icon.png");
+		panel.iconPath = vscode.Uri.joinPath(this.extensionUri, "media", "maria-mark.png");
 		const session = this.#createView({
 			webview: panel.webview,
 			get visible() {
@@ -102,7 +102,7 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 		});
 		this.#panels.add(session);
 		session.onDidChange(() => {
-			panel.title = session.title ? `omp: ${session.title}` : "omp";
+			panel.title = session.title ? `MarIA Code: ${session.title}` : "MarIA Code";
 		});
 		panel.onDidChangeViewState(() => {
 			if (panel.active) this.#setActive(session);
@@ -151,7 +151,7 @@ export class ChatRegistry implements vscode.WebviewViewProvider, vscode.Disposab
 	async #offerHost(host: AgentHost): Promise<void> {
 		const name = host.title ?? "A background session";
 		const choice = await vscode.window.showInformationMessage(
-			`omp: ${name} is waiting for you to review its plan.`,
+			`MarIA Code: ${name} is waiting for you to review its plan.`,
 			"Show",
 		);
 		if (choice !== "Show" || !host.process) return;
