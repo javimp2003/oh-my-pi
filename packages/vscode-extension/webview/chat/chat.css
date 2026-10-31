@@ -18,9 +18,10 @@ body {
 	--c-surface: color-mix(in srgb, var(--c-bg) 94%, var(--vscode-foreground));
 	--c-user: color-mix(in oklab, var(--vscode-foreground) 5%, transparent);
 	--c-hover: var(--vscode-list-hoverBackground);
-	--c-add: var(--vscode-gitDecoration-addedResourceForeground, #57ab5a);
-	--c-del: var(--vscode-gitDecoration-deletedResourceForeground, #e5534b);
-	--c-error: var(--vscode-errorForeground);
+	/* Fixed success/failure colours: theme variables (gitDecoration, errorForeground) recolour them per theme. */
+	--c-add: #57ab5a;
+	--c-del: #e5534b;
+	--c-error: #e5534b;
 	--fs: var(--vscode-font-size, 13px);
 	--fs-sm: calc(var(--fs) - 1px);
 	--fs-code: var(--vscode-editor-font-size, 12px);
@@ -54,6 +55,9 @@ body.vscode-light,
 body.vscode-high-contrast-light {
 	--omp-accent: #5a8080;
 	--omp-accent-fg: #ffffff;
+	--c-add: #1a7f37;
+	--c-del: #cf222e;
+	--c-error: #cf222e;
 	/* Syntax palette (VS Code Light Modern). */
 	--syn-keyword: #0000ff;
 	--syn-type: #267f99;
@@ -176,7 +180,7 @@ code {
 	height: 14px;
 	padding: 0 3px;
 	border-radius: 9999px;
-	background: var(--vscode-testing-iconPassed, #3fb950);
+	background: var(--c-add);
 	box-shadow: 0 0 0 1.5px var(--vscode-sideBar-background, var(--c-bg));
 	color: #fff;
 	font-size: 9px;
@@ -1801,7 +1805,7 @@ code {
 	width: 8px;
 	height: 8px;
 	margin: 0 1px;
-	background: var(--vscode-testing-iconPassed, #3fb950);
+	background: var(--c-add);
 }
 
 @keyframes history-spin {
@@ -2097,6 +2101,121 @@ code {
 .chip-remove:hover {
 	color: var(--c-fg);
 	background: var(--c-hover);
+}
+
+/* Clean up offer: card above the composer once the context passes 30% of the window */
+
+.cleanup-offer {
+	border: 1px solid var(--c-border-heavy);
+	border-radius: var(--r-xl);
+	background: var(--c-surface);
+	font-size: var(--fs-sm);
+	overflow: hidden;
+	animation: cleanup-offer-in 160ms ease-out;
+}
+
+.cleanup-offer[hidden] {
+	display: none;
+}
+
+@keyframes cleanup-offer-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.cleanup-offer {
+		animation: none;
+	}
+}
+
+.cleanup-offer-header {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 32px;
+	padding: 4px 6px 4px 12px;
+	border-bottom: 1px solid var(--c-border);
+}
+
+.cleanup-offer-icon {
+	flex: none;
+	display: inline-flex;
+	color: var(--omp-accent);
+}
+
+.cleanup-offer-icon .icon {
+	width: 14px;
+	height: 14px;
+}
+
+.cleanup-offer-label {
+	flex: none;
+	font-size: var(--fs);
+	font-weight: 500;
+}
+
+.cleanup-offer-usage {
+	flex: 1;
+	min-width: 0;
+	color: var(--c-fg-3);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.cleanup-offer-body {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 10px 12px;
+	color: var(--c-fg-2);
+	line-height: 1.45;
+}
+
+.cleanup-offer-body p {
+	margin: 0;
+}
+
+.cleanup-offer-body strong {
+	color: var(--c-fg);
+	font-weight: 500;
+}
+
+.cleanup-offer-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	padding: 8px 12px;
+	border-top: 1px solid var(--c-border);
+}
+
+.cleanup-offer-dismiss {
+	height: 26px;
+	padding: 0 12px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: 9999px;
+	background: transparent;
+	color: var(--c-fg);
+	font-size: var(--fs-sm);
+}
+
+.cleanup-offer-dismiss:hover {
+	background: var(--c-hover);
+}
+
+.cleanup-offer-run {
+	height: 26px;
+	padding: 0 14px;
+	border: none;
+	border-radius: 9999px;
+	background: var(--omp-accent);
+	color: var(--omp-accent-fg);
+	font-size: var(--fs-sm);
+	font-weight: 500;
 }
 
 .queue {

@@ -32,9 +32,9 @@ type LiveEvent = RpcAgentEvent & { messageId?: string };
 type Post = (request: ChatRequest) => void;
 
 const EXAMPLE_PROMPTS = [
-	"Give me an overview of this codebase",
-	"Find likely bugs in my recent changes",
-	"Write tests for the file I have open",
+	"Dame una visión general de este código",
+	"Busca posibles bugs en mis cambios recientes",
+	"Escribe tests para el archivo que tengo abierto",
 ];
 const PIN_THRESHOLD_PX = 32;
 /** Blocks of an assistant message that are steps of the turn's timeline (a dot on its rail). */
@@ -408,8 +408,8 @@ export class Transcript {
 			"div",
 			{ className: "empty" },
 			h("div", { className: "empty-brand", role: "img", ariaLabel: "MarIA Code · Unicaja" }),
-			h("div", { className: "empty-title" }, "What should MarIA Code build?"),
-			h("div", { className: "empty-hint" }, "Type / for commands and skills · Shift+Enter for a new line"),
+			h("div", { className: "empty-title" }, "¿Qué construimos hoy con MarIA Code?"),
+			h("div", { className: "empty-hint" }, "Escribe / para comandos y skills · Shift+Enter para nueva línea"),
 			h("div", { className: "examples" }, ...chips),
 		);
 		this.#scroller.append(this.#empty, this.#list, this.#working);

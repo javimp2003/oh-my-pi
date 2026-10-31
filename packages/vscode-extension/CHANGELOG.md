@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.0]
+
+### Added
+
+- When a chat's context passes 30% of the model's window, a card above the input offers Clean up (`/shake`), explaining what it removes, what it keeps and why it helps; it appears between turns only, and "Ahora no" silences it until the context drops below 30% and crosses it again
+
+### Changed
+
+- The empty chat (title, hint and example prompts) and the composer placeholders are now in Spanish
+- The empty chat shows the new MarIA Code logo with the centered symbol
+
+### Fixed
+
+- Tool results, diff counts, finished-session dots and errors keep green and red under every color theme instead of taking the theme's git decoration and error colors
+
 ## [0.20.0]
 
 ### Changed

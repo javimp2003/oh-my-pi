@@ -1,5 +1,5 @@
 /**
- * Bottom dock: notice banners, queued-message chips, and the composer card
+ * Bottom dock: notice banners, the Clean up offer, queued-message chips, and the composer card
  * (slash-command popup, the answer excerpt the next prompt replies to,
  * pasted-image attachments, auto-growing textarea, footer with attach, thinking
  * toggle, model picker, context meter, and Send/Stop). ↑/↓ in an empty draft
@@ -17,6 +17,7 @@ import { parseQuotedPrompt, quotedPrompt } from "../../src/quoted-prompt";
 import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
+import { CleanupOffer } from "./cleanup-offer";
 import { ContextMeter } from "./context-meter";
 import { DictationControl, type DictationState } from "./dictation";
 import { GhostText } from "./ghost-text";
@@ -54,12 +55,12 @@ export interface ComposerState {
 }
 
 const MAX_SUGGESTIONS = 50;
-const PLACEHOLDER = "Ask MarIA Code anything. / for commands and skills";
-const PLACEHOLDER_BUSY = "Ask for follow-up changes";
-const PLACEHOLDER_PLAN = "Plan mode: describe what to plan";
-const PLACEHOLDER_DELEGATE = "Delegate mode: describe the task for MarIA Code's subagents";
-const PLACEHOLDER_LISTENING = "Listening… click the microphone to finish, Esc to cancel";
-const PLACEHOLDER_TRANSCRIBING = "Transcribing…";
+const PLACEHOLDER = "Pregunta lo que quieras a MarIA Code. / para comandos y skills";
+const PLACEHOLDER_BUSY = "Pide cambios adicionales";
+const PLACEHOLDER_PLAN = "Modo plan: describe qué quieres planificar";
+const PLACEHOLDER_DELEGATE = "Modo delegación: describe la tarea para los subagentes de MarIA Code";
+const PLACEHOLDER_LISTENING = "Escuchando… pulsa el micrófono para terminar, Esc para cancelar";
+const PLACEHOLDER_TRANSCRIBING = "Transcribiendo…";
 
 /** A pasted image file as an omp image block (base64 data and MIME type). */
 function readImage(file: File): Promise<ImageContent> {
@@ -90,6 +91,7 @@ export class Composer {
 	#send: HTMLButtonElement;
 	#stop: HTMLButtonElement;
 	#meter: ContextMeter;
+	#cleanupOffer: CleanupOffer;
 	#thinkingToggle: HTMLButtonElement;
 	#thinkingExpanded = false;
 	#planToggle: HTMLButtonElement;
@@ -141,6 +143,7 @@ export class Composer {
 		this.#stop.hidden = true;
 		this.picker = new ModelPicker(post);
 		this.#meter = new ContextMeter(post);
+		this.#cleanupOffer = new CleanupOffer(post);
 		this.#dictation = new DictationControl(post, state => this.#onDictationState(state));
 		this.#ghost = new GhostText(this.#input, post);
 		this.#thinkingToggle = iconButton("brain", "", () => {
@@ -178,6 +181,7 @@ export class Composer {
 			"div",
 			{ className: "dock" },
 			this.#notices,
+			this.#cleanupOffer.element,
 			this.#queue,
 			h(
 				"div",
@@ -216,17 +220,20 @@ export class Composer {
 	setBusy(busy: boolean): void {
 		this.#busy = busy;
 		this.#meter.setBusy(busy);
+		this.#cleanupOffer.setBusy(busy);
 		this.#refresh();
 	}
 
 	setEnabled(enabled: boolean): void {
 		this.#input.disabled = !enabled;
+		this.#cleanupOffer.setEnabled(enabled);
 		this.#refresh();
 	}
 
-	/** Context-window meter (usage, session tokens and cost). */
+	/** Context-window meter (usage, session tokens and cost) and the Clean up offer it drives. */
 	setUsage(state: SessionState, stats: SessionStats | undefined): void {
 		this.#meter.setUsage(state, stats);
+		this.#cleanupOffer.setUsage(state, stats);
 	}
 
 	setCommands(commands: AvailableSlashCommand[]): void {
