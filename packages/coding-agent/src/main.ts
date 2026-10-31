@@ -170,6 +170,7 @@ import {
 	cfgUpdateChannel,
 } from "./modes/settings";
 import {
+	cfgCodingGuidance,
 	cfgDefaultThinkingLevel,
 	cfgExternalThinking,
 	cfgHideThinkingBlock,
@@ -1879,6 +1880,8 @@ export async function runRootCommand(
 			// setup-time checks (e.g. #wrapToolForAcpPermission) also see the yolo intent.
 			cfgToolsApprovalMode.override(settingsInstance, "yolo");
 		}
+		// Runtime override (not persisted): the general system prompt, without coding guidance.
+		if (parsedArgs.noCodingGuidance) cfgCodingGuidance.override(settingsInstance, false);
 		if (parsedArgs.mode === "rpc" || parsedArgs.mode === "rpc-ui") {
 			applyProtocolDefaults("rpc", settingsInstance);
 		} else if (parsedArgs.mode === "acp") {

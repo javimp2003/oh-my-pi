@@ -111,6 +111,13 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		result: { planMode: "PlanModeState | null" },
 	},
 	{
+		name: "set_delegate_mode",
+		doc: "Turn delegate mode on or off: while on, each prompt steers the agent to execute through `task` subagents, picking each slice's agent by its nature. Fails to enable while the `task` tool is inactive. Returns whether it is now on.",
+		params: { enabled: "boolean" },
+		result: { enabled: "boolean" },
+		unwrap: "enabled",
+	},
+	{
 		name: "set_ask_dialog",
 		doc: "Opt in to `ask` UI requests; returns the applied setting.",
 		params: { enabled: "boolean" },
@@ -189,6 +196,12 @@ export const rpcCommands: readonly RpcCommandSpec[] = [
 		name: "steer_subagent",
 		doc: "Send a message to a running subagent as its user.",
 		params: { subagentId: "string", message: "string" },
+	},
+	{
+		name: "hurry_subagents",
+		doc: "Ask every running subagent to wrap up through a hidden reminder at its next tool round; the main agent gets a lead variant when any was reached. Returns how many subagents were reached.",
+		result: { notified: "number.integer" },
+		unwrap: "notified",
 	},
 	{
 		name: "live_start",

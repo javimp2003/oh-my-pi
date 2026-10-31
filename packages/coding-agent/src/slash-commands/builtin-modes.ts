@@ -182,6 +182,21 @@ function runSlowCommand(arg: string, session: AgentSession): string | undefined 
 		: "Slow mode on: when your Claude subscription hits its session limit and Anthropic offers low priority, requests switch to it after any wrap-up allowance.";
 }
 
+const DELEGATE_USAGE = "Usage: /delegate [on|off|status]";
+
+/**
+ * `/delegate [on|off|status]`: delegate mode steers each prompt to execute
+ * through `task` subagents. Bare invocation toggles. Returns the user-facing
+ * reply, or `undefined` for an unknown argument.
+ */
+function runDelegateCommand(arg: string, session: AgentSession): string | undefined {
+	if (arg !== "" && arg !== "toggle" && arg !== "on" && arg !== "off" && arg !== "status") return undefined;
+	if (arg === "status") return `Delegate mode is ${session.isDelegateModeEnabled() ? "on" : "off"}.`;
+	const enabled = arg === "on" || (arg !== "off" && !session.isDelegateModeEnabled());
+	if (session.setDelegateMode(enabled) !== enabled) return "Delegate mode needs the task tool, which is not active.";
+	return enabled ? "Delegate mode on: the agent executes your prompts through subagents." : "Delegate mode off.";
+}
+
 /** `/extended-context status` label for the premium long-context window setting. */
 function formatExtendedContextStatus(settings: Settings): string {
 	return cfgExtendedContext.get(settings) ? "on" : "off";
@@ -370,6 +385,34 @@ export const BUILTIN_MODE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 			await runWithDetachedModeDraft(command, runtime, () =>
 				runtime.ctx.handleVibeModeCommand(command.args || undefined, runtime.input),
 			);
+		},
+	},
+	{
+		name: "delegate",
+		icon: "agents",
+		description: "Toggle delegate mode (agent executes prompts through subagents it picks per slice)",
+		acpDescription: "Toggle delegate mode",
+		acpInputHint: "[on|off|status]",
+		subcommands: [
+			{ name: "on", description: "Execute prompts through subagents" },
+			{ name: "off", description: "Delegate only by the agent's own judgment" },
+			{ name: "status", description: "Show delegate mode status" },
+		],
+		allowArgs: true,
+		getTuiAutocompleteDescription: runtime => {
+			if (!runtime.ctx.session.isDelegateModeAvailable()) return "Delegate: task tool inactive";
+			return runtime.ctx.session.isDelegateModeEnabled() ? "Delegate: on" : "Delegate: off";
+		},
+		handle: async (command, runtime) => {
+			const message = runDelegateCommand(command.args.trim().toLowerCase(), runtime.session);
+			if (message === undefined) return usage(DELEGATE_USAGE, runtime);
+			await runtime.output(message);
+			return commandConsumed();
+		},
+		handleTui: (command, runtime) => {
+			const message = runDelegateCommand(command.args.trim().toLowerCase(), runtime.ctx.session);
+			runtime.ctx.showStatus(message ?? DELEGATE_USAGE);
+			clearSubmittedText(runtime);
 		},
 	},
 	{

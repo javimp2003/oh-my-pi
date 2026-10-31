@@ -313,6 +313,8 @@ describe("RpcInputDispatcher", () => {
 						goal: null,
 						planMode: null,
 						planModeAvailable: false,
+						delegateMode: false,
+						delegateModeAvailable: false,
 					},
 				};
 			}

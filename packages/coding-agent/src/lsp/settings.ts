@@ -70,7 +70,7 @@ export const cfgLspDiagnosticsOnWrite = register({
 export const cfgLspDiagnosticsOnEdit = register({
 	id: "lsp.diagnosticsOnEdit",
 	type: "boolean",
-	default: false,
+	default: true,
 	ui: {
 		tab: "files",
 		group: "LSP",

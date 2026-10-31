@@ -115,6 +115,30 @@ export async function buildWorkspaceTree(cwd: string, options: BuildWorkspaceTre
 	}
 }
 
+/**
+ * Directory-scoped AGENTS.md index (depth 1..=4) without rendering a tree.
+ * Used when the workspace tree is disabled so `<dir-context>` still lists subdirectory rules.
+ */
+export async function collectAgentsMdIndex(
+	cwd: string,
+	options: BuildWorkspaceTreeOptions = {},
+): Promise<WorkspaceTree> {
+	const rootPath = path.resolve(cwd);
+	try {
+		const result = await listWorkspace({
+			path: rootPath,
+			maxDepth: 0,
+			hidden: false,
+			gitignore: true,
+			collectAgentsMd: true,
+			timeoutMs: options.timeoutMs,
+		});
+		return { ...emptyTree(rootPath), agentsMdFiles: result.agentsMdFiles };
+	} catch {
+		return { ...emptyTree(rootPath), agentsMdFiles: [] };
+	}
+}
+
 // ─── internals ──────────────────────────────────────────────────────────────
 
 interface Node {

@@ -16,11 +16,11 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 /** At or above this percentage the ring turns red. */
 const FULL_PERCENT = 90;
 
-function formatCost(cost: number): string {
+export function formatCost(cost: number): string {
 	return cost > 0 && cost < 0.01 ? `$${cost.toFixed(3)}` : `$${cost.toFixed(2)}`;
 }
 
-function formatTokens(tokens: number): string {
+export function formatTokens(tokens: number): string {
 	// From 999,950 the one-decimal "k" form would round up to "1000.0k".
 	if (tokens >= 999_950) return `${(tokens / 1_000_000).toFixed(1)}M`;
 	if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`;

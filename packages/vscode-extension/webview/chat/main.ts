@@ -164,7 +164,7 @@ function handle(update: ChatUpdate): void {
 			composer.picker.setCurrent(state.model);
 			if (state.thinkingLevel) composer.picker.setThinkingLevel(state.thinkingLevel);
 			composer.setUsage(state, update.stats);
-			composer.setPlanState(state);
+			composer.setModeState(state);
 			if (state.isStreaming !== undefined) setBusy(state.isStreaming, update.busySince);
 			if (state.queuedMessages) {
 				const queued = state.queuedMessages;
@@ -198,6 +198,9 @@ function handle(update: ChatUpdate): void {
 			break;
 		case "planReviewClosed":
 			transcript.closePlanReview(update.id);
+			break;
+		case "subagents":
+			composer.setSubagents(update.subagents);
 			break;
 		case "commands":
 			composer.setCommands(update.commands);

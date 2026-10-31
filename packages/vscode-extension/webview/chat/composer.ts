@@ -5,7 +5,14 @@
  * toggle, model picker, context meter, and Send/Stop). ↑/↓ in an empty draft
  * recall the prompts sent in the shown chat.
  */
-import type { AvailableSlashCommand, ChatRequest, ImageContent, SessionState, SessionStats } from "../../src/protocol";
+import type {
+	AvailableSlashCommand,
+	ChatRequest,
+	ImageContent,
+	SessionState,
+	SessionStats,
+	SubagentView,
+} from "../../src/protocol";
 import { parseQuotedPrompt, quotedPrompt } from "../../src/quoted-prompt";
 import { button, h, iconButton } from "../dom";
 import { icon } from "../icons";
@@ -16,6 +23,7 @@ import { GhostText } from "./ghost-text";
 import { openLightbox } from "./lightbox";
 import { ModelPicker } from "./model-picker";
 import type { PromptRecall } from "./transcript";
+import { SubagentPanel } from "./subagent-panel";
 
 type Post = (request: ChatRequest) => void;
 type NoticeLevel = "info" | "warning" | "error";
@@ -49,6 +57,7 @@ const MAX_SUGGESTIONS = 50;
 const PLACEHOLDER = "Ask omp anything. / for commands and skills";
 const PLACEHOLDER_BUSY = "Ask for follow-up changes";
 const PLACEHOLDER_PLAN = "Plan mode: describe what to plan";
+const PLACEHOLDER_DELEGATE = "Delegate mode: describe the task for omp's subagents";
 const PLACEHOLDER_LISTENING = "Listening… click the microphone to finish, Esc to cancel";
 const PLACEHOLDER_TRANSCRIBING = "Transcribing…";
 
@@ -87,6 +96,9 @@ export class Composer {
 	#planCommand: LocalCommand;
 	#planAvailable = false;
 	#planOn = false;
+	#subagentPanel: SubagentPanel;
+	#delegateAvailable = false;
+	#delegateOn = false;
 	readonly picker: ModelPicker;
 	/** Commands omp offers (`available_commands_update`). */
 	#offered: AvailableSlashCommand[] = [];
@@ -146,6 +158,8 @@ export class Composer {
 			run: args => this.#setPlanMode(args ? true : !this.#planOn, args || undefined),
 		};
 		this.#renderPlanToggle();
+		this.#subagentPanel = new SubagentPanel(post, () => this.#setDelegateMode(!this.#delegateOn));
+		this.#renderDelegateToggle();
 		this.setCommands([]);
 		this.#input.value = initial.draft;
 		this.#quote = initial.quote;
@@ -182,6 +196,7 @@ export class Composer {
 						iconButton("plus", "Attach files", () => this.post({ type: "attachFiles" })),
 						this.#thinkingToggle,
 						this.#planToggle,
+						this.#subagentPanel.element,
 						this.picker.element,
 					),
 					h(
@@ -219,12 +234,23 @@ export class Composer {
 		this.#mergeCommands();
 	}
 
-	/** Plan mode button: hidden when omp cannot enter plan mode (setting off, or an omp without RPC plan mode). */
-	setPlanState(state: SessionState): void {
+	/**
+	 * Plan and delegate mode buttons: each hidden when omp cannot enter its mode
+	 * (setting off or `task` inactive, or an omp without the RPC command).
+	 */
+	setModeState(state: SessionState): void {
 		this.#planAvailable = state.planModeAvailable === true;
 		this.#planOn = state.planMode?.enabled === true;
+		this.#delegateAvailable = state.delegateModeAvailable === true;
+		this.#delegateOn = state.delegateMode === true;
 		this.#renderPlanToggle();
+		this.#renderDelegateToggle();
 		this.#mergeCommands();
+	}
+
+	/** Subagents of the current task, shown by the delegate mode button's panel. */
+	setSubagents(subagents: SubagentView[]): void {
+		this.#subagentPanel.setSubagents(subagents);
 	}
 
 	/** omp's commands plus the local ones it does not offer itself. */
@@ -264,6 +290,17 @@ export class Composer {
 		this.#planToggle.ariaLabel = title;
 		this.#input.placeholder = this.#placeholder();
 		this.#planToggle.ariaPressed = String(this.#planOn);
+	}
+
+	#setDelegateMode(enabled: boolean): void {
+		this.#delegateOn = enabled;
+		this.#renderDelegateToggle();
+		this.post({ type: "setDelegateMode", enabled });
+	}
+
+	#renderDelegateToggle(): void {
+		this.#subagentPanel.setMode(this.#delegateAvailable, this.#delegateOn);
+		this.#input.placeholder = this.#placeholder();
 	}
 
 	setQueue(steering: string[], followUp: string[], liveSteered = 0): void {
@@ -403,7 +440,8 @@ export class Composer {
 		if (this.#dictation.state === "recording") return PLACEHOLDER_LISTENING;
 		if (this.#dictation.state === "transcribing") return PLACEHOLDER_TRANSCRIBING;
 		if (this.#busy) return PLACEHOLDER_BUSY;
-		return this.#planOn ? PLACEHOLDER_PLAN : PLACEHOLDER;
+		if (this.#planOn) return PLACEHOLDER_PLAN;
+		return this.#delegateOn ? PLACEHOLDER_DELEGATE : PLACEHOLDER;
 	}
 
 	#submit(): void {

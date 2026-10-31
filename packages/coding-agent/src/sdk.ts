@@ -309,7 +309,8 @@ import { buildNamedToolChoice } from "./utils/tool-choice";
 import { VibeSessionRegistry } from "./vibe/runtime";
 import { registerLocalInferenceApi } from "./tiny/local-inference-api";
 import { shutdownTinyTitleClient } from "./tiny/title-client";
-import { buildWorkspaceTree, type WorkspaceTree } from "./workspace-tree";
+import { buildWorkspaceTree, collectAgentsMdIndex, type WorkspaceTree } from "./workspace-tree";
+import { resolveWorkspaceSnapshot, type WorkspaceSnapshot } from "./utils/workspace-snapshot";
 
 import {
 	cfgArchiveEnabled,
@@ -332,6 +333,7 @@ import { cfgAutolearnEnabled } from "./autolearn/settings";
 import { cfgBrowserEnabled } from "./tools/browser/settings";
 import {
 	cfgDefaultThinkingLevel,
+	cfgCodingGuidance,
 	cfgExternalThinking,
 	cfgIncludeModelInPrompt,
 	cfgIncludeWorkspaceTree,
@@ -1836,6 +1838,11 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		: cfgIncludeWorkspaceTree.get(settings)
 			? scanWorkspaceTree()
 			: undefined;
+	// Tree disabled: still index subdirectory AGENTS.md so `<dir-context>` lists them.
+	const agentsMdIndexPromise: Promise<WorkspaceTree> | undefined = workspaceTreePromise
+		? undefined
+		: logger.time("collectAgentsMdIndex", () => collectAgentsMdIndex(cwd, { timeoutMs: STARTUP_SCAN_DEADLINE_MS }));
+	agentsMdIndexPromise?.catch(() => {});
 	// Tree from a mid-session scan; supersedes the startup value handed to subagents.
 	let lateWorkspaceTree: WorkspaceTree | undefined;
 
@@ -1856,6 +1863,17 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 	};
 	const activeRepoContextPromise = logger.time("resolveActiveRepoContext", resolveRepoContext, cwd);
 	activeRepoContextPromise.catch(() => {});
+	// Coding-prompt workspace snapshot, taken once per cwd so prompt rebuilds stay byte-stable.
+	const snapshotByCwd = new Map<string, Promise<WorkspaceSnapshot | null>>();
+	const codeSnapshotFor = (dir: string): Promise<WorkspaceSnapshot | null> => {
+		let pending = snapshotByCwd.get(dir);
+		if (!pending) {
+			pending = logger.time("resolveWorkspaceSnapshot", resolveWorkspaceSnapshot, dir);
+			snapshotByCwd.set(dir, pending);
+		}
+		return pending;
+	};
+	if (cfgCodingGuidance.get(settings)) codeSnapshotFor(cwd).catch(() => {});
 	const watchdogFilesPromise = logger.time("discoverWatchdogFiles", () => discoverWatchdogFiles(cwd, agentDir));
 	watchdogFilesPromise.catch(() => {});
 	const advisorConfigsPromise = logger.time("discoverAdvisorConfigs", () => discoverAdvisorConfigs(cwd, agentDir));
@@ -2205,7 +2223,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 	const [initialContextFiles, resolvedWorkspaceTree, watchdogFiles, initialActiveRepoContext, discoveredAdvisors] =
 		await Promise.all([
 			contextFilesPromise,
-			raceWithDeadline("buildWorkspaceTree", workspaceTreePromise ?? Promise.resolve(emptyWorkspaceTree)),
+			raceWithDeadline(
+				"buildWorkspaceTree",
+				workspaceTreePromise ?? agentsMdIndexPromise ?? Promise.resolve(emptyWorkspaceTree),
+			),
 			watchdogFilesPromise,
 			activeRepoContextPromise,
 			advisorConfigsPromise,
@@ -3787,6 +3808,8 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 			const activeRepoContext = hasSession
 				? await logger.time("resolveActiveRepoContext", resolveRepoContext, promptCwd)
 				: initialActiveRepoContext;
+			const codingGuidance = cfgCodingGuidance.get(settings);
+			const workspaceSnapshot = codingGuidance ? await codeSnapshotFor(promptCwd) : null;
 			if (hasSession && options.contextFiles === undefined) {
 				contextFiles = await logger.time("discoverContextFiles", discoverContextFiles, promptCwd, agentDir, [
 					...cfgDisabledExtensions.get(settings),
@@ -3976,8 +3999,10 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				writeTransportOnly:
 					toolSession.deviceOnlyWrite === true && toolSession.pendingFullWriteDescription !== true,
 				secretsEnabled: obfuscator?.obfuscates() === true,
-				workspaceTree: workspaceTreePromise ?? emptyWorkspaceTree,
+				workspaceTree: workspaceTreePromise ?? agentsMdIndexPromise ?? emptyWorkspaceTree,
 				includeWorkspaceTree,
+				codingGuidance,
+				workspaceSnapshot,
 				memoryBackend: memoryBackend?.id,
 				securityEnabled: cfgSecurityEnabled.get(settings),
 				settingsApproval: toolSession.settingsApproval === true,

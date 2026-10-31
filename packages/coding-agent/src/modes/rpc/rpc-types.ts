@@ -61,6 +61,8 @@ export type RpcCommand =
 			token_budget?: number;
 	  }
 	| { id?: string; type: "set_plan_mode"; enabled: boolean }
+	| { id?: string; type: "set_delegate_mode"; enabled: boolean }
+	| { id?: string; type: "hurry_subagents" }
 	| { id?: string; type: "set_ask_dialog"; enabled: boolean }
 	| { id?: string; type: "get_available_commands" }
 	| { id?: string; type: "get_entries"; since?: string }
@@ -204,6 +206,10 @@ export interface RpcSessionState {
 	planMode: RpcPlanModeState | null;
 	/** Plan mode can be entered (`plan.enabled`). */
 	planModeAvailable: boolean;
+	/** Delegate mode is on: each prompt steers the agent to execute through `task` subagents. */
+	delegateMode: boolean;
+	/** Delegate mode can be turned on (the `task` tool is active). */
+	delegateModeAvailable: boolean;
 }
 
 export interface RpcAvailableSlashCommand {
@@ -441,6 +447,8 @@ export type RpcResponse =
 			success: true;
 			data: { planMode: RpcPlanModeState | null };
 	  }
+	| { id?: string; type: "response"; command: "set_delegate_mode"; success: true; data: { enabled: boolean } }
+	| { id?: string; type: "response"; command: "hurry_subagents"; success: true; data: { notified: number } }
 	| { id?: string; type: "response"; command: "set_ask_dialog"; success: true; data: { enabled: boolean } }
 	| {
 			id?: string;

@@ -2342,6 +2342,8 @@ export interface AgentProgress {
 	toolCount: number;
 	/** Count of assistant requests (assistant message_end events) across the run. Drives the soft request budget guard. */
 	requests: number;
+	/** Soft request budget the run is held to; absent when the guard is off. */
+	requestBudget?: number;
 	/** Cumulative input + output + cacheWrite tokens across all turns. Excludes cacheRead (re-reads cached context every turn, making cumulative sum misleading). */
 	tokens: number;
 	/**

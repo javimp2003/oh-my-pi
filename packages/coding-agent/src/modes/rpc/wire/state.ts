@@ -153,6 +153,14 @@ export const stateDefs = {
 		goal: absentAs(doc("GoalModeState | null", "Current goal mode; null when the session has no goal."), null),
 		planMode: absentAs(doc("PlanModeState | null", "Current plan mode; null when plan mode is off."), null),
 		planModeAvailable: absentAs(doc("boolean", "Plan mode can be entered (`plan.enabled`)."), false),
+		delegateMode: absentAs(
+			doc("boolean", "Delegate mode is on: each prompt steers the agent to execute through `task` subagents."),
+			false,
+		),
+		delegateModeAvailable: absentAs(
+			doc("boolean", "Delegate mode can be turned on (the `task` tool is active)."),
+			false,
+		),
 	},
 
 	BashResult: {

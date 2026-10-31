@@ -354,14 +354,14 @@ export const cfgModelScopeCheckpointEnabled = register({
 		group: "Thinking",
 		label: "Scope Checkpoint",
 		description:
-			"On long main-agent runs, inject a hidden reminder to re-check scope against the request (at the threshold and at twice the threshold)",
+			"On long runs, inject a hidden reminder to re-check scope against the request (at the threshold and at twice the threshold). While the main agent delegates to subagents, each subagent gets its own timer instead",
 	},
 });
 
 export const cfgModelScopeCheckpointMinutes = register({
 	id: "model.scopeCheckpoint.minutes",
 	type: "number",
-	default: 6,
+	default: 5,
 	ui: {
 		tab: "model",
 		group: "Thinking",
@@ -373,6 +373,26 @@ export const cfgModelScopeCheckpointMinutes = register({
 			{ value: "6", label: "6 minutes" },
 			{ value: "8", label: "8 minutes" },
 			{ value: "10", label: "10 minutes" },
+		],
+	},
+});
+
+export const cfgModelScopeCheckpointSubagentMinutes = register({
+	id: "model.scopeCheckpoint.subagentMinutes",
+	type: "number",
+	default: 8,
+	ui: {
+		tab: "model",
+		group: "Thinking",
+		label: "Subagent Scope Checkpoint Minutes",
+		description:
+			"Active minutes of each subagent's own run before its first scope checkpoint; the second fires at twice this value",
+		options: [
+			{ value: "4", label: "4 minutes" },
+			{ value: "6", label: "6 minutes" },
+			{ value: "8", label: "8 minutes" },
+			{ value: "10", label: "10 minutes" },
+			{ value: "15", label: "15 minutes" },
 		],
 	},
 });
@@ -422,6 +442,19 @@ export const cfgIncludeWorkspaceTree = register({
 		label: "Include Workspace Tree",
 		description:
 			"Render the workspace directory tree in the system prompt. WARNING: This can bust prompt caching across sessions when files are modified.",
+	},
+});
+
+export const cfgCodingGuidance = register({
+	id: "codingGuidance",
+	type: "boolean",
+	default: true,
+	ui: {
+		tab: "model",
+		group: "Prompt",
+		label: "Coding Guidance",
+		description:
+			"Use the coding system prompt (coding guidance and workspace snapshot). Off: the general prompt. The VS Code extension turns it off for chats without a workspace.",
 	},
 });
 

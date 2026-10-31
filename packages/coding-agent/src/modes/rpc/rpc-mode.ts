@@ -860,6 +860,27 @@ export async function handleRpcSteerSubagent(
 	}
 }
 
+/**
+ * Handle RPC `hurry_subagents`: ask every running subagent this session lists
+ * (nested ones included) to wrap up, through the same hidden reminder channel
+ * as the scope checkpoint; it lands at each subagent's next tool-round
+ * boundary. When any subagent was reached, the main session gets the lead
+ * variant too, so it integrates instead of launching new waves. Returns how
+ * many subagents were reached.
+ */
+export function handleRpcHurrySubagents(
+	subagentRegistry: Pick<RpcSubagentRegistry, "getSubagents">,
+	mainSession: Pick<AgentSession, "requestWrapUp">,
+): number {
+	let reached = 0;
+	for (const snapshot of subagentRegistry.getSubagents()) {
+		const owned = resolveOwnedLiveSubagent(subagentRegistry, snapshot.id);
+		if (owned?.session.requestWrapUp()) reached++;
+	}
+	if (reached > 0) mainSession.requestWrapUp();
+	return reached;
+}
+
 export async function handleRpcSessionChange(
 	session: RpcSessionChangeSession,
 	command: RpcSessionChangeCommand,
@@ -2093,6 +2114,8 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 					goal: session.getGoalModeState() ?? null,
 					planMode: planController.state,
 					planModeAvailable: cfgPlanEnabled.get(session.settings),
+					delegateMode: session.isDelegateModeEnabled(),
+					delegateModeAvailable: session.isDelegateModeAvailable(),
 				};
 				return success(id, "get_state", state);
 			}
@@ -2137,6 +2160,16 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				} catch (planError) {
 					return error(id, "set_plan_mode", planError instanceof Error ? planError.message : String(planError));
 				}
+			}
+
+			case "set_delegate_mode": {
+				if (typeof command.enabled !== "boolean") {
+					return error(id, "set_delegate_mode", "set_delegate_mode requires boolean enabled");
+				}
+				if (session.setDelegateMode(command.enabled) !== command.enabled) {
+					return error(id, "set_delegate_mode", "Delegate mode needs the task tool, which is not active.");
+				}
+				return success(id, "set_delegate_mode", { enabled: session.isDelegateModeEnabled() });
 			}
 
 			case "set_ask_dialog": {
@@ -2325,6 +2358,13 @@ export async function runRpcMode(session: AgentSession, options: RpcModeOptions 
 				}
 				const failure = await handleRpcSteerSubagent(subagentRegistry, command.subagentId, command.message);
 				return failure ? error(id, "steer_subagent", failure) : success(id, "steer_subagent");
+			}
+
+			case "hurry_subagents": {
+				if (!subagentRegistry) {
+					return error(id, "hurry_subagents", "Subagent event bus is unavailable");
+				}
+				return success(id, "hurry_subagents", { notified: handleRpcHurrySubagents(subagentRegistry, session) });
 			}
 
 			// =================================================================

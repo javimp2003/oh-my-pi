@@ -3121,6 +3121,12 @@ pub struct SessionState {
 	/// Plan mode can be entered (`plan.enabled`).
 	#[serde(rename = "planModeAvailable", default = "default_session_state_plan_mode_available")]
 	pub plan_mode_available: bool,
+	/// Delegate mode is on: each prompt steers the agent to execute through `task` subagents.
+	#[serde(rename = "delegateMode", default = "default_session_state_delegate_mode")]
+	pub delegate_mode: bool,
+	/// Delegate mode can be turned on (the `task` tool is active).
+	#[serde(rename = "delegateModeAvailable", default = "default_session_state_delegate_mode_available")]
+	pub delegate_mode_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5221,6 +5227,16 @@ pub struct SetPlanModeResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetDelegateModeParams {
+	pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetDelegateModeResult {
+	pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetAskDialogParams {
 	pub enabled: bool,
 }
@@ -5330,6 +5346,11 @@ pub struct SteerSubagentParams {
 	#[serde(rename = "subagentId")]
 	pub subagent_id: String,
 	pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HurrySubagentsResult {
+	pub notified: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -6000,6 +6021,14 @@ fn default_session_state_plan_mode_available() -> bool {
 	serde_json::from_str("false").expect("valid wire default")
 }
 
+fn default_session_state_delegate_mode() -> bool {
+	serde_json::from_str("false").expect("valid wire default")
+}
+
+fn default_session_state_delegate_mode_available() -> bool {
+	serde_json::from_str("false").expect("valid wire default")
+}
+
 fn default_token_usage_reasoning() -> i64 {
 	serde_json::from_str("0").expect("valid wire default")
 }
@@ -6302,6 +6331,22 @@ impl Command for SetPlanModeCommand {
 	}
 }
 
+/// Turn delegate mode on or off: while on, each prompt steers the agent to execute through `task` subagents, picking each slice's agent by its nature. Fails to enable while the `task` tool is inactive. Returns whether it is now on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetDelegateModeCommand {
+	pub enabled: bool,
+}
+
+impl Command for SetDelegateModeCommand {
+	const NAME: &'static str = "set_delegate_mode";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = bool;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<SetDelegateModeResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.enabled)
+	}
+}
+
 /// Opt in to `ask` UI requests; returns the applied setting.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetAskDialogCommand {
@@ -6512,6 +6557,20 @@ impl Command for SteerSubagentCommand {
 	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
 		let _ = data;
 		Ok(())
+	}
+}
+
+/// Ask every running subagent to wrap up through a hidden reminder at its next tool round; the main agent gets a lead variant when any was reached. Returns how many subagents were reached.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct HurrySubagentsCommand {}
+
+impl Command for HurrySubagentsCommand {
+	const NAME: &'static str = "hurry_subagents";
+	const TIMEOUT_MS: Option<u64> = None;
+	type Output = i64;
+
+	fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+		serde_json::from_value::<HurrySubagentsResult>(data.unwrap_or_else(|| Value::Object(Map::new()))).map(|result| result.notified)
 	}
 }
 

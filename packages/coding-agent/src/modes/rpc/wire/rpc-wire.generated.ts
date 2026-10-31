@@ -529,6 +529,10 @@ export interface SessionState {
 	planMode?: PlanModeState | null;
 	/** Plan mode can be entered (`plan.enabled`). */
 	planModeAvailable?: boolean;
+	/** Delegate mode is on: each prompt steers the agent to execute through `task` subagents. */
+	delegateMode?: boolean;
+	/** Delegate mode can be turned on (the `task` tool is active). */
+	delegateModeAvailable?: boolean;
 }
 
 export interface BashResult {
@@ -1580,6 +1584,14 @@ export interface SetPlanModeResult {
 	planMode: PlanModeState | null;
 }
 
+export interface SetDelegateModeParams {
+	enabled: boolean;
+}
+
+export interface SetDelegateModeResult {
+	enabled: boolean;
+}
+
 export interface SetAskDialogParams {
 	enabled: boolean;
 }
@@ -1659,6 +1671,10 @@ export interface CancelSubagentResult {
 export interface SteerSubagentParams {
 	subagentId: string;
 	message: string;
+}
+
+export interface HurrySubagentsResult {
+	notified: number;
 }
 
 export interface LiveStartParams {
@@ -1879,6 +1895,7 @@ export interface RpcWireCommands {
 	set_slow_mode: { params: SetSlowModeParams; result: SetSlowModeResult };
 	goal: { params: GoalParams; result: GoalResult };
 	set_plan_mode: { params: SetPlanModeParams; result: SetPlanModeResult };
+	set_delegate_mode: { params: SetDelegateModeParams; result: SetDelegateModeResult };
 	set_ask_dialog: { params: SetAskDialogParams; result: SetAskDialogResult };
 	get_available_commands: { params: undefined; result: GetAvailableCommandsResult };
 	get_entries: { params: GetEntriesParams; result: SessionEntries };
@@ -1892,6 +1909,7 @@ export interface RpcWireCommands {
 	get_subagent_messages: { params: GetSubagentMessagesParams; result: SubagentMessages };
 	cancel_subagent: { params: CancelSubagentParams; result: CancelSubagentResult };
 	steer_subagent: { params: SteerSubagentParams; result: undefined };
+	hurry_subagents: { params: undefined; result: HurrySubagentsResult };
 	live_start: { params: LiveStartParams; result: LiveStartResult };
 	live_stop: { params: undefined; result: undefined };
 	live_mute: { params: LiveMuteParams; result: LiveMuteResult };

@@ -27,13 +27,16 @@ import defaultPersonality from "./prompts/system/personalities/default.md" with 
 import friendlyPersonality from "./prompts/system/personalities/friendly.md" with { type: "text" };
 import pragmaticPersonality from "./prompts/system/personalities/pragmatic.md" with { type: "text" };
 import projectPromptTemplate from "./prompts/system/project-prompt.md" with { type: "text" };
+import systemPromptGeneralTemplate from "./prompts/system/system-prompt-general.md" with { type: "text" };
 import systemPromptTemplate from "./prompts/system/system-prompt.md" with { type: "text" };
 import userAppendPromptTemplate from "./prompts/system/user-append.md" with { type: "text" };
+import workspaceSnapshotTemplate from "./prompts/system/workspace-snapshot.md" with { type: "text" };
 import { normalizeConcurrencyLimit } from "./task/parallel";
 import type { ActiveRepoContext } from "@oh-my-pi/pi-tui/status-line/host";
 import { XD_URL_PREFIX } from "@oh-my-pi/pi-tui/tools/xd-url";
 import { resolveActiveRepoContext } from "./utils/active-repo-context";
 import { normalizePromptPath } from "./utils/prompt-path";
+import { resolveWorkspaceSnapshot, type WorkspaceSnapshot } from "./utils/workspace-snapshot";
 import { AGENTS_MD_LIMIT, buildWorkspaceTree, type WorkspaceTree } from "./workspace-tree";
 import { combine } from "./config/registry";
 import { cfgBashAutoBackgroundEnabled } from "./exec/settings";
@@ -43,6 +46,7 @@ import { cfgTuiAutoGraph, cfgTuiReactions, cfgTuiRenderMermaid, cfgTuiRenderSvg 
 import { cfgSecretsEnabled } from "./secrets/settings";
 import { cfgToolsFormat } from "./session/context-settings";
 import {
+	cfgCodingGuidance,
 	cfgIncludeModelInPrompt,
 	cfgIncludeWorkspaceTree,
 	cfgInlineToolDescriptors,
@@ -67,6 +71,7 @@ export const cfgSystemPromptInputs = combine({
 	personality: cfgPersonality,
 	includeModelInPrompt: cfgIncludeModelInPrompt,
 	includeWorkspaceTree: cfgIncludeWorkspaceTree,
+	codingGuidance: cfgCodingGuidance,
 	inlineToolDescriptors: cfgInlineToolDescriptors,
 	toolsFormat: cfgToolsFormat,
 	intentTracing: cfgToolsIntentTracing,
@@ -214,6 +219,11 @@ function renderActiveRepoContextPrompt(activeRepoContext: ActiveRepoContext | nu
 			relativeRepoRoot: normalizePromptPath(activeRepoContext.relativeRepoRoot),
 		})
 		.trim();
+}
+
+function renderWorkspaceSnapshotPrompt(snapshot: WorkspaceSnapshot | null): string {
+	if (!snapshot) return "";
+	return prompt.render(workspaceSnapshotTemplate, { ...snapshot, root: normalizePromptPath(snapshot.root) }).trim();
 }
 
 const SYSTEM_PROMPT_PREP_TIMEOUT_MS = 5000;
@@ -585,6 +595,10 @@ export interface BuildSystemPromptOptions {
 	reactions?: boolean;
 	/** Pre-resolved nested active repo context. Undefined resolves from cwd. */
 	activeRepoContext?: ActiveRepoContext | null;
+	/** Coding system prompt + `<workspace>` snapshot; false selects the general prompt. Default: true. */
+	codingGuidance?: boolean;
+	/** Snapshot for the `<workspace>` block; undefined resolves from cwd when coding guidance is on. */
+	workspaceSnapshot?: WorkspaceSnapshot | null;
 	/** Tools mounted under `xd://`; renders the protocol section when non-empty. `dynamic` marks external devices whose summary is third-party metadata. */
 	xdevTools?: Array<{ name: string; summary: string; dynamic?: boolean }>;
 	/** Full docs + JSON schema for every `xd://`-mounted tool, inlined into the protocol section so no discovery `read` is needed. */
@@ -684,6 +698,8 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		writeTransportOnly = false,
 		subagent = false,
 		activeRepoContext: providedActiveRepoContext,
+		codingGuidance = true,
+		workspaceSnapshot: providedWorkspaceSnapshot,
 	} = options;
 	const inlineToolDescriptors = providedInlineToolDescriptors ?? false;
 	const resolvedCwd = cwd ?? getProjectDir();
@@ -726,6 +742,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 			agentsMdFiles: [],
 		} satisfies WorkspaceTree,
 		activeRepoContext: null as ActiveRepoContext | null,
+		workspaceSnapshot: null as WorkspaceSnapshot | null,
 	};
 
 	const { promise: deadline, resolve: fireDeadline } = Promise.withResolvers<"__timeout__">();
@@ -812,6 +829,11 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		providedActiveRepoContext !== undefined
 			? Promise.resolve(providedActiveRepoContext)
 			: logger.time("resolveActiveRepoContext", () => resolveActiveRepoContext(resolvedCwd));
+	const workspaceSnapshotPromise: Promise<WorkspaceSnapshot | null> = !codingGuidance
+		? Promise.resolve(null)
+		: providedWorkspaceSnapshot !== undefined
+			? Promise.resolve(providedWorkspaceSnapshot)
+			: logger.time("resolveWorkspaceSnapshot", () => resolveWorkspaceSnapshot(resolvedCwd));
 	// "none" (explicit off — and every subagent) omits the block and skips the file lookup.
 	const bundledPersonality = personality === "none" ? "" : PERSONALITY_SPECS[personality].trim();
 	const personalityPromise: Promise<string> =
@@ -829,6 +851,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		skills,
 		workspaceTree,
 		activeRepoContext,
+		workspaceSnapshot,
 		personalityBlock,
 	] = await Promise.all([
 		withDeadline(
@@ -852,6 +875,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		withDeadline("loadSkills", skillsPromise, prepDefaults.skills),
 		withDeadline("buildWorkspaceTree", workspaceTreePromise, prepDefaults.workspaceTree),
 		withDeadline("resolveActiveRepoContext", activeRepoContextPromise, prepDefaults.activeRepoContext),
+		withDeadline("resolveWorkspaceSnapshot", workspaceSnapshotPromise, prepDefaults.workspaceSnapshot),
 		withDeadline("loadPersonalityOverride", personalityPromise, bundledPersonality),
 	]);
 	clearTimeout(deadlineTimer);
@@ -1014,10 +1038,12 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		autoQaEnabled,
 		writeTransportOnly,
 		subagent,
+		workspaceSnapshot: renderWorkspaceSnapshotPrompt(workspaceSnapshot),
 	};
+	const bundledTemplate = codingGuidance ? systemPromptTemplate : systemPromptGeneralTemplate;
 	const selectedTemplate = resolvedCustomPrompt
 		? customSystemPromptTemplate
-		: (resolvedSystemPromptTemplate ?? systemPromptTemplate);
+		: (resolvedSystemPromptTemplate ?? bundledTemplate);
 	let rendered: string;
 	try {
 		rendered = prompt.render(selectedTemplate, data);
@@ -1030,7 +1056,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 			error: String(error),
 		});
 		resolvedSystemPromptTemplate = undefined;
-		rendered = prompt.render(systemPromptTemplate, data);
+		rendered = prompt.render(bundledTemplate, data);
 	}
 	const systemPrompt = [rendered];
 	for (const prelude of evalPreludes) {

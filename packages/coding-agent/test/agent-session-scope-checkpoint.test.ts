@@ -14,7 +14,8 @@ import { createInMemoryAuthStorage } from "./helpers/agent-session-setup";
  * Long-run scope checkpoint: a hidden reminder injected at the mid-work aside
  * boundary once a main-agent request has been ACTIVE for the configured minutes
  * (time between runs and time blocked on `ask` excluded) and has made at least
- * 8 tool rounds; a second, firmer one at twice the time after 8 more rounds;
+ * 4 tool rounds (8 for a subagent); a second, firmer one at twice the time after
+ * 8 more rounds;
  * never more than two per request and never at the stop boundary.
  *
  * Drives the aside provider directly, as the agent loop polls it between tool
@@ -36,7 +37,7 @@ describe("AgentSession scope checkpoint", () => {
 	let asideProvider: (() => AsideMessage[] | Promise<AsideMessage[]>) | undefined;
 	let clock = 0;
 
-	function setup(overrides: Record<string, unknown> = {}): AgentSession {
+	function setup(overrides: Record<string, unknown> = {}, agentKind: "main" | "sub" = "main"): AgentSession {
 		clock = 1_000_000;
 		vi.spyOn(Date, "now").mockImplementation(() => clock);
 		tempDir = TempDir.createSync("@pi-scope-checkpoint-");
@@ -51,7 +52,7 @@ describe("AgentSession scope checkpoint", () => {
 			if (fn !== undefined && asideProvider === undefined) asideProvider = fn;
 			originalSet(fn);
 		};
-		session = new AgentSession({ agent, sessionManager, settings, modelRegistry: sharedModelRegistry });
+		session = new AgentSession({ agent, sessionManager, settings, modelRegistry: sharedModelRegistry, agentKind });
 		session.agent.emitExternalEvent({ type: "agent_start" });
 		return session;
 	}
@@ -96,12 +97,12 @@ describe("AgentSession scope checkpoint", () => {
 		}
 	}
 
-	async function drain(): Promise<CustomMessage[]> {
+	async function drain(customType = "scope-checkpoint"): Promise<CustomMessage[]> {
 		if (!asideProvider) throw new Error("aside provider was never captured");
 		const out: CustomMessage[] = [];
 		for (const entry of await asideProvider()) {
 			const message = typeof entry === "function" ? entry() : entry;
-			if (message?.role === "custom" && (message as CustomMessage).customType === "scope-checkpoint") {
+			if (message?.role === "custom" && (message as CustomMessage).customType === customType) {
 				out.push(message as CustomMessage);
 			}
 		}
@@ -123,7 +124,7 @@ describe("AgentSession scope checkpoint", () => {
 	it("fires once, hidden, when active time reaches the threshold", async () => {
 		setup();
 		rounds(20);
-		clock += 6 * MINUTE - 1;
+		clock += 5 * MINUTE - 1;
 		expect(await drain()).toEqual([]);
 
 		clock += 1;
@@ -138,10 +139,10 @@ describe("AgentSession scope checkpoint", () => {
 	it("fires a firmer second checkpoint at twice the threshold after 8 more rounds, then stops", async () => {
 		setup();
 		rounds(10);
-		clock += 6 * MINUTE;
+		clock += 5 * MINUTE;
 		expect(await drain()).toHaveLength(1);
 
-		clock += 6 * MINUTE;
+		clock += 5 * MINUTE;
 		rounds(7);
 		expect(await drain()).toEqual([]);
 		rounds(1);
@@ -155,11 +156,22 @@ describe("AgentSession scope checkpoint", () => {
 		expect(await drain()).toEqual([]);
 	});
 
-	it("stays silent with fewer than 8 tool rounds, however long the run", async () => {
+	it("needs 4 tool rounds for a main agent's first checkpoint, however long the run", async () => {
 		setup();
-		rounds(7);
+		rounds(3);
 		clock += 10 * MINUTE;
 		expect(await drain()).toEqual([]);
+		rounds(1);
+		expect(await drain()).toHaveLength(1);
+	});
+
+	it("needs 8 tool rounds for a subagent's first checkpoint", async () => {
+		setup({}, "sub");
+		rounds(7);
+		clock += 20 * MINUTE;
+		expect(await drain()).toEqual([]);
+		rounds(1);
+		expect(await drain()).toHaveLength(1);
 	});
 
 	it("never injects at the stop boundary", async () => {
@@ -198,7 +210,7 @@ describe("AgentSession scope checkpoint", () => {
 	it("excludes idle time between agent runs", async () => {
 		setup();
 		rounds(10);
-		clock += 5 * MINUTE;
+		clock += 4 * MINUTE;
 		session!.agent.emitExternalEvent({ type: "agent_end", messages: [] });
 		clock += 55 * MINUTE;
 		session!.agent.emitExternalEvent({ type: "agent_start" });
@@ -214,5 +226,52 @@ describe("AgentSession scope checkpoint", () => {
 		rounds(20);
 		clock += 10 * MINUTE;
 		expect(await drain()).toEqual([]);
+	});
+
+	it("skips the main agent's checkpoint once it delegates through task", async () => {
+		setup();
+		session!.agent.emitExternalEvent({
+			type: "tool_execution_start",
+			toolCallId: "task_1",
+			toolName: "task",
+			args: {},
+		});
+		rounds(20);
+		clock += 20 * MINUTE;
+		expect(await drain()).toEqual([]);
+	});
+
+	it("gives a subagent its own timer on the subagent minutes, worded for its assignment", async () => {
+		setup({ "model.scopeCheckpoint.minutes": 4 }, "sub");
+		rounds(10);
+		clock += 8 * MINUTE - 1;
+		expect(await drain()).toEqual([]);
+
+		clock += 1;
+		const fired = await drain();
+		expect(fired).toHaveLength(1);
+		expect(text(fired[0])).toContain("your assignment");
+		expect(text(fired[0])).toContain("in your yield");
+	});
+
+	it("delivers a requested wrap-up at the next tool round, ahead of the time gate, once", async () => {
+		setup({}, "sub");
+		// A running request; the instance property shadows the prototype getter for this test only.
+		Object.defineProperty(session!, "isStreaming", { get: () => true, configurable: true });
+		expect(session!.requestWrapUp()).toBe(true);
+		session!.agent.emitExternalEvent({ type: "message_end", message: assistant("stop") });
+		expect(await drain("wrap-up-request")).toEqual([]);
+
+		rounds(1);
+		const delivered = await drain("wrap-up-request");
+		expect(delivered).toHaveLength(1);
+		expect(delivered[0]?.display).toBe(false);
+		expect(text(delivered[0])).toContain("yield now");
+		expect(await drain("wrap-up-request")).toEqual([]);
+	});
+
+	it("refuses a wrap-up when no request is running", () => {
+		setup();
+		expect(session!.requestWrapUp()).toBe(false);
 	});
 });

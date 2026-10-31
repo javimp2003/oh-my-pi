@@ -864,6 +864,18 @@ export class RpcClient {
 		return this.#getData<{ planMode: RpcPlanModeState | null }>(response).planMode;
 	}
 
+	/** Turn delegate mode on or off; returns whether it is now on. */
+	async setDelegateMode(enabled: boolean): Promise<boolean> {
+		const response = await this.#send({ type: "set_delegate_mode", enabled });
+		return this.#getData<{ enabled: boolean }>(response).enabled;
+	}
+
+	/** Ask every running subagent to wrap up; returns how many were reached. */
+	async hurrySubagents(): Promise<number> {
+		const response = await this.#send({ type: "hurry_subagents" });
+		return this.#getData<{ notified: number }>(response).notified;
+	}
+
 	/**
 	 * Start a GPT live voice session bound to this session; resolves once it is connected
 	 * and recording. `instructions` replaces the bundled live prompt (Handlebars:

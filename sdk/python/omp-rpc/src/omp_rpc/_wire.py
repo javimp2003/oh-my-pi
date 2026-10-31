@@ -692,6 +692,10 @@ class SessionState:
     """Current plan mode; null when plan mode is off."""
     plan_mode_available: bool = False
     """Plan mode can be entered (`plan.enabled`)."""
+    delegate_mode: bool = False
+    """Delegate mode is on: each prompt steers the agent to execute through `task` subagents."""
+    delegate_mode_available: bool = False
+    """Delegate mode can be turned on (the `task` tool is active)."""
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -2028,6 +2032,8 @@ def parse_session_state(value: object, path: str = "SessionState") -> SessionSta
         goal=defaulted(payload, "goal", nullable(parse_goal_mode_state), path, None),
         plan_mode=defaulted(payload, "planMode", nullable(parse_plan_mode_state), path, None),
         plan_mode_available=defaulted(payload, "planModeAvailable", decode_bool, path, False),
+        delegate_mode=defaulted(payload, "delegateMode", decode_bool, path, False),
+        delegate_mode_available=defaulted(payload, "delegateModeAvailable", decode_bool, path, False),
     )
 
 
@@ -3347,6 +3353,12 @@ class WireClient:
         params["enabled"] = enabled
         return parse_set_plan_mode_result(self._command("set_plan_mode", params), "set_plan_mode")
 
+    def set_delegate_mode(self, enabled: bool) -> bool:
+        """Turn delegate mode on or off: while on, each prompt steers the agent to execute through `task` subagents, picking each slice's agent by its nature. Fails to enable while the `task` tool is inactive. Returns whether it is now on."""
+        params: dict[str, object] = {}
+        params["enabled"] = enabled
+        return required(expect_object(self._command("set_delegate_mode", params), "set_delegate_mode"), "enabled", decode_bool, "set_delegate_mode")
+
     def set_ask_dialog(self, enabled: bool) -> bool:
         """Opt in to `ask` UI requests; returns the applied setting."""
         params: dict[str, object] = {}
@@ -3410,6 +3422,11 @@ class WireClient:
         params["subagentId"] = subagent_id
         params["message"] = message
         self._command("steer_subagent", params)
+
+    def hurry_subagents(self) -> int:
+        """Ask every running subagent to wrap up through a hidden reminder at its next tool round; the main agent gets a lead variant when any was reached. Returns how many subagents were reached."""
+        params: dict[str, object] = {}
+        return required(expect_object(self._command("hurry_subagents", params), "hurry_subagents"), "notified", decode_int, "hurry_subagents")
 
     def live_start(self, *, voice: str | None = None, instructions: str | None = None) -> str:
         """Start a live voice session bound to this session; returns the voice in use."""

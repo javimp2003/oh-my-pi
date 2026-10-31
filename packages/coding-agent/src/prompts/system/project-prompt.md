@@ -49,6 +49,9 @@ Additional workspace directories. This CURRENT workspace state supersedes worksp
 {{#if activeRepoContext}}
 {{activeRepoContext}}
 {{/if}}
+{{#if workspaceSnapshot}}
+{{workspaceSnapshot}}
+{{/if}}
 </project-context>
 
 <critical>

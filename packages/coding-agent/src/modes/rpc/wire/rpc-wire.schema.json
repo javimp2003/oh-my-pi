@@ -186,6 +186,17 @@
 				"clientOmit": []
 			},
 			{
+				"name": "set_delegate_mode",
+				"doc": "Turn delegate mode on or off: while on, each prompt steers the agent to execute through `task` subagents, picking each slice's agent by its nature. Fails to enable while the `task` tool is inactive. Returns whether it is now on.",
+				"params": "SetDelegateModeParams",
+				"result": "SetDelegateModeResult",
+				"nullable": false,
+				"unwrap": "enabled",
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
 				"name": "set_ask_dialog",
 				"doc": "Opt in to `ask` UI requests; returns the applied setting.",
 				"params": "SetAskDialogParams",
@@ -326,6 +337,17 @@
 				"result": null,
 				"nullable": false,
 				"unwrap": null,
+				"timeoutMs": null,
+				"completion": null,
+				"clientOmit": []
+			},
+			{
+				"name": "hurry_subagents",
+				"doc": "Ask every running subagent to wrap up through a hidden reminder at its next tool round; the main agent gets a lead variant when any was reached. Returns how many subagents were reached.",
+				"params": null,
+				"result": "HurrySubagentsResult",
+				"nullable": false,
+				"unwrap": "notified",
 				"timeoutMs": null,
 				"completion": null,
 				"clientOmit": []
@@ -2759,6 +2781,16 @@
 				"planModeAvailable": {
 					"type": "boolean",
 					"description": "Plan mode can be entered (`plan.enabled`).",
+					"default": false
+				},
+				"delegateMode": {
+					"type": "boolean",
+					"description": "Delegate mode is on: each prompt steers the agent to execute through `task` subagents.",
+					"default": false
+				},
+				"delegateModeAvailable": {
+					"type": "boolean",
+					"description": "Delegate mode can be turned on (the `task` tool is active).",
 					"default": false
 				}
 			},
@@ -6222,6 +6254,28 @@
 				"planMode"
 			]
 		},
+		"SetDelegateModeParams": {
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"enabled"
+			]
+		},
+		"SetDelegateModeResult": {
+			"type": "object",
+			"properties": {
+				"enabled": {
+					"type": "boolean"
+				}
+			},
+			"required": [
+				"enabled"
+			]
+		},
 		"SetAskDialogParams": {
 			"type": "object",
 			"properties": {
@@ -6483,6 +6537,17 @@
 			"required": [
 				"subagentId",
 				"message"
+			]
+		},
+		"HurrySubagentsResult": {
+			"type": "object",
+			"properties": {
+				"notified": {
+					"type": "integer"
+				}
+			},
+			"required": [
+				"notified"
 			]
 		},
 		"LiveStartParams": {

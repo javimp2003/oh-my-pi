@@ -2321,7 +2321,8 @@ code {
 }
 
 .thinking-toggle[aria-pressed="true"],
-.plan-toggle[aria-pressed="true"] {
+.plan-toggle[aria-pressed="true"],
+.delegate-toggle[aria-pressed="true"] {
 	background: var(--c-hover);
 	color: var(--omp-accent);
 }
@@ -2526,6 +2527,247 @@ code {
 .context-action:disabled {
 	opacity: 0.5;
 	cursor: default;
+}
+
+/* Subagent panel: delegate mode button with a count badge and a popover listing the task's subagents. */
+
+.subagent-panel {
+	position: relative;
+	display: flex;
+}
+
+.delegate-toggle {
+	position: relative;
+}
+
+.subagent-badge {
+	position: absolute;
+	top: 1px;
+	right: 0;
+	min-width: 13px;
+	height: 13px;
+	padding: 0 3px;
+	border-radius: 9999px;
+	background: var(--c-border-heavy);
+	color: var(--c-fg);
+	font-size: 9px;
+	line-height: 13px;
+	font-variant-numeric: tabular-nums;
+	text-align: center;
+}
+
+.subagent-badge.active {
+	background: var(--omp-accent);
+	color: var(--c-bg);
+}
+
+.subagent-popover {
+	position: absolute;
+	left: 0;
+	bottom: calc(100% + 8px);
+	z-index: 10;
+	width: 340px;
+	max-width: calc(100vw - 32px);
+	padding: 12px;
+	border-radius: var(--r-xl);
+	border: 1px solid var(--c-border-heavy);
+	background: var(--menu-bg);
+	box-shadow: var(--menu-shadow);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: var(--fs-sm);
+	cursor: default;
+}
+
+.subagent-header,
+.subagent-mode,
+.subagent-card-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.subagent-title {
+	flex: 1;
+	font-size: var(--fs);
+	font-weight: 500;
+}
+
+.subagent-summary,
+.subagent-mode {
+	color: var(--c-fg-2);
+}
+
+.subagent-mode span {
+	flex: 1;
+}
+
+.subagent-mode-button,
+.subagent-hurry {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	height: 24px;
+	padding: 0 10px;
+	border: 1px solid var(--c-border-heavy);
+	border-radius: 9999px;
+	background: transparent;
+	color: var(--c-fg);
+	font-size: var(--fs-sm);
+	white-space: nowrap;
+}
+
+.subagent-mode-button:hover:not(:disabled),
+.subagent-hurry:hover:not(:disabled) {
+	background: var(--c-hover);
+}
+
+.subagent-mode-button:disabled,
+.subagent-hurry:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.subagent-hurry .icon {
+	width: 13px;
+	height: 13px;
+	color: var(--omp-accent);
+}
+
+.subagent-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	max-height: min(55vh, 420px);
+	overflow-y: auto;
+}
+
+.subagent-card {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	padding: 8px 10px;
+	border: 1px solid var(--c-border);
+	border-radius: var(--r-lg, 8px);
+	background: var(--c-surface);
+}
+
+.subagent-card:not(.running):not(.pending) {
+	opacity: 0.75;
+}
+
+.subagent-dot {
+	flex: none;
+	width: 7px;
+	height: 7px;
+	border-radius: 9999px;
+	background: var(--c-fg-3);
+}
+
+.subagent-dot.running {
+	background: var(--omp-accent);
+	animation: subagent-pulse 1.4s ease-in-out infinite;
+}
+
+.subagent-dot.completed {
+	background: var(--c-add);
+}
+
+.subagent-dot.failed,
+.subagent-dot.aborted {
+	background: var(--c-error);
+}
+
+@keyframes subagent-pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+
+.subagent-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 500;
+}
+
+.subagent-agent {
+	flex: none;
+	padding: 0 6px;
+	border-radius: 9999px;
+	background: var(--c-border-heavy);
+	color: var(--c-fg-2);
+	font-size: 11px;
+}
+
+.subagent-time {
+	margin-left: auto;
+	color: var(--c-fg-3);
+	font-variant-numeric: tabular-nums;
+}
+
+.subagent-task {
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	color: var(--c-fg);
+}
+
+.subagent-activity,
+.subagent-stats {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--c-fg-3);
+}
+
+.subagent-stats {
+	font-variant-numeric: tabular-nums;
+}
+
+.subagent-retry,
+.subagent-final.failed,
+.subagent-final.aborted {
+	color: var(--c-error);
+}
+
+.subagent-final.completed {
+	color: var(--c-add);
+}
+
+.subagent-flag {
+	color: var(--omp-accent);
+}
+
+.subagent-progress {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--c-fg-2);
+	font-variant-numeric: tabular-nums;
+}
+
+.subagent-bar {
+	flex: 1;
+	height: 4px;
+	border-radius: 9999px;
+	background: var(--c-border-heavy);
+	overflow: hidden;
+}
+
+.subagent-bar-fill {
+	height: 100%;
+	border-radius: inherit;
+	background: var(--omp-accent);
+}
+
+.subagent-actions {
+	display: flex;
+	justify-content: flex-end;
 }
 
 /* Plan review card */

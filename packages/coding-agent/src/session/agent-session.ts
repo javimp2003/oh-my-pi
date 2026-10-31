@@ -188,6 +188,8 @@ import anthropicUsageWrapUpPrompt from "../prompts/system/anthropic-usage-wrap-u
 import autoContinuePrompt from "../prompts/system/auto-continue.md" with { type: "text" };
 import checkpointActiveNoticeTemplate from "../prompts/system/checkpoint-active-notice.md" with { type: "text" };
 import interruptedThinkingTemplate from "../prompts/system/interrupted-thinking.md" with { type: "text" };
+import delegateModeActivePrompt from "../prompts/system/delegate-mode-active.md" with { type: "text" };
+import delegateModeExitPrompt from "../prompts/system/delegate-mode-exit.md" with { type: "text" };
 import planModeActivePrompt from "../prompts/system/plan-mode-active.md" with { type: "text" };
 import planModeReferencePrompt from "../prompts/system/plan-mode-reference.md" with { type: "text" };
 import planModeToolDecisionReminderPrompt from "../prompts/system/plan-mode-tool-decision-reminder.md" with { type: "text" };
@@ -507,7 +509,7 @@ import {
 	cfgThemeDark,
 	cfgThemeLight,
 } from "../modes/settings";
-import { cfgTaskBatch, cfgTaskDisabledAgents } from "../task/settings";
+import { cfgTaskBatch, cfgTaskDisabledAgents, cfgTaskEnableEffort, cfgTaskIsolationEnabled } from "../task/settings";
 import {
 	cfgBranchSummaryReserveTokens,
 	cfgCompactionModelThresholds,
@@ -517,6 +519,7 @@ import {
 } from "./context-settings";
 import { cfgTitleGenerator, cfgTitleIcons, cfgTitleRefreshOnReplan, type TitleIcons } from "../utils/title-settings";
 import {
+	cfgAsyncEnabled,
 	cfgArchiveEnabled,
 	cfgComputerEnabled,
 	cfgRatchetEnabled,
@@ -885,6 +888,10 @@ export class AgentSession implements SettingsScope {
 	#experimentalContextNotesReminder: { prompt: string; generation: number } | undefined;
 	#planModeState: PlanModeState | undefined;
 	#vibeModeState: VibeModeState | undefined;
+	/** Delegate mode: each user prompt carries the `delegate-mode-context` steering toward subagents. */
+	#delegateModeEnabled = false;
+	/** A delegate-mode context reached the model since the mode last turned on; leaving it owes an exit notice. */
+	#delegateContextSent = false;
 	#goalModeState: GoalModeState | undefined;
 	#goalRuntime: GoalRuntime;
 	readonly #advisors: SessionAdvisors;
@@ -1755,6 +1762,7 @@ export class AgentSession implements SettingsScope {
 			settings: this.settings,
 			agentKind: () => this.#agentKind,
 			planModeEnabled: () => this.#planModeState?.enabled === true,
+			delegateModeEnabled: () => this.#delegateModeEnabled && this.isDelegateModeAvailable(),
 		});
 		this.#modelMentions = new ModelMentionRegistry({
 			sessionManager: this.sessionManager,
@@ -6804,6 +6812,33 @@ export class AgentSession implements SettingsScope {
 		this.#closeCodexProviderSessionsForHistoryRewrite();
 	}
 
+	/** Delegate mode needs the `task` tool in the active top-level toolset. */
+	isDelegateModeAvailable(): boolean {
+		return this.getActiveToolNames().includes("task");
+	}
+
+	isDelegateModeEnabled(): boolean {
+		return this.#delegateModeEnabled;
+	}
+
+	/** Turn delegate mode on or off; returns whether it is now on. Enabling fails while `task` is unavailable. */
+	setDelegateMode(enabled: boolean): boolean {
+		if (enabled && !this.isDelegateModeAvailable()) return this.#delegateModeEnabled;
+		this.#delegateModeEnabled = enabled;
+		return enabled;
+	}
+
+	/**
+	 * Ask the running request to hurry: a hidden wrap-up reminder lands at the
+	 * next tool-round boundary (lead wording for the main agent, finish-and-yield
+	 * for subagents). Returns false when no request is running to receive it.
+	 */
+	requestWrapUp(): boolean {
+		if (!this.isStreaming) return false;
+		this.#scopeCheckpoint.requestWrapUp();
+		return true;
+	}
+
 	#assertVibeSessionTransitionAllowed(action: string): void {
 		if (this.#vibeModeState?.enabled) {
 			throw new Error(`Cannot ${action} while vibe mode is active. Exit vibe mode first.`);
@@ -7132,6 +7167,38 @@ export class AgentSession implements SettingsScope {
 			content: prompt.render(vibeModeActivePrompt, {
 				todoAvailable: this.getActiveToolNames().includes("todo"),
 			}),
+			display: false,
+			attribution: "agent",
+			timestamp: Date.now(),
+		};
+	}
+
+	/**
+	 * Delegate-mode steering for the next user prompt: the active context while
+	 * the mode is on, or a one-time exit notice when it was turned off after its
+	 * context reached the model (earlier contexts stay in history).
+	 */
+	#buildDelegateModeMessage(): CustomMessage | null {
+		const active = this.#delegateModeEnabled && this.isDelegateModeAvailable();
+		if (!active && !this.#delegateContextSent) return null;
+		let content: string;
+		if (active) {
+			const settings = this.settings;
+			content = prompt.render(delegateModeActivePrompt, {
+				batchEnabled: cfgTaskBatch.get(settings),
+				effortEnabled: cfgTaskEnableEffort.get(settings),
+				isolationEnabled: cfgTaskIsolationEnabled.get(settings) && !this.#planModeState?.enabled,
+				asyncEnabled: cfgAsyncEnabled.get(settings),
+				waitAvailable: this.getActiveToolNames().includes("wait"),
+			});
+		} else {
+			content = prompt.render(delegateModeExitPrompt, {});
+		}
+		this.#delegateContextSent = active;
+		return {
+			role: "custom",
+			customType: "delegate-mode-context",
+			content,
 			display: false,
 			attribution: "agent",
 			timestamp: Date.now(),
@@ -7939,6 +8006,10 @@ export class AgentSession implements SettingsScope {
 			const vibeModeMessage = this.#buildVibeModeMessage();
 			if (vibeModeMessage) {
 				messages.push(vibeModeMessage);
+			}
+			const delegateModeMessage = this.#buildDelegateModeMessage();
+			if (delegateModeMessage) {
+				messages.push(delegateModeMessage);
 			}
 			if (options?.prependMessages) {
 				messages.push(...options.prependMessages);

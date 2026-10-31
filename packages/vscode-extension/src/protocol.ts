@@ -99,6 +99,40 @@ export function isUserPrompt(message: AgentMessage): boolean {
 	return message.role === "custom" && message.customType === "skill-prompt" && message.attribution === "user";
 }
 
+/** Lifecycle status of a subagent row. */
+export type SubagentStatus = "pending" | "running" | "completed" | "failed" | "aborted";
+
+/** One subagent of the shown session, folded from omp's `subagent_lifecycle`/`subagent_progress` frames. */
+export interface SubagentView {
+	id: string;
+	/** Agent type (`task`, `scout`, a custom agent…). */
+	agent: string;
+	status: SubagentStatus;
+	/** Short label the spawner gave, if any. */
+	description?: string;
+	/** The task the agent was given. */
+	assignment?: string;
+	/** What it is doing now: the current call's intent or tool, else its latest intent. */
+	activity?: string;
+	toolCount: number;
+	requests: number;
+	/** Soft request budget the run is held to. */
+	requestBudget?: number;
+	tokens: number;
+	cost: number;
+	/** Run time reported by omp (ms). */
+	durationMs: number;
+	/** When the host first saw the agent (epoch ms); running rows tick from it. */
+	startedAt: number;
+	/** The agent's latest self-estimate of completion (0–100). */
+	completionPercent?: number;
+	model?: string;
+	/** Provider retry in progress or the final retry failure, as a short line. */
+	retry?: string;
+	/** The user asked it to wrap up (`hurrySubagents`). */
+	wrapUpRequested: boolean;
+}
+
 /** What a session is doing in this window: working, or finished while no chat showed it. */
 export type SessionActivity = "running" | "done";
 
@@ -208,7 +242,9 @@ export type ChatUpdate =
 	/** omp is reviewing the skills the last task of the open session relied on (`running`), or not (`idle`). */
 	| { type: "skillCuration"; status: "idle" | "running" }
 	/** Pending skill proposals of the shown session, newest first. */
-	| { type: "skillProposals"; proposals: SkillProposalSummary[] };
+	| { type: "skillProposals"; proposals: SkillProposalSummary[] }
+	/** Subagents of the shown session's current task (running first, then finished); empty when none. */
+	| { type: "subagents"; subagents: SubagentView[] };
 
 /** Chat webview → host. */
 export type ChatRequest =
@@ -238,6 +274,10 @@ export type ChatRequest =
 	| { type: "setThinkingLevel"; level: ThinkingLevel }
 	/** Enter or leave omp's plan mode, then send `prompt` if given (`/plan <prompt>`); the host replies with a fresh `state`. */
 	| { type: "setPlanMode"; enabled: boolean; prompt?: string }
+	/** Turn omp's delegate mode on or off (prompts run through subagents); the host replies with a fresh `state`. */
+	| { type: "setDelegateMode"; enabled: boolean }
+	/** Ask every running subagent (and the lead) to wrap up. */
+	| { type: "hurrySubagents" }
 	/** Answer a `planReview` with one of its options. */
 	| { type: "planDecision"; id: string; value: string }
 	/** Open a plan file (absolute path) rendered in an editor tab. */

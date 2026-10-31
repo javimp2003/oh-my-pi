@@ -2563,6 +2563,10 @@ type SessionState struct {
 	PlanMode *PlanModeState `json:"planMode"`
 	// Plan mode can be entered (`plan.enabled`).
 	PlanModeAvailable bool `json:"planModeAvailable"`
+	// Delegate mode is on: each prompt steers the agent to execute through `task` subagents.
+	DelegateMode bool `json:"delegateMode"`
+	// Delegate mode can be turned on (the `task` tool is active).
+	DelegateModeAvailable bool `json:"delegateModeAvailable"`
 }
 
 func (v *SessionState) UnmarshalJSON(data []byte) error {
@@ -2603,6 +2607,8 @@ func (v *SessionState) decodeFrom(raw map[string]json.RawMessage) error {
 	d.defaulted("goal", &out.Goal, `null`)
 	d.defaulted("planMode", &out.PlanMode, `null`)
 	d.defaulted("planModeAvailable", &out.PlanModeAvailable, `false`)
+	d.defaulted("delegateMode", &out.DelegateMode, `false`)
+	d.defaulted("delegateModeAvailable", &out.DelegateModeAvailable, `false`)
 	if d.err != nil {
 		return d.err
 	}
@@ -7066,6 +7072,25 @@ func (v *SetPlanModeResult) decodeFrom(raw map[string]json.RawMessage) error {
 	return nil
 }
 
+type SetDelegateModeResult struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (v *SetDelegateModeResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "SetDelegateModeResult", v.decodeFrom)
+}
+
+func (v *SetDelegateModeResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out SetDelegateModeResult
+	d := fieldDecoder{raw: raw, owner: "SetDelegateModeResult"}
+	d.required("enabled", &out.Enabled)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
 type SetAskDialogResult struct {
 	Enabled bool `json:"enabled"`
 }
@@ -7232,6 +7257,25 @@ func (v *CancelSubagentResult) decodeFrom(raw map[string]json.RawMessage) error 
 	var out CancelSubagentResult
 	d := fieldDecoder{raw: raw, owner: "CancelSubagentResult"}
 	d.required("cancelled", &out.Cancelled)
+	if d.err != nil {
+		return d.err
+	}
+	*v = out
+	return nil
+}
+
+type HurrySubagentsResult struct {
+	Notified int64 `json:"notified"`
+}
+
+func (v *HurrySubagentsResult) UnmarshalJSON(data []byte) error {
+	return decodeWith(data, "HurrySubagentsResult", v.decodeFrom)
+}
+
+func (v *HurrySubagentsResult) decodeFrom(raw map[string]json.RawMessage) error {
+	var out HurrySubagentsResult
+	d := fieldDecoder{raw: raw, owner: "HurrySubagentsResult"}
+	d.required("notified", &out.Notified)
 	if d.err != nil {
 		return d.err
 	}
@@ -7787,6 +7831,18 @@ func (c Commands) SetPlanMode(ctx context.Context, p SetPlanModeCommand) (SetPla
 	return out, err
 }
 
+// SetDelegateModeCommand holds the parameters of "set_delegate_mode".
+type SetDelegateModeCommand struct {
+	Enabled bool `json:"enabled"`
+}
+
+// SetDelegateMode sends "set_delegate_mode": Turn delegate mode on or off: while on, each prompt steers the agent to execute through `task` subagents, picking each slice's agent by its nature. Fails to enable while the `task` tool is inactive. Returns whether it is now on.
+func (c Commands) SetDelegateMode(ctx context.Context, p SetDelegateModeCommand) (bool, error) {
+	var out SetDelegateModeResult
+	err := c.call(ctx, "set_delegate_mode", p, 0, &out)
+	return out.Enabled, err
+}
+
 // SetAskDialogCommand holds the parameters of "set_ask_dialog".
 type SetAskDialogCommand struct {
 	Enabled bool `json:"enabled"`
@@ -7927,6 +7983,13 @@ type SteerSubagentCommand struct {
 // SteerSubagent sends "steer_subagent": Send a message to a running subagent as its user.
 func (c Commands) SteerSubagent(ctx context.Context, p SteerSubagentCommand) error {
 	return c.call(ctx, "steer_subagent", p, 0, nil)
+}
+
+// HurrySubagents sends "hurry_subagents": Ask every running subagent to wrap up through a hidden reminder at its next tool round; the main agent gets a lead variant when any was reached. Returns how many subagents were reached.
+func (c Commands) HurrySubagents(ctx context.Context) (int64, error) {
+	var out HurrySubagentsResult
+	err := c.call(ctx, "hurry_subagents", nil, 0, &out)
+	return out.Notified, err
 }
 
 // LiveStartCommand holds the parameters of "live_start".

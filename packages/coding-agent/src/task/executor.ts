@@ -1314,6 +1314,7 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 		recentOutput: [],
 		toolCount: 0,
 		requests: 0,
+		...(softRequestBudget > 0 ? { requestBudget: softRequestBudget } : {}),
 		tokens: 0,
 		cost: 0,
 		durationMs: 0,

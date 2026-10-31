@@ -491,6 +491,12 @@ export class ChatSession implements vscode.Disposable, HostView {
 				if (request.prompt) await host.prompt(request.prompt, undefined);
 				return;
 			}
+			case "setDelegateMode":
+				await this.#requireHost().setDelegateMode(request.enabled);
+				return;
+			case "hurrySubagents":
+				await this.#requireHost().hurrySubagents();
+				return;
 			case "openSettings":
 				this.commands.openSettings();
 				return;

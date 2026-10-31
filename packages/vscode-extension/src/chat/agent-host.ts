@@ -36,6 +36,7 @@ import { DialogBridge } from "../dialogs";
 import { type AgentStatus, type ChatUpdate, isUserPrompt, type ModelChoice } from "../protocol";
 import { OmpCommandError, OmpProcess, type OmpResult } from "../rpc/omp-process";
 import { userPrompt } from "./prompt-entries";
+import { SubagentRoster } from "./subagent-roster";
 
 /** Notification frames that are not session events (everything else is forwarded as `event`). */
 const NON_EVENT_FRAMES: Record<string, true> = {
@@ -160,6 +161,9 @@ export class AgentHost implements vscode.Disposable {
 	/** The latest run was stopped by the user or ended in an error: its stretch ends silently. */
 	#soundSuppressed = false;
 	#refreshTimer: NodeJS.Timeout | undefined;
+	/** Subagents of the shown session's current task, for the chat's subagent panel. */
+	readonly #subagents = new SubagentRoster();
+	#subagentsTimer: NodeJS.Timeout | undefined;
 	/** The turn being checkpointed: snapshots taken (in the background) as its prompt was sent. */
 	#turn: TurnCheckpoint | undefined;
 	/** Checkpoint snapshots and writes, in order; awaited before anything reads them. */
@@ -258,6 +262,7 @@ export class AgentHost implements vscode.Disposable {
 		if (process) await this.#sendSnapshot(process, [view]);
 		for (const review of this.#planReviews.values()) view.post(review.update);
 		view.post(this.#curation);
+		view.post({ type: "subagents", subagents: this.#subagents.list() });
 	}
 
 	#setCuration(curation: SkillCuration): void {
@@ -281,6 +286,7 @@ export class AgentHost implements vscode.Disposable {
 		this.#busy = false;
 		this.#settled = true;
 		this.#setStatus({ phase: "starting" });
+		this.#resetSubagents();
 		process.on("frame", frame => this.#onFrame(process, frame));
 		process.on("uiRequest", request => {
 			if (this.#process === process) this.#dialogs.handle(request);
@@ -297,6 +303,8 @@ export class AgentHost implements vscode.Disposable {
 			this.#setStatus({ phase: "stopped", message: reason });
 		});
 		const args = [...readConfig().extraArgs];
+		// Chats without a workspace keep the general prompt: no coding guidance or workspace snapshot.
+		if (this.noWorkspace) args.push("--no-coding-guidance");
 		if (target.kind === "resume") args.push("--resume", target.sessionFile);
 		else if (target.kind === "continue") args.push("--continue");
 		this.log.appendLine(
@@ -309,6 +317,10 @@ export class AgentHost implements vscode.Disposable {
 			return;
 		}
 		await process.request("set_ask_dialog", { enabled: true }).catch(error => this.log.appendLine(String(error)));
+		// Progress frames feed the subagent panel (and make omp probe subagents for completion estimates).
+		await process
+			.request("set_subagent_subscription", { level: "progress" })
+			.catch(error => this.log.appendLine(String(error)));
 		this.#setStatus({ phase: "ready" });
 		this.#title = undefined;
 		this.#setCuration(CURATION_IDLE);
@@ -335,6 +347,7 @@ export class AgentHost implements vscode.Disposable {
 		if (result.cancelled) return;
 		this.#title = undefined;
 		this.#setCuration(CURATION_IDLE);
+		this.#resetSubagents();
 		await this.#sendSnapshot(process, this.#views);
 	}
 
@@ -348,6 +361,7 @@ export class AgentHost implements vscode.Disposable {
 		const result = await process.request("switch_session", { sessionPath: sessionFile });
 		if (result.cancelled) return;
 		this.#title = undefined;
+		this.#resetSubagents();
 		this.#setCuration(CURATION_IDLE);
 		await this.#sendSnapshot(process, this.#views);
 	}
@@ -358,7 +372,11 @@ export class AgentHost implements vscode.Disposable {
 	 */
 	async prompt(text: string, images: ImageContent[] | undefined): Promise<void> {
 		const process = this.#requireProcess();
-		if (!this.#busy) this.#beginTurnCheckpoint();
+		if (!this.#busy) {
+			this.#beginTurnCheckpoint();
+			// A new task: the panel lists only its subagents.
+			if (this.#subagents.clearFinished()) this.#postSubagents();
+		}
 		await process.request("prompt", {
 			message: text,
 			...(images?.length ? { images } : {}),
@@ -475,6 +493,30 @@ export class AgentHost implements vscode.Disposable {
 		}
 	}
 
+	async setDelegateMode(enabled: boolean): Promise<void> {
+		try {
+			await this.#requireProcess().request("set_delegate_mode", { enabled });
+		} finally {
+			// Also on failure: the webview toggled its button optimistically.
+			await this.#refreshState();
+		}
+	}
+
+	/** Ask every running subagent (and the lead agent) to wrap up; reports how many were reached. */
+	async hurrySubagents(): Promise<void> {
+		const { notified } = await this.#requireProcess().request("hurry_subagents");
+		if (notified === 0) {
+			this.#notice("info", "No subagent is running right now.");
+			return;
+		}
+		this.#subagents.markWrapUpRequested();
+		this.#postSubagents();
+		this.#notice(
+			"info",
+			`Asked ${notified} ${notified === 1 ? "subagent" : "subagents"} to wrap up; each gets the request at its next step.`,
+		);
+	}
+
 	async availableModels(): Promise<ModelChoice[]> {
 		const { models } = await this.#requireProcess().request("get_available_models");
 		return models.map(model => ({
@@ -549,6 +591,7 @@ export class AgentHost implements vscode.Disposable {
 
 	dispose(): void {
 		clearTimeout(this.#refreshTimer);
+		clearTimeout(this.#subagentsTimer);
 		void this.#stopProcess();
 		this.#dialogs.dispose();
 		this.#onDidChange.dispose();
@@ -859,6 +902,14 @@ export class AgentHost implements vscode.Disposable {
 					frame.status === "running" ? { type: "skillCuration", status: "running" } : CURATION_IDLE,
 				);
 				break;
+			case "subagent_lifecycle":
+				this.#subagents.applyLifecycle(frame.payload);
+				this.#scheduleSubagents();
+				break;
+			case "subagent_progress":
+				this.#subagents.applyProgress(frame.payload);
+				this.#scheduleSubagents();
+				break;
 			case "prompt_result":
 				if (frame.status === "error" && frame.error) this.#notice("error", frame.error.message);
 				break;
@@ -909,6 +960,22 @@ export class AgentHost implements vscode.Disposable {
 	#scheduleRefresh(): void {
 		clearTimeout(this.#refreshTimer);
 		this.#refreshTimer = setTimeout(() => void this.#refreshState().catch(() => {}), 150);
+	}
+
+	/** Coalesce bursts of subagent frames into one panel update. */
+	#scheduleSubagents(): void {
+		if (this.#subagentsTimer) return;
+		this.#subagentsTimer = setTimeout(() => this.#postSubagents(), 200);
+	}
+
+	#postSubagents(): void {
+		clearTimeout(this.#subagentsTimer);
+		this.#subagentsTimer = undefined;
+		this.post({ type: "subagents", subagents: this.#subagents.list() });
+	}
+
+	#resetSubagents(): void {
+		if (this.#subagents.clear()) this.#postSubagents();
 	}
 
 	async #refreshState(): Promise<void> {

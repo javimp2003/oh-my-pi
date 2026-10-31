@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.19.0]
+
+### Added
+
+- Delegate mode button (robot icon) next to Plan mode in the chat input: while on, omp splits each prompt into slices and runs them through subagents it picks per slice. Needs an omp build with `set_delegate_mode`
+- While a task runs subagents, the delegate mode button shows how many are running; clicking it opens a panel with each subagent's status, task, current step, progress with estimated time left, and usage, plus the delegate mode switch and a "Hurry up" button that asks every running agent to wrap up
+
+### Changed
+
+- Chats without a workspace start omp with `--no-coding-guidance`, so they keep the general system prompt; "New chat" uses the coding prompt with a workspace snapshot. Needs an omp build that knows the flag
+
 ## [0.18.0]
 
 ### Added
