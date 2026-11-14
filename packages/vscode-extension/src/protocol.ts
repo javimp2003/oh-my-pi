@@ -310,8 +310,8 @@ export type ChatUpdate =
 	| { type: "mentionResults"; requestId: number; entries: WorkspaceMention[]; limited: boolean; error?: string }
 	/** Text printed by a local slash command (no agent turn). */
 	| { type: "commandOutput"; text: string }
-	/** Banner (errors, info) shown above the composer; with `durationMs` it fades out on its own after that long. */
-	| { type: "notice"; level: "info" | "warning" | "error"; message: string; durationMs?: number }
+	/** Banner (errors, info) shown above the composer; it fades out on its own after a few seconds. */
+	| { type: "notice"; level: "info" | "warning" | "error"; message: string }
 	/** Insert text at the composer cursor (Add Selection / Add File) and focus it. */
 	| { type: "insertText"; text: string }
 	| { type: "focusInput" }

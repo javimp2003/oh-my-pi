@@ -24,14 +24,12 @@ export interface EnhancePromptHost {
 	setRunning(running: boolean): void;
 	/** Put the accepted proposal in the composer in place of the draft. */
 	apply(text: string): void;
-	notice(level: "info" | "warning" | "error", message: string, durationMs?: number): void;
+	notice(level: "info" | "warning" | "error", message: string): void;
 	focus(): void;
 }
 
 const LABEL = "Mejorar prompt";
 const LABEL_RUNNING = "Mejorando… (Esc para cancelar)";
-/** How long the short outcome notices stay. */
-const NOTICE_MS = 4000;
 /** Past this many token pairs the diff shows the whole texts as replaced instead of aligning them. */
 const MAX_DIFF_CELLS = 4_000_000;
 
@@ -133,7 +131,7 @@ export class EnhancePrompt {
 		if (!pending) return;
 		this.post({ type: "enhancePromptCancel", requestId: pending.requestId });
 		this.#settle();
-		this.host.notice("info", "Mejora cancelada", NOTICE_MS);
+		this.host.notice("info", "Mejora cancelada");
 	}
 
 	/** omp answered the request `update.requestId`. */
@@ -149,7 +147,7 @@ export class EnhancePrompt {
 		if (result.status === "unchanged") {
 			const review =
 				result.ambiguities.length > 0 ? ` Revisa antes de enviar: ${result.ambiguities.join("; ")}` : "";
-			this.host.notice("info", `Tu prompt ya es claro; no hay cambios.${review}`, review ? undefined : NOTICE_MS);
+			this.host.notice("info", `Tu prompt ya es claro; no hay cambios.${review}`);
 			return;
 		}
 		this.#proposal = { original: pending.draft, result };
@@ -165,7 +163,7 @@ export class EnhancePrompt {
 	error(update: Extract<ChatUpdate, { type: "enhancePromptError" }>): void {
 		if (this.#pending?.requestId !== update.requestId) return;
 		this.#settle();
-		if (update.cancelled) this.host.notice("info", "Mejora cancelada", NOTICE_MS);
+		if (update.cancelled) this.host.notice("info", "Mejora cancelada");
 		else this.host.notice("error", `No se pudo mejorar el prompt: ${update.message}`);
 	}
 

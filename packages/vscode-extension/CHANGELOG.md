@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.40.1]
+
+### Changed
+
+- New spoken recording for the ask alert
+- Notices above the composer (skill improvement applied, prompt updated, errors…) now close on their own after 3 seconds
+
+### Fixed
+
+- The ask alert is heard on Windows 11 machines without Windows Media Player (common on corporate laptops): it now plays through the same Windows sound player as the completion sound
+- Switching to another chat no longer shows the notices of the chat you left
+
 ## [0.40.0]
 
 ### Added

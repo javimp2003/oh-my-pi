@@ -80,10 +80,10 @@ const PLACEHOLDER_PLAN = "Modo plan: describe qué quieres planificar";
 const PLACEHOLDER_DELEGATE = "Modo delegación: describe la tarea para los subagentes de MarIA Code";
 const PLACEHOLDER_LISTENING = "Escuchando… pulsa el micrófono para terminar, Esc para cancelar";
 const PLACEHOLDER_TRANSCRIBING = "Transcribiendo…";
-/** How long a self-dismissing notice takes to fade out; matches `.notice.fading` in chat.css. */
+/** How long every notice stays before it fades out. */
+const NOTICE_MS = 3000;
+/** How long a notice takes to fade out; matches `.notice.fading` in chat.css. */
 const NOTICE_FADE_MS = 400;
-/** How long "Prompt actualizado" offers Deshacer after a "Mejorar prompt" proposal is used. */
-const ENHANCE_UNDO_NOTICE_MS = 8000;
 
 /** A pasted image file as an omp image block (base64 data and MIME type). */
 function readImage(file: File): Promise<ImageContent> {
@@ -236,7 +236,7 @@ export class Composer {
 				this.#refresh();
 			},
 			apply: text => this.#applyEnhanced(text),
-			notice: (level, message, durationMs) => this.showNotice(level, message, durationMs),
+			notice: (level, message) => this.showNotice(level, message),
 			focus: () => this.focus(),
 		});
 		this.#thinkingToggle = iconButton("brain", "", () => {
@@ -507,10 +507,10 @@ export class Composer {
 	}
 
 	/**
-	 * A banner above the composer; with `durationMs` it fades out and goes away on its own after that long.
-	 * `action` adds a button that closes the banner and runs it.
+	 * A banner above the composer of the chat shown now; it fades out and goes away on its own after
+	 * `NOTICE_MS`. `action` adds a button that closes the banner and runs it.
 	 */
-	showNotice(level: NoticeLevel, message: string, durationMs?: number, action?: { label: string; run(): void }): void {
+	showNotice(level: NoticeLevel, message: string, action?: { label: string; run(): void }): void {
 		const notice = h("div", { className: `notice ${level}`, role: level === "error" ? "alert" : "status" });
 		const close = button("×", "notice-close", () => notice.remove());
 		setTooltip(close, "Dismiss");
@@ -525,12 +525,16 @@ export class Composer {
 		}
 		notice.append(close);
 		this.#notices.append(notice);
-		if (durationMs === undefined) return;
 		window.setTimeout(() => {
 			notice.classList.add("fading");
 			// By timer, not `transitionend`: with reduced motion there is no transition to end.
 			window.setTimeout(() => notice.remove(), NOTICE_FADE_MS);
-		}, durationMs);
+		}, NOTICE_MS);
+	}
+
+	/** Drop every banner: they belong to the chat that was shown when they appeared. */
+	clearNotices(): void {
+		this.#notices.replaceChildren();
 	}
 
 	/** omp's "Mejorar prompt" proposal for a draft this composer sent. */
@@ -548,7 +552,7 @@ export class Composer {
 		const draft = this.#input.value;
 		const mentions = this.#draftMentions;
 		this.#replaceDraft(text, relocateDraftMentions(text, mentions));
-		this.showNotice("info", "Prompt actualizado", ENHANCE_UNDO_NOTICE_MS, {
+		this.showNotice("info", "Prompt actualizado", {
 			label: "Deshacer",
 			run: () => this.#replaceDraft(draft, mentions),
 		});

@@ -200,6 +200,8 @@ function handle(update: ChatUpdate): void {
 				composer.setQueue(queued.steering, queued.followUp, queued.liveSteered);
 			}
 			if (state.sessionFile !== sessionFile) {
+				// Another chat is shown: the banners on screen were about the previous one.
+				composer.clearNotices();
 				sessionFile = state.sessionFile;
 				history.close();
 			}
@@ -272,7 +274,7 @@ function handle(update: ChatUpdate): void {
 			transcript.appendCommandOutput(update.text);
 			break;
 		case "notice":
-			composer.showNotice(update.level, update.message, update.durationMs);
+			composer.showNotice(update.level, update.message);
 			break;
 		case "insertText":
 			composer.insertText(update.text);

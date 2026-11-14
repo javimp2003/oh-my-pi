@@ -27,7 +27,7 @@ let lastAskAlert = 0;
 
 /** Called once from `activate`: where the bundled recording lives. */
 export function initSounds(extensionUri: vscode.Uri): void {
-	askAlertFile = vscode.Uri.joinPath(extensionUri, "media", "ask-alert.mp3").fsPath;
+	askAlertFile = vscode.Uri.joinPath(extensionUri, "media", "ask-alert.wav").fsPath;
 }
 
 /** The OS's own completion sound. */
@@ -55,7 +55,11 @@ function completionPlayers(): Player[] {
 	}
 }
 
-/** Players for an MP3 file. */
+/**
+ * Players for a PCM WAV file. On Windows, `SoundPlayer` (.NET Framework, always
+ * present) instead of the Windows Media Player COM object, which Windows 11
+ * images without the optional "Windows Media Player Legacy" feature lack.
+ */
 function filePlayers(file: string): Player[] {
 	switch (process.platform) {
 		case "darwin":
@@ -65,15 +69,14 @@ function filePlayers(file: string): Player[] {
 			const literal = file.replaceAll("'", "''");
 			const script =
 				`if (-not (Test-Path -LiteralPath '${literal}')) { exit 1 }; ` +
-				`$w = New-Object -ComObject WMPlayer.OCX; $w.URL = '${literal}'; $w.controls.play(); ` +
-				"$t = 0; while ($w.playState -ne 1 -and $t -lt 300) { Start-Sleep -Milliseconds 100; $t++ }; $w.close()";
+				`(New-Object Media.SoundPlayer '${literal}').PlaySync()`;
 			return [["powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script]]];
 		}
 		default:
 			return [
 				["ffplay", ["-nodisp", "-autoexit", "-loglevel", "quiet", file]],
-				["mpg123", ["-q", file]],
 				["paplay", [file]],
+				["aplay", ["-q", file]],
 			];
 	}
 }

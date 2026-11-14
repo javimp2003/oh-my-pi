@@ -47,8 +47,6 @@ export interface ChatSurface {
 /** Shown before the view has a process (it gets one as soon as it opens). */
 const NO_PROCESS: AgentStatus = { phase: "starting" };
 const NO_STATUS_TEXTS: ReadonlyMap<string, string> = new Map();
-/** How long "Mejora aplicada…" stays before fading out: a confirmation, nothing to act on. */
-const APPLIED_NOTICE_MS = 2000;
 
 export class ChatSession implements vscode.Disposable, HostView {
 	#host: AgentHost | undefined;
@@ -378,10 +376,10 @@ export class ChatSession implements vscode.Disposable, HostView {
 		return host;
 	}
 
-	/** A banner in the chat; with `durationMs` it fades out on its own after that long. */
-	#notice(level: "info" | "warning" | "error", message: string, durationMs?: number): void {
+	/** A banner in the chat; the webview fades it out on its own. */
+	#notice(level: "info" | "warning" | "error", message: string): void {
 		this.log.appendLine(`[${level}] ${message}`);
-		this.post({ type: "notice", level, message, durationMs });
+		this.post({ type: "notice", level, message });
 	}
 
 	/** Voice input: omp records the microphone and transcribes it; the webview shows the state. */
@@ -716,11 +714,7 @@ export class ChatSession implements vscode.Disposable, HostView {
 				const skill = this.proposals.proposals.find(proposal => proposal.id === request.id)?.skill;
 				try {
 					await this.proposals.approve(request.id);
-					this.#notice(
-						"info",
-						skill ? `Mejora aplicada a la skill «${skill}».` : "Mejora de skill aplicada.",
-						APPLIED_NOTICE_MS,
-					);
+					this.#notice("info", skill ? `Mejora aplicada a la skill «${skill}».` : "Mejora de skill aplicada.");
 				} catch (error) {
 					this.#notice("error", `No se pudo aplicar la mejora: ${errorMessage(error)}`);
 					// The skills panel waits on its buttons until the proposals come back.
