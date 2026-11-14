@@ -276,6 +276,7 @@ Main agent verifies once after all subagents land; parallel runs storm the CPU a
 - Changes complete → yield; name the checks main agent should run.
 {{else}}
 # 5. Verify
+{{#has tools "verification"}}For changes with multiple acceptance requirements, use `{{toolRefs.verification}}` to define executable checks and relevant file paths before implementation; inspect its status before finishing.{{/has}}
 Verify in proportion to risk, once, at the end:
 - Behavioral code change: run the narrowest check that exercises the changed path (focused test, the command, the repro). Tests alone are not proof for UI/CLI surfaces.
 - Report what you ran; unchecked → say so. NEVER re-run what a tool result already proved.

@@ -1,3 +1,4 @@
+import type { ExecutionBudget } from "../session/execution-budget";
 import type { AgentOptions, AgentTelemetryConfig, AgentTool, AgentToolContext } from "@oh-my-pi/pi-agent-core";
 import type { EditStore } from "@oh-my-pi/pi-natives";
 import type { FetchImpl, ImageContent, Model, ServiceTierByFamily, ToolChoice } from "@oh-my-pi/pi-ai";
@@ -73,6 +74,8 @@ import { SecurityScanTool } from "./security-scan";
 import { supportsExternalThinking, ThinkTool } from "./think";
 import { type TodoPhase } from "@oh-my-pi/pi-tui/tools/todo";
 import { TodoTool } from "./todo";
+import { VerificationTool } from "./verification";
+import type { VerificationContracts } from "../session/verification-contract";
 import { TeamTaskTool } from "./team-task";
 import { SessionSearchTool } from "./session-search";
 import { WriteTool } from "./write";
@@ -161,6 +164,7 @@ export type {
 export * from "./security-scan";
 export * from "./think";
 export * from "./todo";
+export * from "./verification";
 export * from "./tts";
 export * from "./vibe";
 export * from "./wait";
@@ -465,6 +469,9 @@ export interface ToolSession {
 	getClientBridge?: () => ClientBridge | undefined;
 	/** Get cached todo phases for this session. */
 	getTodoPhases?: () => TodoPhase[];
+	/** Request-local evidence ledger; the host owns persistence and execution observation. */
+	getExecutionBudget?: () => ExecutionBudget | undefined;
+	getVerificationContracts?: () => VerificationContracts | undefined;
 	/** Replace cached todo phases for this session. */
 	setTodoPhases?: (phases: TodoPhase[]) => void;
 	/**
@@ -579,6 +586,7 @@ export const BUILTIN_TOOLS: Record<BuiltinToolName, ToolFactory> = {
 	task: s => TaskTool.create(s),
 	wait: s => new WaitTool(s),
 	todo: s => new TodoTool(s),
+	verification: s => new VerificationTool(s),
 	team_task: s => new TeamTaskTool(s),
 	session_search: s => new SessionSearchTool(s),
 	web_search: s => new WebSearchTool(s),
@@ -751,6 +759,8 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 		if (name === "eval") return allowEval;
 		if (name === "debug") return cfgDebugEnabled.get(session.settings);
 		if (name === "ida") return cfgIdaAvailable.get(session.settings);
+		if (name === "verification")
+			return session.getVerificationContracts !== undefined && (session.taskDepth ?? 0) === 0;
 		if (name === "todo")
 			return (!includeYield || session.prewalkArmed === true) && cfgTodoEnabled.get(session.settings);
 		if (name === "glob") return cfgGlobEnabled.get(session.settings);

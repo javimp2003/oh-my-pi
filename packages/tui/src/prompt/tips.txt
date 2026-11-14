@@ -1,6 +1,7 @@
 Tired of typing "keep going"? Just send a '.'
 Type `#` anywhere in your prompt for quick actions — copy the line or the whole prompt, undo, jump the cursor
 Type `/` at the start of your prompt to browse every command
+[NEW] Open `/home` or press {action:app.workbench.open} for chat, models, context, agents, tools and all settings
 Start your prompt with `!` to run it as bash — `!!` runs it without adding the output to context
 Start your prompt with `$ ` to run Python — `$$ ` runs it without adding the output to context
 You can /btw to ask a side question

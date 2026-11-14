@@ -26,6 +26,7 @@ import {
 	computeFileLists,
 	countResponsesHistoryTokens,
 	createCompactionSummaryMessage,
+	createCompactionContextMessages,
 	DEFAULT_SHAKE_CONFIG,
 	type CompactionSettings as EngineCompactionSettings,
 	effectiveReserveTokens,
@@ -1260,7 +1261,7 @@ export class SessionMaintenance {
 					}
 					continue;
 				}
-				if (method === "handoff" || method === "soft") {
+				if (method === "handoff" || method === "soft" || method === "incremental") {
 					selectedMethod = method;
 					selectedMethodIndex = index;
 					break;
@@ -2188,7 +2189,7 @@ export class SessionMaintenance {
 	}
 
 	/** Install and launch one background speculation run for `method`. */
-	#startSpeculationRun(contextTokens: number, method: "remote" | "handoff" | "soft"): void {
+	#startSpeculationRun(contextTokens: number, method: "remote" | "handoff" | "soft" | "incremental"): void {
 		const controller = new AbortController();
 		const run: SpeculationRun = { controller, promise: Promise.resolve(), contextTokensAtStart: contextTokens };
 		const model = this.#model;
@@ -2283,7 +2284,7 @@ export class SessionMaintenance {
 	/** Produce and arm one speculative compaction result off a branch snapshot. */
 	async #runSpeculation(
 		run: SpeculationRun,
-		method: "remote" | "handoff" | "soft",
+		method: "remote" | "handoff" | "soft" | "incremental",
 		contextTokens: number,
 	): Promise<void> {
 		const clear = () => {
@@ -3963,17 +3964,18 @@ export class SessionMaintenance {
 			? snapcompact.historyBlocks(archive, { maxFrameDataBytes: snapcompact.FRAME_DATA_BYTES_BUDGET })
 			: undefined;
 		if (!leaf) {
-			const summaryMessage = createCompactionSummaryMessage(
+			const summaryMessages = createCompactionContextMessages(
 				args.summary,
 				args.tokensBefore,
 				new Date().toISOString(),
+				args.preserveData,
 				{
 					shortSummary: args.shortSummary,
 					method: args.method,
 					blocks,
 				},
 			);
-			return nonMessageTokens + this.#countProjectedMessages([summaryMessage]);
+			return nonMessageTokens + this.#countProjectedMessages(summaryMessages);
 		}
 		const pending: CompactionEntry = {
 			type: "compaction",

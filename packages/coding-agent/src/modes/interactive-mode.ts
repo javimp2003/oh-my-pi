@@ -231,6 +231,8 @@ import { setChatTranscriptDisplayPreferences } from "@oh-my-pi/pi-tui/chat/displ
 import { setSvgFigureRendering } from "@oh-my-pi/pi-tui/chat/svg-figure";
 import { setTableCharts } from "@oh-my-pi/pi-tui/chat/table-chart";
 import { setTranscriptActionHandler } from "@oh-my-pi/pi-tui/chat/transcript-actions";
+import { ResponseCopyButton } from "@oh-my-pi/pi-tui/chat/response-copy-button";
+import { extractLastAssistantText } from "@oh-my-pi/pi-tui/overlays/copy-targets";
 import { StatusNotice } from "@oh-my-pi/pi-tui/chrome/status-notice";
 import { ReadToolGroupComponent } from "@oh-my-pi/pi-tui/chat/read-tool-group";
 import { ToolExecutionComponent } from "@oh-my-pi/pi-tui/chat/tool-execution";
@@ -1635,6 +1637,10 @@ export class InteractiveMode implements InteractiveModeContext {
 		return this.composer.viewportClickCandidates(index);
 	}
 
+	activateViewportClick(index: number, col: number): boolean {
+		return this.composer.activateViewportClick(index, col);
+	}
+
 	/** Flip the pinned jump list between its collapsed few and the full list, overriding the setting. */
 	togglePinnedHudExpanded(): void {
 		const mode = cfgDisplayPinnedAgents.get(settings);
@@ -2206,6 +2212,9 @@ export class InteractiveMode implements InteractiveModeContext {
 				this.statusContainer,
 				this.attachmentChipsContainer,
 				this.hookWidgetContainerAbove,
+				new ResponseCopyButton(() =>
+					this.viewSession.isStreaming ? undefined : extractLastAssistantText(this.viewSession.messages),
+				),
 				this.editorContainer,
 				this.hookWidgetContainerBelow,
 			],

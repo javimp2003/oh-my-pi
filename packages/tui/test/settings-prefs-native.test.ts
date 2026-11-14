@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from "bun:test";
+import { visibleWidth } from "@oh-my-pi/pi-tui";
+import { editorKey } from "@oh-my-pi/pi-tui/chrome/keybinding-hints";
 import type { TspPrefsProps } from "@oh-my-pi/pi-wire";
 import type { DescribeContext, NativeNode, NativeUiEvent } from "@oh-my-pi/pi-tui/native/node";
 import type { PluginSettingsHost } from "@oh-my-pi/pi-tui/overlays/plugin-settings";
@@ -10,6 +12,10 @@ const ENTER = "\n";
 const DOWN = "\x1b[B";
 
 const ENTRIES: SettingsDisplayEntry[] = [
+	{ path: "retry.delayMs", type: "number", defaultValue: undefined },
+	{ path: "models.enabled", type: "array", defaultValue: [] },
+	{ path: "service.credentials", type: "record", defaultValue: {}, credential: true },
+	{ path: "models.aliases", type: "record", defaultValue: { coding: ["team/model"] } },
 	{
 		path: "theme.dark",
 		type: "string",
@@ -77,7 +83,7 @@ interface Harness {
 	previews: string[];
 }
 
-function harness(initial: Record<string, unknown> = {}): Harness {
+function harness(initial: Record<string, unknown> = {}, getHeight?: () => number): Harness {
 	const values = new Map<string, unknown>();
 	for (const entry of ENTRIES) values.set(entry.path, entry.defaultValue);
 	for (const key in initial) values.set(key, initial[key]);
@@ -115,6 +121,7 @@ function harness(initial: Record<string, unknown> = {}): Harness {
 			thinkingLevel: undefined,
 			availableThemes: ["dark", "light", "titanium"],
 			providers: [],
+			getHeight,
 		},
 		{
 			onChange: (path, value) => changes.push([path, value]),
@@ -159,6 +166,35 @@ describe("settings as a native prefs page", () => {
 		const { selector } = harness();
 		const card = selector.describe({ ...PREFS, supports: kind => kind !== "prefs" });
 		expect(card.k).toBe("card");
+	});
+
+	it("keeps the advanced settings search and value editor within a narrow terminal", () => {
+		const { selector } = harness();
+		for (const ch of "retry.delayMs") selector.handleInput(ch);
+		for (const line of selector.render(32)) expect(visibleWidth(line)).toBeLessThanOrEqual(32);
+		selector.handleInput(ENTER);
+		selector.handleInput("not a number");
+		selector.handleInput(ENTER);
+		for (const line of selector.render(32)) expect(visibleWidth(line)).toBeLessThanOrEqual(32);
+	});
+
+	it("keeps the selected search result and back key visible when the terminal shrinks", () => {
+		let height = 30;
+		const { selector } = harness({}, () => height);
+		for (const ch of "retry.delayMs") selector.handleInput(ch);
+		for (const [width, rows] of [
+			[110, 30],
+			[40, 20],
+			[32, 8],
+		]) {
+			height = rows!;
+			const lines = selector.render(width!);
+			expect(lines.length).toBeLessThanOrEqual(height);
+			for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width!);
+			const rendered = Bun.stripANSI(lines.join("\n"));
+			expect(rendered).toContain("retry.delayMs");
+			expect(rendered).toContain(editorKey("tui.select.cancel"));
+		}
 	});
 
 	it("docks beside the transcript only where the terminal advertises aside", () => {
@@ -322,5 +358,71 @@ describe("settings as a native prefs page", () => {
 		expect(prefs(selector).props.focus).toBe("display.colorBlind");
 		send(selector, { type: "select", key: "", item: "display.risky" });
 		expect(prefs(selector).props.focus).toBe("display.risky");
+	});
+
+	it("edits config-only numbers and arrays and rejects malformed values without changing the stored setting", () => {
+		const { selector, values } = harness();
+		for (const ch of "retry.delayMs") selector.handleInput(ch);
+		selector.handleInput(ENTER);
+		for (const ch of "invalid") selector.handleInput(ch);
+		selector.handleInput(ENTER);
+		expect(values.get("retry.delayMs")).toBeUndefined();
+		selector.handleInput("\x15");
+		for (const ch of "1250") selector.handleInput(ch);
+		selector.handleInput(ENTER);
+		expect(values.get("retry.delayMs")).toBe(1250);
+		send(selector, { type: "action", key: "", act: "page", value: "advanced", mods: [] });
+		send(selector, { type: "change", key: "", item: "models.enabled", value: '["team/model"]' });
+		expect(values.get("models.enabled")).toEqual(["team/model"]);
+	});
+
+	it("accepts a custom numeric value outside the suggested presets through keyboard and native controls", () => {
+		const { selector, values } = harness();
+		for (const ch of "compaction.thresholdPercent") selector.handleInput(ch);
+		selector.handleInput("\x05");
+		selector.handleInput("\x15");
+		selector.handleInput("67");
+		selector.handleInput(ENTER);
+		expect(values.get("compaction.thresholdPercent")).toBe(67);
+		send(selector, { type: "change", key: "", item: "compaction.thresholdPercent", value: 73 });
+		expect(values.get("compaction.thresholdPercent")).toBe(73);
+		send(selector, { type: "change", key: "", item: "compaction.thresholdPercent", value: Number.POSITIVE_INFINITY });
+		expect(values.get("compaction.thresholdPercent")).toBe(73);
+		expect(Bun.stripANSI(selector.render(100).join("\n"))).toContain("Expected a finite number");
+	});
+
+	it("masks config-only credential records in the list, search and editable draft", () => {
+		const { selector } = harness({ "service.credentials": { token: "private-record-token" } });
+		for (const ch of "service.credentials") selector.handleInput(ch);
+		expect(Bun.stripANSI(selector.render(100).join("\n"))).not.toContain("private-record-token");
+		expect(JSON.stringify(prefs(selector).props)).not.toContain("private-record-token");
+		selector.handleInput(ENTER);
+		expect(JSON.stringify(prefs(selector).props)).not.toContain("private-record-token");
+		expect(Bun.stripANSI(selector.render(100).join("\n"))).not.toContain("private-record-token");
+	});
+
+	it("clears the modified marker when structured values match their declared defaults", () => {
+		const { selector } = harness({ "models.aliases": { coding: ["team/model"] } });
+		send(selector, { type: "action", key: "", act: "page", value: "advanced", mods: [] });
+		expect(row(prefs(selector).props, "models.aliases").changed).toBeUndefined();
+		send(selector, { type: "change", key: "", item: "models.aliases", value: '{"coding":["team/other"]}' });
+		expect(row(prefs(selector).props, "models.aliases").changed).toBe(true);
+		send(selector, { type: "change", key: "", item: "models.aliases", value: null });
+		expect(row(prefs(selector).props, "models.aliases").changed).toBeUndefined();
+	});
+
+	it("resets the selected setting from both search and a tab without consuming reset inside a text editor", () => {
+		const { selector, values, changes } = harness({ "display.colorBlind": true, "shell.path": "/bin/zsh" });
+		for (const ch of "color-blind") selector.handleInput(ch);
+		selector.handleInput("\x12");
+		expect(values.get("display.colorBlind")).toBe(false);
+		expect(changes.at(-1)).toEqual(["display.colorBlind", false]);
+		send(selector, { type: "action", key: "", act: "page", value: "shell", mods: [] });
+		send(selector, { type: "activate", key: "", item: "shell.path" });
+		selector.handleInput("\x12");
+		expect(values.get("shell.path")).toBe("/bin/zsh");
+		selector.handleInput("\x1b");
+		selector.handleInput("\x12");
+		expect(values.get("shell.path")).toBe("");
 	});
 });

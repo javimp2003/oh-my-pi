@@ -210,19 +210,6 @@ function renderDescription(options: TaskDescriptionOptions): string {
 	});
 }
 
-/**
- * A fork reuses the parent's cached prefix only when the provider can grant the child's
- * extra tools (`yield`) mid-conversation; elsewhere every tool change misses the cache.
- */
-function modelSupportsFork(model: TaskForkSource["model"] | undefined): boolean {
-	const compat = model?.compat;
-	return (
-		compat !== undefined &&
-		"supportsMidConversationToolChanges" in compat &&
-		compat.supportsMidConversationToolChanges === true
-	);
-}
-
 function createTaskModeError(text: string): AgentToolResult<TaskToolDetails> {
 	return {
 		content: [{ type: "text", text }],
@@ -744,7 +731,7 @@ export class TaskTool implements AgentTool<TaskToolSchemaInstance, TaskToolDetai
 
 	/** `fork` is advertised only when enabled and the active model can reuse the parent's cache. */
 	#forkAvailable(): boolean {
-		return cfgTaskForkEnabled.get(this.session.settings) && modelSupportsFork(this.session.getActiveModel?.());
+		return cfgTaskForkEnabled.get(this.session.settings) && this.session.getActiveModel?.() !== undefined;
 	}
 	private constructor(
 		private readonly session: ToolSession,
@@ -923,14 +910,6 @@ export class TaskTool implements AgentTool<TaskToolSchemaInstance, TaskToolDetai
 				return {
 					...createTaskModeError(
 						"fork requires a persisted session with an active model; use a normal task with full context",
-					),
-					isError: true,
-				};
-			}
-			if (!modelSupportsFork(forkSource.model)) {
-				return {
-					...createTaskModeError(
-						`fork requires a model with mid-conversation tool changes (current: ${forkSource.model.provider}/${forkSource.model.id}); use a normal task with full context`,
 					),
 					isError: true,
 				};

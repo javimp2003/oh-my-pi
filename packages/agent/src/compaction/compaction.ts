@@ -24,6 +24,7 @@ import {
 	type Usage,
 	withAuth,
 } from "@oh-my-pi/pi-ai";
+import incrementalSummaryPrompt from "./prompts/incremental-summary.md" with { type: "text" };
 import type { Dialect } from "@oh-my-pi/pi-ai/dialect";
 import * as AIError from "@oh-my-pi/pi-ai/error";
 import { createOpenAICodexCompactionRequestContext } from "@oh-my-pi/pi-ai/providers/openai-codex-compaction";
@@ -61,6 +62,13 @@ import {
 	V2_RETAINED_MESSAGE_TOKEN_BUDGET,
 } from "./compaction-v2-streaming";
 import type { CompactionEntry, SessionEntry } from "./entries";
+import {
+	createCompactionContextMessages,
+	type CompactionSummaryBlock,
+	getCompactionSummaryChain,
+	joinCompactionSummaryBlocks,
+	stripCompactionSummaryChain,
+} from "./summary-chain";
 import { NativeCompactionError } from "./errors";
 import {
 	buildCompactionFidelity,
@@ -202,6 +210,10 @@ export interface CompactionSettings {
 	remoteEndpoint?: string;
 	remoteStreamingV2Enabled?: boolean;
 	v2RetainedMessageBudget?: number;
+	/** Portable append-only summary blocks; native provider compaction is unaffected. */
+	summaryChainEnabled?: boolean;
+	summaryChainMaxBlocks?: number;
+	summaryChainMaxTokens?: number;
 }
 
 /** Reserve applied when {@link CompactionSettings.reserveTokens} is unset. */
@@ -771,6 +783,8 @@ function shouldRetryHandoffWithAutoToolChoice(response: AssistantMessage): boole
  * If previousSummary is provided, uses the update prompt to merge.
  */
 export interface SummaryOptions {
+	/** Optional lower output cap for a small incremental summary. */
+	maxSummaryTokens?: number;
 	promptOverride?: string;
 	extraContext?: string[];
 	remoteEndpoint?: string;
@@ -989,7 +1003,11 @@ export async function generateSummary(
 	previousSummary?: string,
 	options?: SummaryOptions,
 ): Promise<string> {
-	const maxTokens = Math.min(Math.floor(0.8 * reserveTokens), MAX_SUMMARY_TOKENS);
+	const maxTokens = Math.min(
+		Math.floor(0.8 * reserveTokens),
+		MAX_SUMMARY_TOKENS,
+		options?.maxSummaryTokens ?? MAX_SUMMARY_TOKENS,
+	);
 
 	// Serialize conversation to text so model doesn't try to continue it
 	// Convert to LLM messages first (handles custom app messages when caller provides a transformer).
@@ -1198,6 +1216,8 @@ export function renderHandoffPrompt(
 }
 
 export interface HandoffFromContextOptions {
+	oneshotRetry?: OneshotRetryOptions | false;
+	oneshotKind?: "handoff" | "compaction_summary";
 	/**
 	 * Stream options mirrored from the live agent turn: `apiKey`, `signal`, the
 	 * `sessionId`/`promptCacheKey` cache-routing pair, `serviceTier`, and the
@@ -1250,16 +1270,21 @@ export async function generateHandoffFromContext(
 			};
 			const first = await instrumentedCompleteSimple(model, context, requestOptions, {
 				telemetry: options.telemetry,
-				oneshotKind: "handoff",
+				oneshotKind: options.oneshotKind ?? "handoff",
 				completeImpl: options.completeImpl,
-				retry: {},
+				retry: summaryOneshotRetry({ oneshotRetry: options.oneshotRetry }),
 			});
 			if (first.stopReason !== "error" || !shouldRetryHandoffWithAutoToolChoice(first)) return first;
 			return instrumentedCompleteSimple(
 				model,
 				context,
 				{ ...requestOptions, toolChoice: "auto" },
-				{ telemetry: options.telemetry, oneshotKind: "handoff", completeImpl: options.completeImpl, retry: {} },
+				{
+					telemetry: options.telemetry,
+					oneshotKind: options.oneshotKind ?? "handoff",
+					completeImpl: options.completeImpl,
+					retry: summaryOneshotRetry({ oneshotRetry: options.oneshotRetry }),
+				},
 			);
 		},
 	);
@@ -1811,6 +1836,7 @@ export async function compact(
 	const reserveTokens = settings.reserveTokens ?? DEFAULT_RESERVE_TOKENS;
 
 	const summaryOptions: SummaryOptions = {
+		maxSummaryTokens: options?.maxSummaryTokens,
 		promptOverride: options?.promptOverride,
 		extraContext: options?.extraContext,
 		remoteEndpoint: settings.remoteEnabled === false ? undefined : settings.remoteEndpoint,
@@ -2230,6 +2256,42 @@ export async function compact(
 		throw new NativeCompactionError(nativeCompactionError);
 	}
 
+	// Native/snapcompact migrations keep their existing replay contract. Only
+	// portable summaries can be sealed into independent prefix-stable messages.
+	const chainEnabled =
+		settings.summaryChainEnabled === true &&
+		!usedRemoteCompaction &&
+		!previousSnapcompactArchive &&
+		!previousNativeHistory &&
+		!getPreservedAnthropicCompactionData(previousPreserveData);
+	const chainMaxBlocks = Math.max(1, Math.min(32, Math.floor(settings.summaryChainMaxBlocks ?? 4)));
+	const chainTokenLimit = Math.max(
+		256,
+		Math.min(settings.summaryChainMaxTokens ?? 8192, Math.floor((model.contextWindow ?? 65536) / 8)),
+	);
+	const chainTokenizer = new Tokenizer(model);
+	const parentBlocks: CompactionSummaryBlock[] =
+		chainEnabled && previousSummary
+			? (getCompactionSummaryChain(previousPreserveData, previousSummary)?.blocks ?? [
+					{
+						summary: previousSummary,
+						timestamp: preparation.previousSummaryTimestamp ?? new Date().toISOString(),
+						tokensBefore,
+					},
+				])
+			: [];
+	const appendBlocks =
+		chainEnabled &&
+		(messagesToSummarize.length > 0 || turnPrefixMessages.length > 0) &&
+		parentBlocks.length < chainMaxBlocks &&
+		chainTokenizer.countTokens(joinCompactionSummaryBlocks(parentBlocks)) < chainTokenLimit * 0.75;
+	const summarySeed = appendBlocks ? undefined : previousSummaryForCompaction;
+	if (chainEnabled)
+		summaryOptions.maxSummaryTokens = Math.min(
+			summaryOptions.maxSummaryTokens ?? MAX_SUMMARY_TOKENS,
+			Math.max(128, Math.min(2048, Math.floor(chainTokenLimit / 4))),
+		);
+
 	// Generate summaries (can be parallel if both needed) and merge into one
 	let summary: string;
 
@@ -2246,10 +2308,98 @@ export async function compact(
 		// locally then (see remotePreserveReusable).
 		const inputTokens = getCompactionV2PreserveData(preserveData)?.usedTokens ?? 0;
 		summary = formatRemoteCompactionSummary(inputTokens);
+	} else if (chainEnabled) {
+		const delta = [...messagesToSummarize, ...turnPrefixMessages];
+		const providerHistory = [
+			...(previousSummary
+				? createCompactionContextMessages(
+						previousSummary,
+						tokensBefore,
+						preparation.previousSummaryTimestamp ?? new Date().toISOString(),
+						previousPreserveData,
+					)
+				: []),
+			...delta,
+		];
+		const liveContext = summaryOptions.buildProviderContext
+			? await summaryOptions.buildProviderContext(providerHistory, recentMessages, signal)
+			: undefined;
+		if (liveContext?.messages.length) {
+			// Append instructions to the real prefix instead of serializing a new
+			// conversation under a different system prompt. Existing sealed blocks
+			// provide context, but only the new range is summarized on append.
+			const request = prompt.render(incrementalSummaryPrompt, {
+				append: appendBlocks && parentBlocks.length > 0,
+				policy: summaryOptions.promptOverride ?? SUMMARIZATION_PROMPT,
+				customInstructions,
+				extraContext: summaryOptions.extraContext,
+			});
+			try {
+				summary = await generateHandoffFromContext(
+					{
+						...liveContext,
+						messages: [
+							...liveContext.messages,
+							{ role: "user", content: request, timestamp: Date.now(), attribution: "agent" },
+						],
+					},
+					model,
+					{
+						streamOptions: {
+							apiKey,
+							signal,
+							maxTokens: Math.min(
+								Math.floor(0.8 * reserveTokens),
+								summaryOptions.maxSummaryTokens ?? MAX_SUMMARY_TOKENS,
+							),
+							sessionId: summaryOptions.sessionId,
+							promptCacheKey: summaryOptions.promptCacheKey,
+							providerSessionState: summaryOptions.providerSessionState,
+							metadata: summaryOptions.metadata,
+							initiatorOverride: summaryOptions.initiatorOverride,
+							fetch: summaryOptions.fetch,
+							preferWebsockets: summaryOptions.preferWebsockets,
+							codexCompaction: localCodexCompaction(summaryOptions),
+						},
+						telemetry: summaryOptions.telemetry,
+						thinkingLevel: summaryOptions.thinkingLevel,
+						completeImpl: summaryOptions.completeImpl,
+						oneshotRetry: summaryOptions.oneshotRetry,
+						oneshotKind: "compaction_summary",
+					},
+				);
+			} catch (error) {
+				if (signal?.aborted || !AIError.is(AIError.classify(error, model.api), AIError.Flag.ContextOverflow))
+					throw error;
+				// A smaller fallback model may not fit the original prefix. Keep the
+				// existing windowed summarizer as the bounded-input fallback.
+				summary = await generateSummary(
+					delta,
+					model,
+					reserveTokens,
+					apiKey,
+					signal,
+					customInstructions,
+					summarySeed,
+					summaryOptions,
+				);
+			}
+		} else {
+			summary = await generateSummary(
+				delta,
+				model,
+				reserveTokens,
+				apiKey,
+				signal,
+				customInstructions,
+				summarySeed,
+				summaryOptions,
+			);
+		}
 	} else if (isSplitTurn && turnPrefixMessages.length > 0) {
 		// Generate both summaries in parallel
 		const [historyResult, turnPrefixResult] = await Promise.all([
-			messagesToSummarize.length > 0 || previousSummaryForCompaction
+			messagesToSummarize.length > 0 || summarySeed
 				? generateSummary(
 						messagesToSummarize,
 						model,
@@ -2257,7 +2407,7 @@ export async function compact(
 						apiKey,
 						signal,
 						customInstructions,
-						previousSummaryForCompaction,
+						summarySeed,
 						summaryOptions,
 					)
 				: Promise.resolve("No prior history."),
@@ -2274,7 +2424,7 @@ export async function compact(
 			apiKey,
 			signal,
 			customInstructions,
-			previousSummaryForCompaction,
+			summarySeed,
 			summaryOptions,
 		);
 	} else if (previousSummaryForCompaction) {
@@ -2295,13 +2445,50 @@ export async function compact(
 
 	// Compute file lists and append to summary
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
-	summary = upsertFileOperations(summary, readFiles, modifiedFiles, fileOps.read);
+	const newMessages = [...messagesToSummarize, ...turnPrefixMessages];
+	const blockFileOps = appendBlocks ? extractFileOperations(newMessages, [], -1) : fileOps;
+	const blockFiles = computeFileLists(blockFileOps);
+	summary = upsertFileOperations(summary, blockFiles.readFiles, blockFiles.modifiedFiles, blockFileOps.read);
 	const fidelity = buildCompactionFidelity(
 		[...messagesToSummarize, ...turnPrefixMessages],
 		preparation.previousDetails,
 	);
 	// Provider-native/remote compactions replay their own history; fidelity blocks accompany local summaries only.
-	if (!usedRemoteCompaction) summary = upsertCompactionFidelity(summary, fidelity, options?.recoveryPointer);
+	if (!usedRemoteCompaction)
+		summary = upsertCompactionFidelity(
+			summary,
+			appendBlocks ? buildCompactionFidelity(newMessages, undefined) : fidelity,
+			options?.recoveryPointer,
+		);
+	preserveData = stripCompactionSummaryChain(preserveData);
+	if (chainEnabled) {
+		let blocks = [
+			...(appendBlocks ? parentBlocks : []),
+			{ summary, timestamp: new Date().toISOString(), tokensBefore },
+		];
+		if (blocks.length > 1 && chainTokenizer.countTokens(joinCompactionSummaryBlocks(blocks)) > chainTokenLimit) {
+			// A large fidelity block can exceed the predicted budget. Consolidate
+			// once, never truncate exact user instructions or loop on that floor.
+			summary = await generateSummary(
+				[],
+				model,
+				reserveTokens,
+				apiKey,
+				signal,
+				customInstructions,
+				stripCompactionFidelityBlocks(joinCompactionSummaryBlocks(blocks)),
+				summaryOptions,
+			);
+			summary = upsertCompactionFidelity(
+				upsertFileOperations(summary, readFiles, modifiedFiles, fileOps.read),
+				fidelity,
+				options?.recoveryPointer,
+			);
+			blocks = [{ summary, timestamp: new Date().toISOString(), tokensBefore }];
+		}
+		summary = joinCompactionSummaryBlocks(blocks);
+		preserveData = { ...preserveData, summaryChain: { version: 1, blocks } };
+	}
 	if (nativeSummary !== undefined) {
 		// The replayed block stays byte-identical to the API's summary so it
 		// matches its signature. The harness file lists above travel
@@ -2354,7 +2541,11 @@ async function generateTurnPrefixSummary(
 	signal?: AbortSignal,
 	options?: SummaryOptions,
 ): Promise<string> {
-	const maxTokens = Math.min(Math.floor(0.5 * reserveTokens), MAX_SUMMARY_TOKENS); // Smaller budget for turn prefix
+	const maxTokens = Math.min(
+		Math.floor(0.5 * reserveTokens),
+		MAX_SUMMARY_TOKENS,
+		options?.maxSummaryTokens ?? MAX_SUMMARY_TOKENS,
+	); // Smaller budget for turn prefix
 
 	const llmMessages = (options?.convertToLlm ?? defaultConvertToLlm)(messages);
 	const conversationText = serializeConversationForSummary(llmMessages, preferredDialect(model.id));

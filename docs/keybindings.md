@@ -26,6 +26,8 @@ app.history.search: []
 
 ## Common action IDs
 
+`app.workbench.open` defaults to `F2` and opens the terminal workbench without clearing the current draft.
+
 | Action ID                    | Default                                                               | Meaning                                                                                                                                                                              |
 | ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `app.model.cycleForward`     | `Ctrl+P`                                                              | Cycle role models forward                                                                                                                                                            |

@@ -16,6 +16,8 @@ import type {
 } from "../../src/protocol";
 import { isSkillPromptDetails, isUserPrompt, type SkillPromptDetails, skillPromptDraft } from "../../src/protocol";
 import { parseQuotedPrompt, type QuotedPrompt, quotedPrompt } from "../../src/quoted-prompt";
+import { contentText } from "../../src/message-text";
+import { ResponseCopyAction } from "./response-copy";
 import { h, iconButton } from "../dom";
 import { icon } from "../icons";
 import { setTooltip } from "../tooltip";
@@ -100,14 +102,6 @@ function messageActions(text: string, onEdit?: () => void): HTMLElement {
 		});
 	});
 	return h("div", { className: "msg-actions" }, onEdit && iconButton("pencil", "Edit message", onEdit), copy);
-}
-
-function contentText(content: string | Array<{ type: string; text?: string }>): string {
-	if (typeof content === "string") return content;
-	return content
-		.filter(block => block.type === "text" && typeof block.text === "string")
-		.map(block => block.text)
-		.join("\n");
 }
 
 function contentImages(content: string | Array<{ type: string }>): ImageContent[] {
@@ -230,6 +224,13 @@ class AssistantView {
 	readonly element = h("div", { className: "msg assistant" });
 	#slots: Slot[] = [];
 	#footer = h("div", { className: "msg-footer" });
+	#copy = iconButton("copy", "Copy response", () => void this.#copyAction.copy());
+	#copyStatus = h("span", { className: "copy-status", ariaLive: "polite" });
+	#actions = h("div", { className: "response-actions", hidden: true }, this.#copy, this.#copyStatus);
+	#copyAction = new ResponseCopyAction(
+		text => navigator.clipboard.writeText(text),
+		() => this.#renderCopyAction(),
+	);
 
 	constructor(
 		private readonly key: string,
@@ -237,7 +238,7 @@ class AssistantView {
 		/** The composer's "expand all thinking" toggle is on. */
 		private readonly thinkingExpanded: () => boolean,
 	) {
-		this.element.append(this.#footer);
+		this.element.append(this.#footer, this.#actions);
 	}
 
 	update(message: AssistantMessage, streaming: boolean): void {
@@ -299,6 +300,23 @@ class AssistantView {
 		} else if (message.stopReason === "aborted") {
 			this.#footer.append(h("div", { className: "note" }, "Interrupted"));
 		}
+		this.#copyAction.update(message, streaming);
+	}
+
+	#renderCopyAction(): void {
+		const state = this.#copyAction.state;
+		this.#actions.hidden = state === "hidden";
+		this.#copy.disabled = state === "copying";
+		this.#copy.replaceChildren(icon(state === "copied" ? "check" : "copy"));
+		const label =
+			state === "failed"
+				? "Copy failed. Try again"
+				: state === "copied"
+					? "Response copied. Copy again"
+					: "Copy response";
+		this.#copy.ariaLabel = label;
+		setTooltip(this.#copy, label);
+		this.#copyStatus.textContent = state === "failed" ? "Copy failed. Try again" : state === "copied" ? "Copied" : "";
 	}
 
 	#createSlot(type: string): Slot {

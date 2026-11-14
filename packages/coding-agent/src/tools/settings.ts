@@ -35,6 +35,33 @@ export const cfgToolsArtifactSpillThreshold = register({
 	},
 });
 
+export const cfgToolsContextOutputMaxBytes = register({
+	id: "tools.contextOutputMaxBytes",
+	type: "number",
+	default: 8,
+	ui: {
+		tab: "tools",
+		group: "Output Limits",
+		label: "Context Output Budget (KB)",
+		description:
+			"Maximum preview body for new tool results; larger output goes to a recoverable artifact. Notices and synopsis are additional. Artifact pages are exempt. 0 uses the artifact spill threshold.",
+		options: [
+			{ value: "0", label: "Use spill threshold" },
+			{ value: "4", label: "4 KB" },
+			{ value: "8", label: "8 KB" },
+			{ value: "16", label: "16 KB" },
+			{ value: "32", label: "32 KB" },
+		],
+	},
+	validate: value => {
+		if (
+			value !== undefined &&
+			(typeof value !== "number" || !Number.isFinite(value) || value < 0 || (value > 0 && value < 1))
+		)
+			throw new Error("tools.contextOutputMaxBytes must be 0 or at least 1 KB");
+	},
+});
+
 export const cfgToolsOutputSynopsis = register({
 	id: "tools.outputSynopsis",
 	type: "boolean",
@@ -1110,4 +1137,17 @@ export const cfgSessionToolGates = combine({
 	generateImage: cfgGenerateImageEnabled,
 	speechgen: cfgSpeechgenEnabled,
 	xdev: cfgToolsXdev,
+});
+
+export const cfgVerifyExecutableReview = register({
+	id: "verify.executableReview",
+	type: "boolean",
+	default: false,
+	ui: {
+		tab: "tools",
+		group: "Todos",
+		label: "Executable Acceptance Review",
+		description:
+			"After declared checks pass, request a fresh executable review (at most two attempts per user request)",
+	},
 });

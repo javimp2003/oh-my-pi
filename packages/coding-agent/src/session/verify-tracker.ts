@@ -1,11 +1,15 @@
+import { ExecutableReviews } from "./executable-review";
+import reviewReminder from "../prompts/system/executable-review-reminder.md" with { type: "text" };
 import * as path from "node:path";
 import type { Agent, AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, Message, ToolResultMessage } from "@oh-my-pi/pi-ai";
 import { isRecord, logger, prompt, stringProperty } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
+import { VerificationContracts } from "./verification-contract";
+import contractReminder from "../prompts/system/verification-contract-reminder.md" with { type: "text" };
 import verifyReminderPrompt from "../prompts/system/verify-reminder.md" with { type: "text" };
 import { detectMaskedSuccess } from "../tools/bash-hints";
-import { cfgVerifyReminders, cfgVerifyRemindersMax } from "../tools/settings";
+import { cfgVerifyReminders, cfgVerifyRemindersMax, cfgVerifyExecutableReview } from "../tools/settings";
 import { tokenizeShellSegments } from "../tools/shell-tokenize";
 import { resolveWorkspaceSnapshot, VERIFY_TARGETS } from "../utils/workspace-snapshot";
 import type { SessionManager } from "./session-manager";
@@ -111,6 +115,7 @@ export interface VerifyTrackerHost {
 /** Reminds the agent to run a project check before a text-only stop that follows unverified code edits. */
 export class VerifyTracker {
 	readonly #host: VerifyTrackerHost;
+	readonly contracts: VerificationContracts;
 	#editedFiles = new Set<string>();
 	#seq = 0;
 	#lastEditSeq = 0;
@@ -122,6 +127,7 @@ export class VerifyTracker {
 
 	constructor(host: VerifyTrackerHost) {
 		this.#host = host;
+		this.contracts = new VerificationContracts(host.sessionManager);
 	}
 
 	/** Resets per-prompt edit, verification and reminder state; keeps the cached verify commands. */
@@ -150,10 +156,13 @@ export class VerifyTracker {
 				.join("\n");
 			const passed =
 				!message.isError &&
-				details?.exitCode === undefined &&
+				(details?.exitCode === undefined || details.exitCode === 0) &&
+				!(isRecord(details?.async) && details.async.state !== "completed") &&
+				details?.service === undefined &&
 				details?.timedOut !== true &&
 				!detectMaskedSuccess({ command, output, exitCode: 0 });
 			this.#bashRuns.push({ seq, command, passed });
+			this.contracts.finish(message.toolCallId, passed);
 			return;
 		}
 		if (message.isError) return;
@@ -179,13 +188,20 @@ export class VerifyTracker {
 			});
 			return false;
 		}
-		if (this.#editedFiles.size === 0) return false;
+		const contract = await this.contracts.status();
+		const missing = contract.filter(check => check.status !== "passed");
+		const review =
+			contract.length > 0 && missing.length === 0 && cfgVerifyExecutableReview.get(settings)
+				? await new ExecutableReviews(this.#host.sessionManager, this.contracts, this.#host.cwd()).status()
+				: undefined;
+		const needsReview = review !== undefined && review.attempts < 2 && review.report?.status !== "clean";
+		if (this.#editedFiles.size === 0 && missing.length === 0 && !needsReview) return false;
 		const max = cfgVerifyRemindersMax.get(settings);
 		if (this.#reminderCount >= max) return false;
 		const verifyCommands = await this.#resolveVerifyCommands();
 		const lastVerification = this.#lastVerification(verifyCommands);
-		if (lastVerification?.passed) return false;
-		if (verifyCommands.length === 0) return false;
+		if (missing.length === 0 && !needsReview && lastVerification?.passed) return false;
+		if (verifyCommands.length === 0 && missing.length === 0 && !needsReview) return false;
 		if (isAwaitingUserAnswer(message)) return false;
 		if (NO_VERIFY_REQUEST_RE.test(this.#latestUserText())) return false;
 		if (this.#host.hasPendingAsyncWake()) return false;
@@ -196,13 +212,18 @@ export class VerifyTracker {
 		const files = [...this.#editedFiles];
 		const listed = files.slice(0, MAX_LISTED_FILES).join(", ");
 		const extra = files.length - MAX_LISTED_FILES;
-		const text = prompt.render(verifyReminderPrompt, {
-			files: extra > 0 ? `${listed} +${extra} more` : listed,
-			commands: verifyCommands.join("; "),
-			lastFailedCommand: lastVerification && !lastVerification.passed ? lastVerification.command : undefined,
-			attempt,
-			max,
-		});
+		const text = needsReview
+			? prompt.render(reviewReminder, { review: review?.report, attempt, max })
+			: missing.length > 0
+				? prompt.render(contractReminder, { checks: missing, attempt, max })
+				: prompt.render(verifyReminderPrompt, {
+						files: extra > 0 ? `${listed} +${extra} more` : listed,
+						commands: verifyCommands.join("; "),
+						lastFailedCommand:
+							lastVerification && !lastVerification.passed ? lastVerification.command : undefined,
+						attempt,
+						max,
+					});
 		const reminderMessage: Message = {
 			role: "developer",
 			content: [{ type: "text", text }],

@@ -602,6 +602,19 @@ code {
 	height: 14px;
 }
 
+.response-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 8px;
+	color: var(--c-fg-3);
+	font-size: 12px;
+}
+
+.response-actions[hidden] {
+	display: none;
+}
+
 /* Editing a sent prompt: the bubble and its actions give way to an editor card. */
 .msg.user.editing > :not(.message-editor) {
 	display: none;

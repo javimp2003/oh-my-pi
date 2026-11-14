@@ -20,7 +20,7 @@ import { type OutputArtifactError, OutputSink, type OutputSummary } from "@oh-my
 import {
 	resolveOutputMaxColumns,
 	resolveOutputSinkArtifactMaxBytes,
-	resolveOutputSinkHeadBytes,
+	resolveOutputSinkLimits,
 } from "../tools/output-meta";
 import { quotePosixArgv } from "../utils/shell-quote";
 import { getOrCreateSnapshot } from "../utils/shell-snapshot";
@@ -588,7 +588,7 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 				: undefined,
 		artifactPath: options?.artifactPath,
 		artifactId: options?.artifactId,
-		headBytes: resolveOutputSinkHeadBytes(settings),
+		...resolveOutputSinkLimits(settings),
 		artifactMaxBytes: resolveOutputSinkArtifactMaxBytes(settings),
 		maxColumns: resolveOutputMaxColumns(settings),
 		chunkThrottleMs: onChunk || onPreview ? (options?.chunkThrottleMs ?? 50) : 0,

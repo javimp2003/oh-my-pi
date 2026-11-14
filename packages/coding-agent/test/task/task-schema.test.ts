@@ -140,35 +140,7 @@ describe("task spawn validation", () => {
 		);
 	});
 
-	it("rejects fork on a model without mid-conversation tool changes", async () => {
-		const model = buildModel({
-			id: "gpt-test",
-			name: "GPT Test",
-			api: "openai-responses",
-			provider: "openai",
-			baseUrl: "https://example.invalid",
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 8192,
-			maxTokens: 2048,
-		});
-		const source: TaskForkSource = {
-			sessionFile: "/tmp/parent.jsonl",
-			systemPrompt: ["parent"],
-			model,
-			thinkingLevel: undefined,
-			toolDefinitions: [],
-			promptCacheKey: "parent",
-		};
-		const result = await executeResult({ task: "review", solutionSpace: "c", fork: true }, async () => source);
-		expect(result.isError).toBe(true);
-		expect(result.content.find(part => part.type === "text")?.text).toBe(
-			"fork requires a model with mid-conversation tool changes (current: openai/gpt-test); use a normal task with full context",
-		);
-	});
-
-	it("advertises `fork` only when the active model can reuse the parent's cache", async () => {
+	it("accepts fork for Anthropic and OpenAI-compatible gateways when enabled", async () => {
 		vi.spyOn(discoveryModule, "discoverAgents").mockResolvedValue({ agents: [], projectAgentsDir: null });
 		const claude = buildModel({
 			id: "claude-fable-5",
@@ -202,9 +174,10 @@ describe("task spawn validation", () => {
 		const forked = supported.parameters(params);
 		expect(forked && typeof forked === "object" && !(forked instanceof type.errors) && "fork" in forked).toBe(true);
 
-		const unsupported = await TaskTool.create(createSession(undefined, () => gateway));
-		expect(unsupported.description).not.toContain("`fork`");
-		const plain = unsupported.parameters(params);
-		expect(plain && typeof plain === "object" && !(plain instanceof type.errors) && "fork" in plain).toBe(false);
+		const gatewayTool = await TaskTool.create(createSession(undefined, () => gateway));
+		const parsed = gatewayTool.parameters(params);
+		expect(
+			parsed && typeof parsed === "object" && !(parsed instanceof type.errors) && "fork" in parsed && parsed.fork,
+		).toBe(true);
 	});
 });

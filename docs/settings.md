@@ -2,13 +2,40 @@
 
 `omp` resolves settings from built-in defaults, a persistent global config file, optional project-local config, one-shot CLI overlays, and in-memory runtime overrides. Reach for project settings when one repository needs a different provider set, model role, tool policy, memory backend, or UI behavior than your global defaults — without touching your machine-wide configuration.
 
-Settings are stored as plain YAML mappings. Every key, its type, default, and enum values come from its setting definition (declared with `register(...)` next to the owning feature, e.g. `packages/coding-agent/src/tools/settings.ts`, and collected by `packages/coding-agent/src/config/all-settings.ts`). `omp config` exposes the complete schema; the interactive `/settings` panel exposes entries with supported UI editors. Some entries are conditional; numbers and arrays without UI choices remain config-file-only unless the setting opts into the panel's JSON editor (such as `contextFiles.extra`).
+Settings are stored as plain YAML mappings. Every key, its type, default, and enum values come from its setting definition (declared with `register(...)` next to the owning feature, e.g. `packages/coding-agent/src/tools/settings.ts`, and collected by `packages/coding-agent/src/config/all-settings.ts`). `omp config` and the interactive `/settings` panel expose the complete schema. Settings without curated UI metadata appear in **Advanced**; numbers without presets use text input, and free-form arrays and records use JSON. Conditional settings remain under their feature's tab.
+
+## Terminal navigation
+
+Open `/home` (aliases `/menu`, `/workbench`) or press `F2` for a searchable panel covering conversations, models and reasoning, plan/delegate modes, context usage and cleanup, agents, background jobs, tools, extensions, skills, diffs, providers and settings. Selecting an action uses its existing slash command and normal checks. Opening the panel from the keyboard preserves the unsent prompt; Escape returns to the chat. Remap `app.workbench.open` in `keybindings.yml` to change the shortcut.
+
+The workbench shows session status, workspace and model above the action list. Use Tab/Shift+Tab to cycle categories, type to filter their actions, and Enter to open the selection. Escape clears an active search first, then closes the panel. Both panels adapt their tabs, help and visible rows when the terminal is resized.
+
+In `/settings`, type a setting name, label or description to search all tabs. A complete config key selects that exact entry. Enter opens the usual control; `Ctrl+E` opens a free-form editor for strings, numbers, arrays and records, including custom values outside suggested presets. `Ctrl+R` removes the selected setting's global override. Project, CLI and environment overrides still apply; reset does not erase those layers. Sub-editors own their editing keys until you save or cancel. Credentials stay masked in the list and editor, and writes use the same parser and validation as `omp config set`.
+
+The navigation and settings controls render with the existing terminal widgets, including narrow terminals and the `symbolPreset: ascii` setting.
 
 - For model/provider credentials, `.env` files, and the env-var table that resolves API keys, see [Providers](./providers.md).
 - For custom model definitions in `models.yml`, see [Models](./models.md).
 - For instruction files discovered into the agent context (`AGENTS.md`, `.omp/`, etc.), see [Context files](./context-files.md).
 - For the full catalog of environment variables, see [Environment variables](./environment-variables.md).
 - For prompt words that activate specialized per-turn behavior, see [Magic keywords](./magic-keywords.md).
+
+## Commit message style
+
+In MarIA Code's extension settings (or `/settings` in the terminal), open **Tasks → Commits → Commit style**:
+
+- **Conventional Commits** keeps the standard `type(scope): summary` generator.
+- **Unicaja** generates Spanish imperative messages such as `[PROJECT-123] fix(api): Corrige la autorización`, preserving accents and omitting author signatures. The complete subject, including the Jira prefix, must fit 72 characters. Optional body details become plain paragraphs.
+
+Unicaja extracts the first complete Jira key from the current branch, including names such as `feature/PROJECT-123-description`, `OTHER7-42-description` and `team/NEW_PROJECT-15`. Project names are unrestricted; lowercase keys are normalized to uppercase. If the branch has several keys, the first wins. To use another task, or work from a branch without a key or detached HEAD, set **Jira task override** (`commit.issueKey`) to a complete key without brackets. Clear it to return to branch detection.
+
+The convention is applied by the commit generators themselves: `omp commit` (including split commits and its fallback), the Git TUI generator, and AI-generated isolation messages. A missing task stops generation before automatic staging or model calls. This is not a replacement for server-side push rules or a hook on arbitrary `git commit` commands. The default remains `conventional`.
+
+```yaml
+commit:
+  style: unicaja
+  issueKey: "" # optional override; empty means infer from the branch
+```
 
 ## Where settings live
 
@@ -610,6 +637,7 @@ tools:
 | `tools.maxTimeout`             | number  | `0`     | Maximum timeout the agent may request, in seconds; `0` = no settings cap.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `tools.intentTracing`          | boolean | `true`  | Ask the agent to describe each tool call's intent. `PI_INTENT_TRACING` overrides it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `tools.outputMaxColumns`       | number  | `768`   | Per-line byte cap for streaming output; `0` disables.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tools.contextOutputMaxBytes` | number | `8` | KB budget for new tool preview bodies, capping the spill threshold and head/tail windows; notices/synopsis add overhead. Bounded artifact pages are exempt; without storage, file pages retain their continuation selectors. `0` uses the legacy spill threshold. |
 | `tools.artifactSpillThreshold` | number  | `50`    | KB of tool output above which output spills to an artifact.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `tools.artifactHeadBytes`      | number  | `20`    | KB of head kept inline on spill; `0` = tail-only.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `tools.artifactTailBytes`      | number  | `20`    | KB of tail kept inline on spill.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -758,7 +786,7 @@ contextPromotion:
 
 compaction:
   enabled: true
-  methodOrder: [remote, snapcompact, handoff, shake, soft]
+  methodOrder: [remote, snapcompact, incremental, handoff, shake, soft]
   midTurnEnabled: true # check thresholds between tool-loop provider requests
   thresholdPercent: -1 # -1 = default reserve-based behavior
   thresholdTokens: -1 # fixed token limit when > 0
@@ -774,7 +802,9 @@ memory:
 | `compaction.enabled`          | boolean | `true`                                   | Automatic conversation compaction.                                                                                                                                                                                                        |
 | `compaction.asyncEnabled`     | boolean | `true`                                   | Speculatively summarize in the background as context nears the compaction threshold, then splice the ready result in when the threshold is crossed.                                                                                        |
 | `compaction.midTurnEnabled`   | boolean | `true`                                   | Check thresholds at safe mid-turn tool-loop boundaries before the next provider request. Setting it to `false` affects only the session it is configured on; subagents always check, since their whole assignment is one turn.                |
-| `compaction.methodOrder`      | array   | `remote, snapcompact, handoff, shake, soft` | Ordered fallbacks. `remote` uses provider-native server compaction (OpenAI Responses compact, Anthropic compaction beta); unavailable or failed methods advance. |
+| `compaction.methodOrder`      | array   | `remote, snapcompact, incremental, handoff, shake, soft` | Ordered fallbacks. `remote` uses provider-native server compaction (OpenAI Responses compact, Anthropic compaction beta); unavailable or failed methods advance. |
+| `compaction.summaryChainMaxBlocks` | number | `4` | Maximum sealed incremental summary blocks before consolidation (1–32). |
+| `compaction.summaryChainMaxTokens` | number | `8192` | Soft incremental-summary budget, also capped at one eighth of the summarization model window. Existing fidelity safeguards may exceed this target. |
 | `compaction.thresholdPercent` | number  | `-1`                                     | Percent-of-context trigger; `-1` = reserve-based default.                                                                                                                                                                                 |
 | `compaction.thresholdTokens`  | number  | `-1`                                     | Fixed token trigger when `> 0`.                                                                                                                                                                                                           |
 | `compaction.modelThresholds`  | record  | `{}`                                     | Per-model compaction limit keyed by `provider/model-id` or a `*`-terminated prefix (`deepseek/*`): a token base the compaction policy scales (`90000`), a fixed token trigger (`"f90000"`), or a percentage of the window (`"80%"`). See below. |
@@ -1093,3 +1123,7 @@ Some settings (model roles, eval backends, tiny-model device/precision, auth bro
 ### `omp config set <key>` says "Unknown setting"
 
 Keys must match a schema path exactly, with no shorthand. Use `theme.dark`, not `theme`. Run `omp config list` to see every valid key.
+
+### Acceptance review and measured execution
+
+See [Harness quality](harness-quality.md) for `verification` contracts, `verify.executableReview`, shared `execution.*` budgets and `execution.profilePath`. Review and budgets are opt-in; measured profiles are loaded when the SDK session opens and remain fixed on resume.

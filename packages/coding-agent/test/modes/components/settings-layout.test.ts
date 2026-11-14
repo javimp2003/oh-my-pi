@@ -55,7 +55,10 @@ describe("settings layout", () => {
 
 			// Ordered: grouped sections follow the TAB_GROUPS declaration order.
 			const grouped = sequence.filter(group => group !== "");
-			const expected = TAB_GROUPS[tab].filter(group => grouped.includes(group));
+			const expected =
+				tab === "advanced"
+					? [...grouped].sort((a, b) => a.localeCompare(b))
+					: TAB_GROUPS[tab].filter(group => grouped.includes(group));
 			expect(grouped).toEqual(expected);
 		}
 	});

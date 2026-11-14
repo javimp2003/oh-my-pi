@@ -14,6 +14,7 @@ import { validateScope } from "../../../commit/analysis/validation";
 import { normalizeDetails } from "../../../commit/utils";
 import type { CustomTool } from "../../../extensibility/custom-tools/types";
 import { commitTypeSchema, detailSchema } from "./schemas.js";
+import { validateUnicajaCommit } from "../../style";
 
 const fileChangeSchema = type({ path: "string", kind: "'all'" })
 	.or({ path: "string", kind: "'indices'", indices: "number[]" })
@@ -78,7 +79,18 @@ export function createSplitCommitTool(
 				}));
 				const files = changes.map(change => change.path);
 
-				const summaryValidation = validateSummaryRules(summary);
+				const summaryValidation = validateSummaryRules(summary, state.policy?.style);
+				if (state.policy?.style === "unicaja")
+					summaryValidation.errors.push(
+						...validateUnicajaCommit({
+							type: commit.type,
+							scope,
+							summary,
+							body: detailResult.details.map(detail => detail.text),
+							footers: [],
+							issueKey: state.policy.issueKey,
+						}),
+					);
 				const scopeValidation = validateScope(scope);
 				const typeValidation = validateTypeConsistency(commit.type, files, {
 					diffText,

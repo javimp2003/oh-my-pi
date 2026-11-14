@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed shell platform metadata following the host OS instead of the configured engine platform ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+
 ## [18.18.9] - 2026-11-11
 
 ### Added

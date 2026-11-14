@@ -3,6 +3,7 @@ import { stripTypePrefix } from "../../commit/conventional/markdown";
 import { isPastTenseFirstWord } from "../../commit/conventional/validation";
 import type { CommitType, ConventionalDetail } from "../../commit/types";
 import { normalizeUnicode } from "../../edit/normalize";
+import type { CommitStyle } from "../style";
 
 export const SUMMARY_MAX_CHARS = 72;
 export const MAX_DETAIL_ITEMS = 6;
@@ -15,7 +16,10 @@ export function normalizeSummary(summary: string, type: CommitType, scope: strin
 	return normalizeUnicode(stripped).replace(/\s+/g, " ").trim();
 }
 
-export function validateSummaryRules(summary: string): { errors: string[]; warnings: string[] } {
+export function validateSummaryRules(
+	summary: string,
+	style: CommitStyle = "conventional",
+): { errors: string[]; warnings: string[] } {
 	const errors: string[] = [];
 	const warnings: string[] = [];
 	const basic = validateSummary(summary, SUMMARY_MAX_CHARS);
@@ -26,7 +30,7 @@ export function validateSummaryRules(summary: string): { errors: string[]; warni
 	const words = summary.trim().split(/\s+/);
 	const firstWord = words[0]?.toLowerCase() ?? "";
 	const hasPastTense = isPastTenseFirstWord(firstWord);
-	if (!hasPastTense) {
+	if (style !== "unicaja" && !hasPastTense) {
 		errors.push("Summary must start with a past-tense verb");
 	}
 

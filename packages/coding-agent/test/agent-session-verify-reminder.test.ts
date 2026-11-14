@@ -1,3 +1,5 @@
+import { ExecutableReviews } from "../src/session/executable-review";
+import { cfgVerifyExecutableReview } from "../src/tools/settings";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import { Agent } from "@oh-my-pi/pi-agent-core";
@@ -146,6 +148,70 @@ describe("AgentSession verify-before-stop reminder", () => {
 			await tempDir.remove();
 		} catch {}
 		vi.restoreAllMocks();
+	});
+
+	it("requires all contract checks even after one project check passes", async () => {
+		vi.spyOn(session.agent, "continue").mockResolvedValue();
+		sessionManager.appendMessage({ role: "user", content: "implement sync and async", timestamp: 1 });
+		await Bun.write(path.join(tempDir.path(), "src/a.ts"), "export const value = 1;");
+		session.verificationContracts.define([
+			{ id: "sync", requirement: "sync path", command: "bun test sync", paths: ["src/a.ts"] },
+			{ id: "async", requirement: "async path", command: "bun test async", paths: ["src/a.ts"] },
+		]);
+		emitCodeEdit();
+		const id = `call_bash_${callCounter + 1}`;
+		await session.verificationContracts.begin(id, "bun test sync");
+		emitToolResult("bash", { command: "bun test sync" }, { details: { exitCode: 0 } });
+		emitTextOnlyStop();
+		await session.waitForIdle();
+		expect((await session.verificationContracts.status()).map(check => check.status)).toEqual(["passed", "pending"]);
+		expect(verifyNotices).toHaveLength(1);
+	});
+
+	it("does not certify a background launch, service readiness or timeout as a completed check", async () => {
+		sessionManager.appendMessage({ role: "user", content: "verify decoding", timestamp: 1 });
+		await Bun.write(path.join(tempDir.path(), "src/a.ts"), "export const value = 1;");
+		session.verificationContracts.define([
+			{ id: "decode", requirement: "decode", command: "bun test", paths: ["src/a.ts"] },
+		]);
+		for (const details of [
+			{ async: { state: "running", jobId: "job", type: "bash" } },
+			{ service: { state: "running", ready: true } },
+			{ timedOut: true },
+		]) {
+			const id = `call_bash_${callCounter + 1}`;
+			await session.verificationContracts.begin(id, "bun test");
+			emitToolResult("bash", { command: "bun test" }, { details });
+			expect((await session.verificationContracts.status())[0]?.status).toBe("failed");
+		}
+		const id = `call_bash_${callCounter + 1}`;
+		await session.verificationContracts.begin(id, "bun test");
+		emitToolResult("bash", { command: "bun test" }, { details: {} });
+		expect((await session.verificationContracts.status())[0]?.status).toBe("passed");
+	});
+
+	it("continues for an enabled independent review and stops reminding once that review is clean", async () => {
+		const continueSpy = vi.spyOn(session.agent, "continue").mockResolvedValue();
+		cfgVerifyExecutableReview.set(session.settings, true);
+		sessionManager.appendMessage({ role: "user", content: "implement decoding", timestamp: 1 });
+		await Bun.write(path.join(tempDir.path(), "src/a.ts"), "export const value = 1;");
+		session.verificationContracts.define([
+			{ id: "decode", requirement: "decode", command: "bun test", paths: ["src/a.ts"] },
+		]);
+		const id = `call_bash_${callCounter + 1}`;
+		await session.verificationContracts.begin(id, "bun test");
+		emitToolResult("bash", { command: "bun test" }, { details: { exitCode: 0 } });
+		emitTextOnlyStop();
+		await session.waitForIdle();
+		expect(continueSpy).toHaveBeenCalledTimes(1);
+		const reviews = new ExecutableReviews(sessionManager, session.verificationContracts, tempDir.path());
+		const ticket = await reviews.begin();
+		await reviews.finish(ticket, { status: "clean", findings: [] });
+		continueSpy.mockClear();
+		emitToolResult("verification", { op: "review" }, { details: {} });
+		emitTextOnlyStop();
+		await session.waitForIdle();
+		expect(continueSpy).not.toHaveBeenCalled();
 	});
 
 	it("reminds once after an unverified code edit, naming the file and the project check", async () => {

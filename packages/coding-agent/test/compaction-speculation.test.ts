@@ -254,6 +254,32 @@ describe("async speculative compaction", () => {
 		expect(compactSpy).toHaveBeenCalledTimes(1);
 	});
 
+	it("commits an incremental background summary and preserves its prefix through the next manual compaction", async () => {
+		maintenance = createMaintenance({
+			methodOrder: ["incremental"],
+			buildLiveProviderContext: async history => ({ systemPrompt: ["fixed map"], messages: convertToLlm(history) }),
+		});
+		const realCompact = compactionModule.compact;
+		vi.spyOn(compactionModule, "compact").mockImplementation(
+			(preparation, candidate, apiKey, instructions, signal, options) =>
+				realCompact(preparation, candidate, apiKey, instructions, signal, {
+					...options,
+					completeImpl: async () => assistantMessage("Recorded implementation state", candidate),
+				}),
+		);
+		maintenance.maybeStartSpeculativeCompaction(SPECULATION_BAND_START, CONTEXT_WINDOW);
+		await waitForState("armed");
+		await maintenance.runAutoCompaction("threshold", false, { triggerContextTokens: THRESHOLD });
+		const prefix = convertToLlm(agent.state.messages).slice(0, 1);
+		appendSummarizableConversation();
+		agent.replaceMessages(sessionManager.buildSessionContext().messages);
+		await maintenance.compact();
+		const latest = sessionManager.getBranch().findLast(entry => entry.type === "compaction");
+		expect(latest?.type === "compaction" ? latest.method : undefined).toBe("incremental");
+		expect(agent.state.messages.filter(message => message.role === "compactionSummary")).toHaveLength(2);
+		expect(convertToLlm(agent.state.messages).slice(0, 1)).toEqual(prefix);
+	});
+
 	it("isolates speculative provider sessions while retaining the live prefix-cache routing key", async () => {
 		maintenance = createMaintenance({ preferWebsockets: true });
 		agent.sessionId = sessionManager.getSessionId();

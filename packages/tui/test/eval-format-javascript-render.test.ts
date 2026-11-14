@@ -118,16 +118,25 @@ describe("formatJavaScriptForDisplay", () => {
 		const literal = (entries: number) =>
 			`const xs = [ ${Array.from({ length: entries }, (_, i) => `{id:${i},name:"n${i}"}`).join(", ")} ]`;
 		const elapsed = (source: string): number => {
-			const start = Bun.nanoseconds();
-			formatJavaScriptForDisplay(source);
-			return Bun.nanoseconds() - start;
+			// Measure this thread's work, excluding scheduling delays from other suites.
+			const start = process.threadCpuUsage();
+			let iterations = 0;
+			let cpu = 0;
+			do {
+				formatJavaScriptForDisplay(source);
+				iterations++;
+				const used = process.threadCpuUsage(start);
+				cpu = used.user + used.system;
+				// Batch across coarse CPU-accounting ticks, including on Windows.
+			} while (cpu < 100_000);
+			return cpu / iterations;
 		};
 		const small = literal(1_000);
 		const large = literal(16_000);
-		const smallNs = Math.min(elapsed(small), elapsed(small), elapsed(small));
+		const smallCpu = Math.min(elapsed(small), elapsed(small), elapsed(small));
 		// 16 times the entries: quadratic brace classification takes ~256 times as long.
-		let largeNs = Number.POSITIVE_INFINITY;
-		for (let run = 0; run < 3 && largeNs >= 80 * smallNs; run++) largeNs = Math.min(largeNs, elapsed(large));
-		expect(largeNs).toBeLessThan(80 * smallNs);
+		let largeCpu = Number.POSITIVE_INFINITY;
+		for (let run = 0; run < 3 && largeCpu >= 80 * smallCpu; run++) largeCpu = Math.min(largeCpu, elapsed(large));
+		expect(largeCpu).toBeLessThan(80 * smallCpu);
 	});
 });

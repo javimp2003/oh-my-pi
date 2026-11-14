@@ -353,6 +353,7 @@ export class SelectorController {
 						model: this.ctx.session.model,
 						imageBudget: this.ctx.ui.imageBudget,
 						requestRender: () => this.ctx.ui.requestRender(),
+						getHeight: () => this.ctx.ui.terminal.rows,
 						composerPreviewStatus: this.ctx.statusLine,
 					},
 					{

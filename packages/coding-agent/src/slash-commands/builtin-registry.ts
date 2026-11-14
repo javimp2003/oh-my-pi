@@ -1,4 +1,5 @@
 import { clearSubmittedText } from "./helpers/draft";
+import { chooseWorkbenchCommand } from "../modes/terminal-workbench";
 import type { AutocompleteItem } from "@oh-my-pi/pi-tui";
 import { COLLAB_GUEST_ALLOWED_COMMANDS } from "../collab/guest";
 import { BUILTIN_COLLABORATION_SLASH_COMMANDS } from "./builtin-collaboration";
@@ -40,6 +41,17 @@ export interface TuiBuiltinSlashCommand extends BuiltinSlashCommand {
 }
 
 const BUILTIN_SLASH_COMMAND_REGISTRY: ReadonlyArray<SlashCommandSpec> = [
+	{
+		name: "home",
+		aliases: ["menu", "workbench"],
+		icon: "settings",
+		description: "Open the terminal workbench: chat, models, context, agents, tools and settings",
+		handleTui: async (_command, runtime) => {
+			clearSubmittedText(runtime);
+			const selected = await chooseWorkbenchCommand(runtime.ctx);
+			if (selected) await executeBuiltinSlashCommand(selected, runtime);
+		},
+	},
 	...BUILTIN_MODE_SLASH_COMMANDS,
 	...BUILTIN_COLLABORATION_SLASH_COMMANDS,
 	...BUILTIN_SESSION_SLASH_COMMANDS,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import {
 	extractCodeBlocks,
+	extractLastAssistantText,
 	extractLastCommand,
 	extractLastLink,
 	extractLinks,
@@ -26,6 +27,39 @@ describe("extractCodeBlocks", () => {
 		const blocks = extractCodeBlocks("```\nplain\n```\n\n```py\nprint(1)\n```");
 		expect(blocks.map(b => b.lang)).toEqual(["", "py"]);
 		expect(blocks.map(b => b.code)).toEqual(["plain", "print(1)"]);
+	});
+});
+
+describe("extractLastAssistantText", () => {
+	it("stops at user-invoked skills while keeping the answer available after agent-injected notices", () => {
+		const answer = { role: "assistant", content: [{ type: "text", text: "answer" }] } as AgentMessage;
+		const skill = {
+			role: "custom",
+			customType: "skill-prompt",
+			content: "/skill:check",
+			display: true,
+			attribution: "user",
+			timestamp: 1,
+		} satisfies AgentMessage;
+		expect(extractLastAssistantText([answer, skill])).toBeUndefined();
+		expect(extractLastAssistantText([answer, { ...skill, attribution: "agent" }])).toBe("answer");
+	});
+	it("copies only the current turn's answer, skipping thinking and tool calls but never falling back past a new user request", () => {
+		const prior = { role: "assistant", content: [{ type: "text", text: "previous answer" }] } as AgentMessage;
+		const user = { role: "user", content: "new task", timestamp: 1 } as AgentMessage;
+		const thought = { role: "assistant", content: [{ type: "thinking", thinking: "internal" }] } as AgentMessage;
+		expect(extractLastAssistantText([prior, user, thought])).toBeUndefined();
+		const answer = {
+			role: "assistant",
+			content: [
+				{ type: "text", text: "# Done\n" },
+				{ type: "thinking", thinking: "private" },
+				{ type: "text", text: "```ts\n\tconst café = '✓';\n```\n" },
+			],
+		} as AgentMessage;
+		expect(extractLastAssistantText([prior, user, answer, thought])).toBe(
+			"# Done\n```ts\n\tconst café = '✓';\n```\n",
+		);
 	});
 });
 

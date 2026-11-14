@@ -7,6 +7,9 @@
 - `renderHandoffPrompt()` accepts compaction-hook instructions and additional context ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added `estimateAdaptiveReserveTokens()` and `CompactionSettings.adaptiveReserveTokens` for usage-based compaction reserves, `resolveToolConcurrency()`, and the optional `AgentTool.outputSchema`
 - Added `ToolCallContext.earlierEffectsSettled`, which settles once the earlier non-read calls running beside a shared call have finished, so a read in the same message sees their effects (upstream N-39)
+- Added frozen wire tool definitions for prefix-cache reuse by full-history forks on flat-prefix providers ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+
+- Added incremental summary blocks that preserve earlier summary prefixes between compactions, with bounded consolidation ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added the `pinnedToolDefinitions` agent option and `getSentToolDefinitions()`, so a child agent can declare its parent's exact tool definitions and reuse the parent's prompt cache
 - Aside providers (`AgentLoopConfig.getAsideMessages`, `Agent.setAsideMessageProvider`) now receive the polled boundary (`AsideBoundary`: `"work"` after tool calls, `"stop"` at the end of a turn), so they can keep a message out of a finished turn (upstream #16583)
 

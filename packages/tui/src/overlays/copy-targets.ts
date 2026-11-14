@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { ToolCall } from "@oh-my-pi/pi-ai";
 import { extractMarkdownLinks } from "../index";
+import { isUserTurnInitiator } from "../chat/messages";
 
 /** A fenced code block extracted from assistant markdown. */
 export interface CodeBlock {
@@ -207,4 +208,15 @@ export function assistantText(msg: AgentMessage): string | undefined {
 		if (content.type === "text") text += content.text;
 	}
 	return text.trim() ? text : undefined;
+}
+
+/** Latest answer in the current user turn, without thinking or tool payloads. */
+export function extractLastAssistantText(messages: readonly AgentMessage[]): string | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index]!;
+		if (message.role === "user" || (message.role === "custom" && isUserTurnInitiator(message))) return undefined;
+		const text = assistantText(message);
+		if (text !== undefined) return text;
+	}
+	return undefined;
 }

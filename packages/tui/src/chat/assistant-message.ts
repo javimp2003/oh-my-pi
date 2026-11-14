@@ -38,6 +38,7 @@ import { hasSvgFence } from "./svg-source";
 import { describeTableChart, hasChartTable, lookupTableChart, splitTableCharts } from "./table-chart";
 import { chatTranscriptDisplayPreferences } from "./display-preferences";
 import { UserMessageComponent } from "./user-message";
+import { assistantText } from "../overlays/copy-targets";
 
 /**
  * Max wrapped rows of a turn-ending provider error rendered inline in the
@@ -857,6 +858,7 @@ export class AssistantMessageComponent extends Container {
 				? Math.round(Math.min(SPEED_MAX, sharedSpeedTracker.getSpeed()) * 10) / 10
 				: 0;
 		const key = [
+			hasTranscriptActions(),
 			this.#blockVersion,
 			this.#transcriptBlockFinalized,
 			this.#hideThinkingBlock,
@@ -883,6 +885,11 @@ export class AssistantMessageComponent extends Container {
 	/** Mirrors a thinking section collapsed or expanded in the terminal. */
 	handleNativeEvent(event: NativeUiEvent): void {
 		if (event.type === "action") {
+			if (event.act === "copy-response") {
+				const text = !this.#lastUpdateTransient && this.#lastMessage ? assistantText(this.#lastMessage) : undefined;
+				if (text !== undefined) runTranscriptAction({ act: "copy", text });
+				return;
+			}
 			this.#handleErrorAction(event.act);
 			return;
 		}
@@ -1022,6 +1029,21 @@ export class AssistantMessageComponent extends Container {
 			if (errorNode) children.push(errorNode);
 		}
 		this.#nativeParts = parts;
+		if (
+			!this.#lastUpdateTransient &&
+			this.#lastMessage &&
+			assistantText(this.#lastMessage) &&
+			hasTranscriptActions()
+		) {
+			children.push(
+				text("Copy response", {
+					role: "omp.assistant.copy",
+					actions: { click: "copy-response" },
+					title: "Copy the complete response as Markdown",
+					key: "copy-response",
+				}),
+			);
+		}
 		children.push(...this.#markerSlot.children);
 		if (this.#rewound) {
 			children.push(

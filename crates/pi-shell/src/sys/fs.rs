@@ -1496,9 +1496,13 @@ mod tests {
 		fn both_ends_of_a_fifo_on_one_thread_never_block() {
 			let path = fifo();
 			let mut r = pending(StdFs::default().open(path.as_bstr(), OpenFlags::READ, 0));
-			let mut w = pending(StdFs::default().open(path.as_bstr(), OpenFlags::WRITE, 0));
+			// The reader's helper may already be waiting, so the writer can open
+			// immediately. Either outcome must leave this engine thread unblocked.
+			let mut writer = match StdFs::default().open(path.as_bstr(), OpenFlags::WRITE, 0) {
+				FsPoll::Ready(result) => result.unwrap(),
+				FsPoll::Pending(mut pending) => finish(&mut pending),
+			};
 			let mut reader = finish(&mut r);
-			let mut writer = finish(&mut w);
 			assert_eq!(reader.kind(), FileKind::Pipe);
 			let flag = Arc::new(Flag::default());
 			let waker = Waker::from(Arc::clone(&flag));

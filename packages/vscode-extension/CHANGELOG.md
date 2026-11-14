@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Copy an agent's complete response as Markdown from its message button, with success and retry feedback ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 ## [0.40.0]
 
 ### Added

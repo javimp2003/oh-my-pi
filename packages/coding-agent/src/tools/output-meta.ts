@@ -32,6 +32,7 @@ import {
 	cfgToolsArtifactSpillThreshold,
 	cfgToolsArtifactTailBytes,
 	cfgToolsArtifactTailLines,
+	cfgToolsContextOutputMaxBytes,
 	cfgToolsOutputMaxColumns,
 	cfgToolsOutputSynopsis,
 } from "./settings";
@@ -483,12 +484,24 @@ const kUnwrappedExecute = Symbol("OutputMeta.UnwrappedExecute");
 /** Resolved artifact spill config sourced from the session settings (or schema defaults). */
 function getSpillConfig(s: Settings | undefined) {
 	const get = (setting: Setting<number>) => (s ? setting.get(s) : setting.default);
+	const budget = get(cfgToolsContextOutputMaxBytes) * 1024;
+	const threshold = Math.max(
+		1024,
+		Math.min(get(cfgToolsArtifactSpillThreshold) * 1024, budget > 0 ? budget : Infinity),
+	);
+	const headBytes = Math.min(get(cfgToolsArtifactHeadBytes) * 1024, Math.floor(threshold / 2));
 	return {
-		threshold: get(cfgToolsArtifactSpillThreshold) * 1024,
-		tailBytes: get(cfgToolsArtifactTailBytes) * 1024,
+		threshold,
+		tailBytes: Math.min(get(cfgToolsArtifactTailBytes) * 1024, threshold - headBytes),
 		tailLines: get(cfgToolsArtifactTailLines),
-		headBytes: get(cfgToolsArtifactHeadBytes) * 1024,
+		headBytes,
 	};
+}
+
+/** Shared streaming budgets: never insert the full log before the result wrapper runs. */
+export function resolveOutputSinkLimits(s: Settings | undefined): { spillThreshold: number; headBytes: number } {
+	const { threshold, headBytes } = getSpillConfig(s);
+	return { spillThreshold: threshold, headBytes };
 }
 
 /**
@@ -598,22 +611,26 @@ async function spillLargeResultToArtifact(
 	context: AgentToolContext | undefined,
 ): Promise<AgentToolResult> {
 	const sessionManager = context?.sessionManager;
-	if (!sessionManager) return result;
 	const { threshold, tailBytes, tailLines, headBytes } = getSpillConfig(context?.settings);
 
-	// Skip if tool already saved an artifact
+	// Reuse an existing artifact; an oversized preview may still need capping.
 	const existingMeta: OutputMeta | undefined = result.details?.meta;
 	const synopsisEnabled = context?.settings
 		? cfgToolsOutputSynopsis.get(context.settings)
 		: cfgToolsOutputSynopsis.default;
 	if (existingMeta?.truncation?.artifactId) {
-		return synopsisEnabled ? await withArtifactSynopsis(result, existingMeta.truncation, sessionManager) : result;
+		if (synopsisEnabled && sessionManager)
+			result = await withArtifactSynopsis(result, existingMeta.truncation, sessionManager);
 	}
 
-	// A bounded page of artifact storage its source URL re-reads with `:N-M` is already
-	// recoverable. Spilling it would only create a redundant artifact holding another
-	// artifact's page (and can repeat indefinitely on subsequent artifact reads).
-	if (existingMeta?.pagedSource) return result;
+	// Artifact pages are already recoverable; re-spilling them recursively only
+	// creates redundant copies. Without storage, keep a file page's existing
+	// size/continuation contract instead of replacing its recovery notice.
+	if (
+		existingMeta?.pagedSource ||
+		(!sessionManager && existingMeta?.source?.type === "path" && existingMeta.truncation?.nextOffset !== undefined)
+	)
+		return result;
 
 	// Measure total text content. `totalLength` is the UTF-16 length of the "\n"-joined text.
 	const textParts: string[] = [];
@@ -629,11 +646,12 @@ async function spillLargeResultToArtifact(
 	// UTF-8 takes 1–3 bytes per UTF-16 code unit (a surrogate pair is 4 bytes for 2 units), so
 	// the length alone settles short and long results. In between, per-part byte lengths sum
 	// to the joined length: the "\n" joiner keeps lone surrogates from pairing across parts.
-	if (totalLength * 3 <= threshold) return result;
-	if (totalLength <= threshold) {
+	const inlineThreshold = existingMeta?.truncation?.artifactId ? threshold + INLINE_CAP_SLACK_BYTES : threshold;
+	if (totalLength * 3 <= inlineThreshold) return result;
+	if (totalLength <= inlineThreshold) {
 		let totalBytes = textParts.length - 1;
 		for (const part of textParts) totalBytes += Buffer.byteLength(part, "utf-8");
-		if (totalBytes <= threshold) return result;
+		if (totalBytes <= inlineThreshold) return result;
 	}
 	const fullText = textParts.length === 1 ? textParts[0] : textParts.join("\n");
 
@@ -644,10 +662,10 @@ async function spillLargeResultToArtifact(
 	// error, nor re-expose the full (possibly context-blowing) output. Mirror
 	// `enforceInlineByteCap`: always truncate past the threshold, and only
 	// attach the `artifact://` recovery link when the save actually succeeded.
-	let artifactId: string | undefined;
+	let artifactId = existingMeta?.truncation?.artifactId;
 	// A failed stream capture only left a preview here. Saving that preview
 	// would invent a misleading full-output recovery link, not recover the log.
-	if (!existingMeta?.artifactError) {
+	if (sessionManager && !artifactId && !existingMeta?.artifactError) {
 		try {
 			artifactId = await sessionManager.saveArtifact(fullText, toolName);
 		} catch (error) {
@@ -672,7 +690,8 @@ async function spillLargeResultToArtifact(
 				maxLines: tailLines,
 			});
 
-	const synopsisText = synopsisEnabled ? maybeRenderSynopsis(fullText, artifactId) : undefined;
+	const synopsisText =
+		synopsisEnabled && !existingMeta?.truncation?.artifactId ? maybeRenderSynopsis(fullText, artifactId) : undefined;
 
 	// Replace text blocks with the synopsis (when detected) and a single truncated block, keep images
 	const newContent: (TextContent | ImageContent)[] = [];
@@ -732,6 +751,19 @@ async function spillLargeResultToArtifact(
 		};
 	}
 
+	if (existingMeta?.truncation?.artifactId) {
+		truncationMeta = {
+			...existingMeta.truncation,
+			direction: truncationMeta.direction,
+			truncatedBy: truncationMeta.truncatedBy,
+			outputLines,
+			outputBytes,
+			maxBytes: headBytes + tailBytes,
+			headRange: undefined,
+			tailRange: undefined,
+			shownRange: undefined,
+		};
+	}
 	const newMeta: OutputMeta = { ...existingMeta, truncation: truncationMeta };
 	const newDetails = { ...result.details, meta: newMeta };
 

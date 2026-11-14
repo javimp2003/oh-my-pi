@@ -1,6 +1,10 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import { customMessageEntryMessage, isUserRequestEntry } from "@oh-my-pi/pi-tui/chat/transcript-entry";
-import { getAnthropicCompactionPayload, isTurnStartEntry } from "@oh-my-pi/pi-agent-core/compaction";
+import {
+	createCompactionContextMessages,
+	getAnthropicCompactionPayload,
+	isTurnStartEntry,
+} from "@oh-my-pi/pi-agent-core/compaction";
 import {
 	coerceServiceTierByFamily,
 	type OpenAIResponsesHistoryPayload,
@@ -539,7 +543,22 @@ export function buildSessionContext(
 		// Agent context (non-transcript): summary first so the LLM sees the
 		// compacted context before recent messages.
 		if (!options?.transcript) {
-			pushMessage(compactionSummaryMsg);
+			for (const message of createCompactionContextMessages(
+				compaction.summary,
+				compaction.tokensBefore,
+				compaction.timestamp,
+				compaction.preserveData,
+				{
+					shortSummary: compaction.shortSummary,
+					providerPayload,
+					blocks: compactionSummaryMsg.blocks,
+					warning: compaction.warning,
+					method: compaction.method,
+					tokensAfter: compaction.tokensAfter,
+					historyRewriteAt,
+				},
+			))
+				pushMessage(message);
 		}
 
 		// Notes-backed windows do not summarize a discarded turn prefix. Recover

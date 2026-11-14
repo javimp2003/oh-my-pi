@@ -13,5 +13,6 @@ export * from "./messages";
 export * from "./openai";
 export * from "./pruning";
 export * from "./shake";
+export * from "./summary-chain";
 export * from "./transcript-tokens";
 export * from "./utils";

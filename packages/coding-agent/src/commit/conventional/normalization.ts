@@ -262,8 +262,10 @@ export function postProcessCommitMessage(
 /** Format a normalized conventional commit as Git commit-message text. */
 export function formatConventionalCommit(message: ConventionalCommit): string {
 	const scope = message.scope ? `(${message.scope})` : "";
-	let result = `${message.type}${scope}: ${message.summary}`;
-	if (message.body.length > 0) result += `\n\n${message.body.map(item => `- ${item}`).join("\n")}`;
+	const prefix = message.issueKey ? `[${message.issueKey}] ` : "";
+	let result = `${prefix}${message.type}${scope}: ${message.summary}`;
+	if (message.body.length > 0)
+		result += `\n\n${message.issueKey ? message.body.join("\n\n") : message.body.map(item => `- ${item}`).join("\n")}`;
 	if (message.footers.length > 0) result += `\n\n${message.footers.join("\n")}`;
 	return result;
 }

@@ -368,14 +368,14 @@ export class SettingsList implements Component {
 		this.#onChange(item.id, value);
 	}
 
-	/** Opens row `id`'s submenu the way Enter does (leaving one already open for it); returns it. */
-	openSubmenuFor(id: string): Component | undefined {
+	/** Opens row `id`'s submenu or a supplied value editor, preserving selection and close handling. */
+	openSubmenuFor(id: string, editor?: SettingItem["submenu"]): Component | undefined {
 		const open = this.openSubmenu;
 		if (open?.id === id) return open.component;
 		if (open || !this.selectItem(id)) return undefined;
 		const item = this.getSelectedItem();
-		if (!item?.submenu) return undefined;
-		this.#activateItem();
+		if (!item || (!item.submenu && !editor)) return undefined;
+		this.#activateItem(editor);
 		return this.#submenuComponent ?? undefined;
 	}
 
@@ -388,7 +388,7 @@ export class SettingsList implements Component {
 
 	/** Resize the visible viewport (fullscreen hosts call this every render). */
 	setMaxVisible(rows: number): void {
-		const next = Math.max(3, Math.floor(rows));
+		const next = Math.max(1, Math.floor(rows));
 		if (next === this.#maxVisible) return;
 		this.#maxVisible = next;
 		this.#clampSelectedIndex();
@@ -1044,14 +1044,15 @@ export class SettingsList implements Component {
 		}
 	}
 
-	#activateItem(): void {
+	#activateItem(editor?: SettingItem["submenu"]): void {
 		const item = this.#filteredItems[this.#selectedIndex];
 		if (!item || item.heading) return;
 
-		if (item.submenu) {
+		const submenu = editor ?? item.submenu;
+		if (submenu) {
 			// Open submenu, passing current value so it can pre-select correctly
 			this.#submenuItemId = item.id;
-			this.#submenuComponent = item.submenu(item.currentValue, (selectedValue?: string) => {
+			this.#submenuComponent = submenu(item.currentValue, (selectedValue?: string) => {
 				if (selectedValue !== undefined) {
 					item.currentValue = selectedValue;
 					this.#onChange(item.id, selectedValue);

@@ -295,6 +295,7 @@ Main agent verifies once after all subagents land; parallel runs storm the CPU a
 - Changes complete → yield; name the checks main agent should run.
 {{else}}
 # 5. Verify
+{{#has tools "verification"}}For changes with multiple acceptance requirements, use `{{toolRefs.verification}}` to define executable checks and relevant file paths before implementation; inspect its status before finishing.{{/has}}
 Verify in proportion to risk, at the end; multi-step changes whose later steps build on earlier ones also check in between:
 - Behavioral code change: run the narrowest check that exercises the changed path (focused test, the command, the repro), then the repo's typecheck/lint scoped to the touched files or package when it has them. Tests alone are not proof for UI/CLI surfaces.
 - Failure your change caused: fix, re-run. Failure outside the changed path that your change can't explain: report it; don't fix unasked.

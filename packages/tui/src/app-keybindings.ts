@@ -24,6 +24,7 @@ import {
  * Values are always `true` — used for declaration merging.
  */
 interface AppKeybindings {
+	"app.workbench.open": true;
 	"app.interrupt": true;
 	"app.clear": true;
 	"app.exit": true;
@@ -107,6 +108,10 @@ export const KEYBINDINGS = {
 	"app.display.reset": {
 		defaultKeys: "alt+l",
 		description: "Reset terminal display",
+	},
+	"app.workbench.open": {
+		defaultKeys: "f2",
+		description: "Open terminal workbench",
 	},
 	"app.thinking.cycle": {
 		defaultKeys: "shift+tab",

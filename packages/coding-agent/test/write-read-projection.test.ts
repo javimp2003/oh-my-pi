@@ -9,6 +9,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { ClientBridge } from "@oh-my-pi/pi-coding-agent/session/client-bridge";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { wrapToolWithMetaNotice } from "@oh-my-pi/pi-coding-agent/tools/output-meta";
+import { formatOutputNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { ReadTool } from "@oh-my-pi/pi-coding-agent/tools/read";
 import { WriteTool } from "@oh-my-pi/pi-coding-agent/tools/write";
 import { readArchiveEntries, writeArchive } from "@oh-my-pi/pi-utils/ar";
@@ -152,9 +153,9 @@ describe("write tool read projection guard", () => {
 		const session = createSession(tmpDir);
 		// Uncapped: with the column cap on, the line is shown cut instead (next test).
 		cfgToolsOutputMaxColumns.set(session.settings, 0);
-		const projection = resultText(
-			await wrapToolWithMetaNotice(new ReadTool(session)).execute("read-line", { path: `${filePath}:1-1` }),
-		);
+		// Exercise the read byte limit before the independent context-preview cap.
+		const read = await new ReadTool(session).execute("read-line", { path: `${filePath}:1-1` });
+		const projection = resultText(read) + formatOutputNotice(read.details?.meta);
 		expect(projection).toContain("(partial,");
 		expect(projection.length).toBeGreaterThan(original.length);
 
@@ -314,9 +315,9 @@ describe("write tool read projection guard", () => {
 		await Bun.write(filePath, original);
 		const session = createSession(tmpDir);
 
-		const projection = resultText(
-			await wrapToolWithMetaNotice(new ReadTool(session)).execute("read-local", { path: "local://notes.txt" }),
-		);
+		// A complete source read can round-trip before the outer preview policy elides it.
+		const read = await new ReadTool(session).execute("read-local", { path: "local://notes.txt" });
+		const projection = resultText(read) + formatOutputNotice(read.details?.meta);
 
 		// A writable scheme's read carries no backing-file hint that a write-back would persist.
 		await new WriteTool(session).execute("write-local", { path: "local://notes.txt", content: projection });

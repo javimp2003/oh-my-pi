@@ -186,6 +186,49 @@ export const cfgCompactionMethodOrder = register({
 	},
 });
 
+export const cfgCompactionSummaryChainMaxBlocks = register({
+	id: "compaction.summaryChainMaxBlocks",
+	type: "number",
+	default: 4,
+	ui: {
+		tab: "context",
+		group: "Compaction",
+		label: "Summary Chain Max Blocks",
+		description: "Consolidate incremental summaries when this many sealed blocks have accumulated",
+		options: [
+			{ value: "2", label: "2 blocks" },
+			{ value: "4", label: "4 blocks" },
+			{ value: "8", label: "8 blocks" },
+		],
+	},
+	validate: value => {
+		if (value !== undefined && (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 32))
+			throw new Error("compaction.summaryChainMaxBlocks must be an integer between 1 and 32");
+	},
+});
+
+export const cfgCompactionSummaryChainMaxTokens = register({
+	id: "compaction.summaryChainMaxTokens",
+	type: "number",
+	default: 8192,
+	ui: {
+		tab: "context",
+		group: "Compaction",
+		label: "Summary Chain Token Budget",
+		description:
+			"Soft token budget for incremental summaries, also limited to one eighth of the model window; exact user instructions are preserved",
+		options: [
+			{ value: "4096", label: "4K tokens" },
+			{ value: "8192", label: "8K tokens" },
+			{ value: "16384", label: "16K tokens" },
+		],
+	},
+	validate: value => {
+		if (value !== undefined && (typeof value !== "number" || !Number.isInteger(value) || value < 256))
+			throw new Error("compaction.summaryChainMaxTokens must be an integer of at least 256");
+	},
+});
+
 export const cfgCompactionThresholdPercent = register({
 	id: "compaction.thresholdPercent",
 	type: "number",
@@ -429,6 +472,8 @@ export const cfgCompaction = combine({
 	enabled: cfgCompactionEnabled,
 	experimentalContextManagement: cfgCompactionExperimentalContextManagement,
 	methodOrder: cfgCompactionMethodOrder,
+	summaryChainMaxBlocks: cfgCompactionSummaryChainMaxBlocks,
+	summaryChainMaxTokens: cfgCompactionSummaryChainMaxTokens,
 	thresholdPercent: cfgCompactionThresholdPercent,
 	thresholdTokens: cfgCompactionThresholdTokens,
 	reserveTokens: cfgCompactionReserveTokens,

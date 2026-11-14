@@ -27,15 +27,15 @@ describe("activityLabel", () => {
 	});
 
 	it("names python and eval calls Code, with the first line of code", () => {
-		expect(activityLabel("eval", { language: "py", code: "\nimport os\nprint(os.getcwd())" }, "done", "Checking cwd")).toEqual(
-			{
-				verb: "Code",
-				subject: { text: "Checking cwd" },
-				code: false,
-				family: "code",
-				detail: "import os",
-			},
-		);
+		expect(
+			activityLabel("eval", { language: "py", code: "\nimport os\nprint(os.getcwd())" }, "done", "Checking cwd"),
+		).toEqual({
+			verb: "Code",
+			subject: { text: "Checking cwd" },
+			code: false,
+			family: "code",
+			detail: "import os",
+		});
 		expect(activityLabel("python", { code: "print(1)" }, "running")).toEqual({
 			verb: "Code",
 			subject: { text: "print(1)" },
@@ -104,7 +104,9 @@ describe("activityLabel", () => {
 	});
 
 	it("says the user answered the ask questions, titled by their topics", () => {
-		const args = { questions: [{ header: "Base de datos", question: "¿Qué motor?" }, { question: "¿Cuándo  lo\nlanzamos?" }] };
+		const args = {
+			questions: [{ header: "Base de datos", question: "¿Qué motor?" }, { question: "¿Cuándo  lo\nlanzamos?" }],
+		};
 		expect(activityLabel("ask", args, "done")).toEqual({
 			verb: "Answered 2 questions",
 			subject: { text: "Base de datos · ¿Cuándo lo lanzamos?" },

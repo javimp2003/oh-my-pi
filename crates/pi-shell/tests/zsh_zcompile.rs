@@ -2,10 +2,10 @@
 //! 5.9 itself: every file of a corpus compiled by both gives the same dump
 //! (padding aside: zsh writes heap garbage after each program's strings)
 //! or the same failure, messages included. The corpus is zsh's own
-//! `Functions` and `Completion` trees (`$PI_ZSH_SRC`, default
-//! `/work/.ref/zsh-5.9`) and the `*.zsh`/`*.zsh-theme` files of
-//! `~/powerlevel10k` and `~/.oh-my-zsh`, whichever exist. Every test is
-//! skipped (passes without checking) when `/bin/zsh` is not zsh 5.9.
+//! bundled zcompile fixtures plus the `Functions` and `Completion` trees
+//! (`$PI_ZSH_SRC`, default `/work/.ref/zsh-5.9`) and the `*.zsh`/`*.zsh-theme`
+//! files of `~/powerlevel10k` and `~/.oh-my-zsh`, whichever exist. Every test
+//! is skipped (passes without checking) when `/bin/zsh` is not zsh 5.9.
 
 #![cfg(unix)]
 
@@ -107,6 +107,13 @@ fn corpus() -> Vec<String> {
 	}
 	let src = std::env::var("PI_ZSH_SRC").unwrap_or_else(|_| "/work/.ref/zsh-5.9".into());
 	let mut files = Vec::new();
+	// Always exercise real compilations on a clean checkout, even without
+	// the optional upstream corpus or user-installed shell plugins.
+	walk(
+		&Path::new(env!("CARGO_MANIFEST_DIR")).join("src/testkit/fixtures/zcompile"),
+		&|p| p.extension().is_some_and(|ext| ext == "zsh"),
+		&mut files,
+	);
 	for sub in ["Functions", "Completion"] {
 		walk(&Path::new(&src).join(sub), &|_| true, &mut files);
 	}
@@ -223,7 +230,9 @@ fn zcompile_digest_and_listing_match_zsh() {
 	if !have_zsh() {
 		return;
 	}
-	let files: Vec<String> = corpus().into_iter().step_by(131).take(12).collect();
+	let files = corpus();
+	let stride = 131.min((files.len() / 12).max(1));
+	let files: Vec<String> = files.into_iter().step_by(stride).take(12).collect();
 	let mut outs = Vec::new();
 	for real in [true, false] {
 		let dir = scratch(if real { "digest-real" } else { "digest-ours" });
@@ -252,7 +261,9 @@ fn zcompile_lists_dumps_zsh_wrote() {
 	if !have_zsh() {
 		return;
 	}
-	let files: Vec<String> = corpus().into_iter().step_by(211).take(5).collect();
+	let files = corpus();
+	let stride = 211.min((files.len() / 5).max(1));
+	let files: Vec<String> = files.into_iter().step_by(stride).take(5).collect();
 	let dir = scratch("list");
 	let d = dir.join("x.zwc").display().to_string();
 	let (_, err, st) = run(true, &format!("zcompile -M {d} \"$@\""), &files);

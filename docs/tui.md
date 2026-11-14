@@ -19,6 +19,20 @@ The runtime has two layers:
 
 If your extension/tool can run headless, guard with `ctx.hasUI` / `pi.hasUI`. RPC can expose `hasUI === true` for protocol-backed dialogs while still not supporting `custom()`; `hasUI` alone does not guarantee a component can be mounted.
 
+## Copying assistant replies
+
+Native terminals show **Copy response** below each settled assistant message.
+The classic terminal keeps **[ Copy response ]** above the input so the latest
+answer remains accessible after it scrolls into history. Click it with `tui.mouse`
+enabled, or enter `/copy answer` without enabling mouse capture. Both use the
+currently viewed session, including a focused subagent. `/copy` still opens the
+selector for older messages, code and links.
+
+Copying preserves the original Markdown, code fences and whitespace, excluding
+thinking and tool-call payloads. Response buttons stay hidden during streaming.
+The VS Code extension provides the same action below each answer, with success
+feedback and a retry action when the clipboard write fails.
+
 ## Core component contract (`@oh-my-pi/pi-tui`)
 
 `packages/tui/src/tui.ts` defines:

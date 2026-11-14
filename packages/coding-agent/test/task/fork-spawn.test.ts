@@ -102,7 +102,11 @@ interface RecordingSession {
 }
 
 /** A real AgentSession on a scripted model, recording each request's messages. */
-function createRecordingSession(sessionManager: SessionManager, responses: MockResponse[]): RecordingSession {
+function createRecordingSession(
+	sessionManager: SessionManager,
+	responses: MockResponse[],
+	subagentCompletion?: "text" | "yield",
+): RecordingSession {
 	const mock = createMockModel({ responses, handler: { content: ["done"] } });
 	const requests: Message[][] = [];
 	const tools = [createTool("read"), createTool("yield")];
@@ -123,7 +127,7 @@ function createRecordingSession(sessionManager: SessionManager, responses: MockR
 			}),
 			systemPrompt: ["recording"],
 			tools,
-			messages: [],
+			messages: sessionManager.buildSessionContext().messages,
 		},
 		convertToLlm,
 		streamFn: (model, context, streamOptions) => {
@@ -132,6 +136,7 @@ function createRecordingSession(sessionManager: SessionManager, responses: MockR
 		},
 	});
 	const session: AgentSession = new AgentSession({
+		subagentCompletion,
 		agent,
 		sessionManager,
 		settings: Settings.isolated({ "compaction.enabled": false, "todo.enabled": false }),
@@ -172,15 +177,18 @@ describe("task fork spawn", () => {
 		await Promise.all(tempDirs.splice(0).map(dir => dir.remove()));
 	});
 
-	async function spawnFork(cwd: string, forkSource: TaskForkSource, agentModel?: string[]) {
+	async function spawnFork(cwd: string, forkSource: TaskForkSource, agentModel?: string[], textCompletion = false) {
 		let captured: CreateAgentSessionOptions | undefined;
 		let spawned: RecordingSession | undefined;
 		vi.spyOn(sdkModule, "createAgentSession").mockImplementationOnce(async options => {
 			captured = options;
-			spawned = createRecordingSession(options!.sessionManager!, [
-				{ content: [{ type: "toolCall", name: "yield", arguments: {} }] },
-				{ content: ["done"] },
-			]);
+			spawned = createRecordingSession(
+				options!.sessionManager!,
+				textCompletion
+					? [{ content: ["completed open-model fork"] }]
+					: [{ content: [{ type: "toolCall", name: "yield", arguments: {} }] }, { content: ["done"] }],
+				options?.subagentCompletion,
+			);
 			sessions.push(spawned.session);
 			AgentRegistry.global().register({
 				id: CHILD_ID,
@@ -207,8 +215,87 @@ describe("task fork spawn", () => {
 		});
 		expect(result.exitCode).toBe(0);
 		if (!captured || !spawned) throw new Error("expected the fork to create a session");
-		return { options: captured, spawned };
+		return { options: captured, spawned, result };
 	}
+
+	it("finishes an OpenAI-compatible fork without adding a yield tool or spending extra reminder requests", async () => {
+		const cwd = makeTempDir("@pi-task-text-fork-");
+		const forkSource = await createForkSource(cwd);
+		forkSource.model = buildModel({
+			...PARENT_MODEL,
+			id: "open-model",
+			api: "openai-completions",
+			provider: "custom",
+			compat: undefined,
+		});
+		const { options, spawned, result } = await spawnFork(cwd, forkSource, undefined, true);
+		expect(options.requireYieldTool).toBe(false);
+		expect(options.freezeToolDefinitions).toBe(true);
+		expect(options.pinnedToolDefinitions).toEqual(forkSource.toolDefinitions);
+		expect(options.providerPromptCacheKey).toBe(forkSource.promptCacheKey);
+		expect(spawned.requests).toHaveLength(1);
+		expect(
+			spawned.requests[0]?.some(
+				message =>
+					message.role === "assistant" &&
+					message.content.some(block => block.type === "text" && block.text.includes("the bug is in paginate")),
+			),
+		).toBe(true);
+		expect(result.output).toContain("completed open-model fork");
+		await AgentLifecycleManager.global().park(CHILD_ID);
+		let revived: RecordingSession | undefined;
+		vi.spyOn(sdkModule, "createAgentSession").mockImplementationOnce(async options => {
+			revived = createRecordingSession(
+				options!.sessionManager!,
+				[{ content: ["follow-up report"] }],
+				options?.subagentCompletion,
+			);
+			sessions.push(revived.session);
+			return { session: revived.session } as CreateAgentSessionResult;
+		});
+		const followUp = await executorModule.runSubagentFollowUpTurn({
+			id: CHILD_ID,
+			agent: { name: "task", description: "test", systemPrompt: "charter", source: "bundled" },
+			message: "check the next boundary",
+		});
+		expect(followUp.exitCode).toBe(0);
+		expect(followUp.output).toContain("follow-up report");
+		expect(revived?.requests).toHaveLength(1);
+	});
+
+	it("fails a resumed text fork when the next model request is refused instead of recycling its old report", async () => {
+		const cwd = makeTempDir("@pi-task-text-stale-");
+		const source = await createForkSource(cwd);
+		source.model = buildModel({
+			...PARENT_MODEL,
+			id: "open-model",
+			api: "openai-completions",
+			provider: "custom",
+			compat: undefined,
+		});
+		const { spawned } = await spawnFork(cwd, source, undefined, true);
+		// Context rebuilds may replace message objects without producing a response.
+		const lastAssistant = spawned.session.getLastAssistantMessage.bind(spawned.session);
+		vi.spyOn(spawned.session, "getLastAssistantMessage").mockImplementation(() => {
+			const message = lastAssistant();
+			return message ? { ...message, content: [...message.content] } : undefined;
+		});
+		const removeGate = spawned.session.agent.addBeforeModelCall(() => ({
+			stop: true,
+			reason: "request budget exhausted",
+		}));
+		try {
+			const followUp = await executorModule.runSubagentFollowUpTurn({
+				id: CHILD_ID,
+				agent: { name: "task", description: "test", systemPrompt: "charter", source: "bundled" },
+				message: "verify another requirement",
+			});
+			expect(followUp.exitCode).not.toBe(0);
+			expect(spawned.requests).toHaveLength(1);
+		} finally {
+			removeGate();
+		}
+	});
 
 	it("opens the parent transcript and sends the parent's prompt, model, tools and cache key", async () => {
 		const cwd = makeTempDir("@pi-task-fork-");

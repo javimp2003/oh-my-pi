@@ -7,6 +7,7 @@ import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
 import typesDescriptionPrompt from "../../commit/prompts/types-description.md" with { type: "text" };
 import type { ModelRegistry } from "../../config/model-registry";
 import type { Settings } from "../../config/settings";
+import { commitStyleSystemPrompt, type CommitPolicy } from "../style";
 import { getMarkdownTheme } from "@oh-my-pi/pi-tui/theme";
 import { createAgentSession } from "../../sdk";
 import type { AgentSessionEvent } from "../../session/agent-session";
@@ -18,6 +19,7 @@ import type { CommitAgentState } from "./state";
 import { createCommitTools } from "./tools";
 
 export interface CommitAgentInput {
+	policy?: CommitPolicy;
 	cwd: string;
 	model: Model<Api>;
 	thinkingLevel?: ThinkingLevel;
@@ -41,10 +43,11 @@ export interface ExistingChangelogEntries {
 
 export async function runCommitAgentSession(input: CommitAgentInput): Promise<CommitAgentState> {
 	const typesDescription = prompt.render(typesDescriptionPrompt);
-	const systemPrompt = prompt.render(agentSystemPrompt, {
+	const basePrompt = prompt.render(agentSystemPrompt, {
 		types_description: typesDescription,
 	});
-	const state: CommitAgentState = { diffText: input.diffText };
+	const systemPrompt = commitStyleSystemPrompt(basePrompt, input.policy);
+	const state: CommitAgentState = { diffText: input.diffText, policy: input.policy };
 	const spawns = "sonic";
 	const tools = createCommitTools({
 		cwd: input.cwd,

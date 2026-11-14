@@ -389,7 +389,7 @@ describe("AgentSession owner-routed async delivery", () => {
 						: message.content.map(block => (block.type === "text" ? block.text : "")).join("\n"),
 				)
 				.join("\n");
-			expect(followUp).toContain(`Full output: artifact://${rawArtifactId}`);
+			expect(followUp).toContain(`artifact://${rawArtifactId}`);
 			// The raw capture holds only the stream; the exit notice the tool appended
 			// after it must survive in the preview's tail.
 			expect(followUp).toContain("Command exited with code 3");

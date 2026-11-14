@@ -8,7 +8,7 @@ import { detectChangelogBoundaries } from "../../commit/changelog/detect";
 import { parseUnreleasedSection } from "../../commit/changelog/parse";
 import { formatCommitMessage } from "../../commit/message";
 import { resolvePrimaryModel } from "../../commit/model-selection";
-import type { CommitCommandArgs, ConventionalAnalysis, NumstatEntry } from "../../commit/types";
+import type { CommitCommandArgs, NumstatEntry } from "../../commit/types";
 import { ModelRegistry } from "../../config/model-registry";
 import { Settings } from "../../config/settings";
 import { discoverAuthStorage, discoverContextFiles, loadCliExtensionProviders } from "../../sdk";
@@ -21,8 +21,10 @@ import splitConfirmPrompt from "./prompts/split-confirm.md" with { type: "text" 
 import type { CommitAgentState, CommitProposal, FileChange, SplitCommitPlan } from "./state";
 import { computeDependencyOrder } from "./topo-sort";
 import { detectTrivialChange } from "./trivial";
+import { type CommitPolicy, resolveCommitPolicy } from "../style";
 
 interface CommitExecutionContext {
+	policy?: CommitPolicy;
 	cwd: string;
 	dryRun: boolean;
 	push: boolean;
@@ -32,11 +34,12 @@ export async function runAgenticCommit(args: CommitCommandArgs): Promise<{ usedF
 	const cwd = getProjectDir();
 	const repo = vcs.requireGit(cwd);
 	const settings = await Settings.init({ cwd });
+	const policy = await resolveCommitPolicy(cwd, settings);
 	const authStorage = await discoverAuthStorage(undefined, { settings });
 	// Release the credential store once the command settles: the local store holds
 	// `agent.db` open and a broker-backed one runs a sync loop that pins the event loop.
 	try {
-		return await runAgenticCommitWithAuth(args, cwd, repo, settings, authStorage);
+		return await runAgenticCommitWithAuth(args, cwd, repo, settings, authStorage, policy);
 	} finally {
 		authStorage.close();
 	}
@@ -48,6 +51,7 @@ async function runAgenticCommitWithAuth(
 	repo: VcsGitRepo,
 	settings: Settings,
 	authStorage: AuthStorage,
+	policy: CommitPolicy,
 ): Promise<{ usedFallback: boolean }> {
 	process.stdout.write("● Resolving model...\n");
 	const modelRegistry = new ModelRegistry(authStorage);
@@ -117,13 +121,13 @@ async function runAgenticCommitWithAuth(
 	const forceFallback = $env.PI_COMMIT_TEST_FALLBACK?.toLowerCase() === "true";
 	if (forceFallback) {
 		process.stdout.write("● Forcing fallback commit generation...\n");
-		const fallbackProposal = generateFallbackProposal(numstat);
-		await runSingleCommit(fallbackProposal, { cwd, dryRun: args.dryRun, push: args.push });
+		const fallbackProposal = generateFallbackProposal(numstat, policy);
+		await runSingleCommit(fallbackProposal, { cwd, dryRun: args.dryRun, push: args.push, policy });
 		return { usedFallback: true };
 	}
 
 	const trivialChange = detectTrivialChange(diff);
-	if (trivialChange) {
+	if (trivialChange && policy.style !== "unicaja") {
 		process.stdout.write(`● Detected trivial change: ${trivialChange.summary}\n`);
 		const trivialProposal: CommitProposal = {
 			analysis: {
@@ -153,6 +157,7 @@ async function runAgenticCommitWithAuth(
 
 	try {
 		await runCommitAgentSession({
+			policy,
 			cwd,
 			model: primaryModel,
 			thinkingLevel: primaryThinkingLevel,
@@ -168,6 +173,7 @@ async function runAgenticCommitWithAuth(
 			onComplete: async commitState => {
 				agentSessionCompleted = true;
 				usedFallback = await completeAgentCommitState(commitState, {
+					policy,
 					cwd,
 					dryRun: args.dryRun,
 					push: args.push,
@@ -188,8 +194,8 @@ async function runAgenticCommitWithAuth(
 			process.stderr.write(`${error.stack}\n`);
 		}
 		process.stdout.write("● Using fallback commit generation...\n");
-		const fallbackProposal = generateFallbackProposal(numstat);
-		await runSingleCommit(fallbackProposal, { cwd, dryRun: args.dryRun, push: args.push });
+		const fallbackProposal = generateFallbackProposal(numstat, policy);
+		await runSingleCommit(fallbackProposal, { cwd, dryRun: args.dryRun, push: args.push, policy });
 		return { usedFallback: true };
 	}
 }
@@ -206,7 +212,7 @@ async function completeAgentCommitState(
 	if (!commitState.proposal && !commitState.splitProposal) {
 		if ($env.PI_COMMIT_NO_FALLBACK?.toLowerCase() !== "true") {
 			process.stdout.write("● Agent did not provide proposal, using fallback...\n");
-			commitState.proposal = generateFallbackProposal(ctx.numstat);
+			commitState.proposal = generateFallbackProposal(ctx.numstat, ctx.policy);
 			usedFallback = true;
 		}
 	}
@@ -245,6 +251,7 @@ async function completeAgentCommitState(
 			cwd: ctx.cwd,
 			dryRun: ctx.dryRun,
 			push: ctx.push,
+			policy: ctx.policy,
 			additionalFiles: updatedChangelogFiles,
 		});
 		return usedFallback;
@@ -258,7 +265,7 @@ async function runSingleCommit(proposal: CommitProposal, ctx: CommitExecutionCon
 	if (proposal.warnings.length > 0) {
 		process.stdout.write(formatWarnings(proposal.warnings));
 	}
-	const commitMessage = formatCommitMessage(proposal.analysis, proposal.summary);
+	const commitMessage = formatCommitMessage(proposal.analysis, proposal.summary, ctx.policy);
 	if (ctx.dryRun) {
 		process.stdout.write("\nGenerated commit message:\n");
 		process.stdout.write(`${commitMessage}\n`);
@@ -280,6 +287,19 @@ async function runSplitCommit(
 	ctx: CommitExecutionContext & { additionalFiles?: string[] },
 ): Promise<void> {
 	const repo = vcs.requireGit(ctx.cwd);
+	// Validate every message before staging changes or creating the first commit.
+	const messages = plan.commits.map(commit =>
+		formatCommitMessage(
+			{
+				type: commit.type,
+				scope: commit.scope,
+				details: commit.details,
+				issueRefs: commit.issueRefs,
+			},
+			commit.summary,
+			ctx.policy,
+		),
+	);
 	if (plan.warnings.length > 0) {
 		process.stdout.write(formatWarnings(plan.warnings));
 	}
@@ -297,13 +317,7 @@ async function runSplitCommit(
 	if (ctx.dryRun) {
 		process.stdout.write("\nSplit commit plan (dry run):\n");
 		for (const [index, commit] of plan.commits.entries()) {
-			const analysis: ConventionalAnalysis = {
-				type: commit.type,
-				scope: commit.scope,
-				details: commit.details,
-				issueRefs: commit.issueRefs,
-			};
-			const message = formatCommitMessage(analysis, commit.summary);
+			const message = messages[index]!;
 			process.stdout.write(`Commit ${index + 1}:\n${message}\n`);
 			const changeSummary = commit.changes.map(change => formatFileChangeSummary(change.path, change)).join(", ");
 			process.stdout.write(`Changes: ${changeSummary}\n`);
@@ -327,13 +341,7 @@ async function runSplitCommit(
 	for (const [position, commitIndex] of order.entries()) {
 		const commit = plan.commits[commitIndex];
 		await repo.stageHunks(commit.changes, stagedDiff);
-		const analysis: ConventionalAnalysis = {
-			type: commit.type,
-			scope: commit.scope,
-			details: commit.details,
-			issueRefs: commit.issueRefs,
-		};
-		const message = formatCommitMessage(analysis, commit.summary);
+		const message = messages[commitIndex]!;
 		try {
 			await repo.commitCreate(message, {});
 		} catch (error) {

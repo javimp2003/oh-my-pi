@@ -5,13 +5,17 @@
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { Api, Model } from "@oh-my-pi/pi-ai";
 import { completeSimple, retryTransientCompletion } from "@oh-my-pi/pi-ai";
-import { logger, prompt } from "@oh-my-pi/pi-utils";
+import { getProjectDir, logger, prompt } from "@oh-my-pi/pi-utils";
+import { commitStyleSystemPrompt, resolveCommitPolicy } from "../commit/style";
+import { parseUnicajaCommit } from "../commit/conventional/unicaja";
+import { formatConventionalCommit } from "../commit/conventional/normalization";
 
 import type { ModelRegistry } from "../config/model-registry";
 import { getModelMatchPreferences, resolveModelRoleValue } from "../config/model-resolver";
 import type { Settings } from "../config/settings";
 import MODEL_PRIO from "../priority.json" with { type: "json" };
 import commitSystemPrompt from "../prompts/system/commit-message-system.md" with { type: "text" };
+import commitUserPrompt from "../prompts/system/commit-message-user.md" with { type: "text" };
 import { concreteThinkingLevel, toReasoningEffort } from "@oh-my-pi/pi-tui/thinking";
 
 const COMMIT_SYSTEM_PROMPT = prompt.render(commitSystemPrompt);
@@ -77,16 +81,19 @@ function getSmolModelCandidates(
 
 /**
  * Generate a commit message from a unified diff.
- * Returns null if generation fails (caller should fall back to generic message).
+ * Standard mode returns null on failure; Unicaja fails explicitly to prevent unprefixed fallback commits.
  */
 export async function generateCommitMessage(
 	diff: string,
 	registry: ModelRegistry,
 	settings: Settings,
 	sessionId?: string,
+	cwd: string = getProjectDir(),
 ): Promise<string | null> {
+	const policy = await resolveCommitPolicy(cwd, settings);
 	const candidates = getSmolModelCandidates(registry, settings);
 	if (candidates.length === 0) {
+		if (policy.style === "unicaja") throw new Error("No model available to generate a Unicaja commit message");
 		logger.debug("commit-msg-generator: no smol model found");
 		return null;
 	}
@@ -95,10 +102,11 @@ export async function generateCommitMessage(
 	const truncatedDiff =
 		cleanDiff.length > MAX_DIFF_CHARS ? `${cleanDiff.slice(0, MAX_DIFF_CHARS)}\n… (truncated)` : cleanDiff;
 	if (!truncatedDiff.trim()) {
+		if (policy.style === "unicaja") throw new Error("No relevant diff available for a Unicaja commit message");
 		logger.debug("commit-msg-generator: diff is empty after noise filtering");
 		return null;
 	}
-	const userMessage = `<diff>\n${truncatedDiff}\n</diff>`;
+	const userMessage = prompt.render(commitUserPrompt, { diff: truncatedDiff });
 
 	for (const candidate of candidates) {
 		const apiKey = await registry.getApiKey(candidate.model, sessionId);
@@ -111,7 +119,7 @@ export async function generateCommitMessage(
 					completeSimple(
 						candidate.model,
 						{
-							systemPrompt: [COMMIT_SYSTEM_PROMPT],
+							systemPrompt: [commitStyleSystemPrompt(COMMIT_SYSTEM_PROMPT, policy)],
 							messages: [{ role: "user", content: userMessage, timestamp: Date.now() }],
 						},
 						{
@@ -135,6 +143,10 @@ export async function generateCommitMessage(
 			}
 			msg = msg.trim();
 			if (!msg) continue;
+			if (policy.style === "unicaja") {
+				const message = parseUnicajaCommit(msg, policy.issueKey);
+				return formatConventionalCommit(message);
+			}
 
 			// Clean up: remove wrapping quotes, backticks, trailing period
 			msg = msg.replace(/^[`"']|[`"']$/g, "").replace(/\.$/, "");
@@ -149,5 +161,7 @@ export async function generateCommitMessage(
 		}
 	}
 
+	if (policy.style === "unicaja")
+		throw new Error("Could not generate a valid Unicaja commit message; no unprefixed fallback was used");
 	return null;
 }

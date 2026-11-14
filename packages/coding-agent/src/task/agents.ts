@@ -8,6 +8,7 @@ import { parseFrontmatter, prompt } from "@oh-my-pi/pi-utils";
 import { parseAgentFields } from "../discovery/helpers";
 // Embed agent markdown files at build time
 import agentFrontmatterTemplate from "../prompts/agents/frontmatter.md" with { type: "text" };
+import verifierMd from "../prompts/agents/verifier.md" with { type: "text" };
 import reviewerMd from "../prompts/agents/reviewer.md" with { type: "text" };
 import scoutMd from "../prompts/agents/scout.md" with { type: "text" };
 import securityReviewerMd from "../prompts/agents/security-reviewer.md" with { type: "text" };
@@ -44,6 +45,7 @@ function buildAgentContent(def: EmbeddedAgentDef): string {
 const EMBEDDED_AGENT_DEFS: EmbeddedAgentDef[] = [
 	{ fileName: "scout.md", template: scoutMd },
 	{ fileName: "reviewer.md", template: reviewerMd },
+	{ fileName: "verifier.md", template: verifierMd },
 	{ fileName: "security-reviewer.md", template: securityReviewerMd },
 	{
 		fileName: "task.md",

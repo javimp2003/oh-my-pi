@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import * as path from "node:path";
 import type { AgentToolContext, AgentToolResult } from "@oh-my-pi/pi-agent-core";
+import { OutputSink } from "@oh-my-pi/pi-tui/tools/streaming-output";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { postProcessToolResult } from "@oh-my-pi/pi-coding-agent/tools/output-meta";
+import { postProcessToolResult, resolveOutputSinkLimits } from "@oh-my-pi/pi-coding-agent/tools/output-meta";
 import {
 	buildOutputSynopsis,
 	renderOutputSynopsis,
@@ -182,5 +183,90 @@ describe("spill synopsis", () => {
 			context,
 		);
 		expect(sampled.content).toHaveLength(1);
+	});
+	it("archives medium sized results before they enter context, preserving images and recoverable middle content", async () => {
+		const { context, manager } = await spillContext();
+		const fullText = "BEGIN\n" + "log line\n".repeat(900) + "MIDDLE-DIAGNOSTIC\n" + "log line\n".repeat(900) + "END";
+		const image = { type: "image" as const, data: "png", mimeType: "image/png" };
+		const result = await postProcessToolResult(
+			{ content: [{ type: "text", text: fullText }, image], details: {} },
+			"probe",
+			context,
+		);
+		const text = result.content
+			.filter(block => block.type === "text")
+			.map(block => block.text)
+			.join("\n");
+		expect(Buffer.byteLength(fullText)).toBeLessThan(20 * 1024);
+		expect(Buffer.byteLength(text)).toBeLessThan(8 * 1024 + 2048);
+		expect(text).not.toContain("MIDDLE-DIAGNOSTIC");
+		expect(result.content).toContain(image);
+		const artifactId = result.details?.meta?.truncation?.artifactId;
+		if (!artifactId) throw new Error("Expected recoverable archived output");
+		const artifactPath = await manager.getArtifactPath(artifactId);
+		expect(artifactPath).toBeDefined();
+		expect(await Bun.file(artifactPath!).text()).toBe(fullText);
+		expect(text).toContain("artifact://");
+	});
+
+	it("bounds streaming output at capture time and keeps one recovery artifact", async () => {
+		const { context, manager } = await spillContext({ "tools.outputSynopsis": false });
+		const artifactId = (await manager.saveArtifact("", "bash"))!;
+		const artifactPath = await manager.getArtifactPath(artifactId);
+		const sink = new OutputSink({
+			...resolveOutputSinkLimits(context.settings),
+			artifactId,
+			artifactPath: artifactPath!,
+		});
+		const raw = "start\n" + "log line\n".repeat(4000) + "end";
+		sink.push(raw);
+		const captured = await sink.dump();
+		expect(Buffer.byteLength(captured.output)).toBeLessThan(8 * 1024 + 256);
+		const result = await postProcessToolResult(
+			textResult(captured.output, {
+				meta: {
+					truncation: {
+						direction: "middle",
+						truncatedBy: "middle",
+						totalLines: captured.totalLines,
+						totalBytes: captured.totalBytes,
+						outputLines: captured.outputLines,
+						outputBytes: captured.outputBytes,
+						artifactId,
+					},
+				},
+			}),
+			"bash",
+			context,
+		);
+		expect(result.details?.meta?.truncation?.artifactId).toBe(artifactId);
+		expect(await Bun.file(artifactPath!).text()).toBe(raw);
+	});
+
+	it("bounds results without a session artifact store and does not invent a recovery link", async () => {
+		const result = await postProcessToolResult(textResult("log line\n".repeat(4000)), "probe");
+		const text = result.content
+			.filter(block => block.type === "text")
+			.map(block => block.text)
+			.join("\n");
+		expect(Buffer.byteLength(text)).toBeLessThan(8 * 1024 + 2048);
+		expect(text).not.toContain("artifact://");
+		expect(result.details?.meta?.truncation?.totalBytes).toBe(36000);
+	});
+
+	it("allows explicit artifact pages without creating another artifact", async () => {
+		const { context } = await spillContext();
+		const text = "log line\n".repeat(2000);
+		const result = await postProcessToolResult(textResult(text, { meta: { pagedSource: true } }), "read", context);
+		expect(result.details?.meta?.truncation).toBeUndefined();
+		expect(result.content[0]).toEqual({ type: "text", text });
+	});
+
+	it("uses the legacy threshold when the context budget is explicitly disabled", async () => {
+		const { context } = await spillContext({ "tools.contextOutputMaxBytes": 0 });
+		const text = "log line\n".repeat(1500);
+		const result = await postProcessToolResult(textResult(text), "probe", context);
+		expect(result.details?.meta?.truncation).toBeUndefined();
+		expect(result.content[0]).toEqual({ type: "text", text });
 	});
 });

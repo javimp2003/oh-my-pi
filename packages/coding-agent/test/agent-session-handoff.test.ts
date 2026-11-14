@@ -171,7 +171,8 @@ describe("AgentSession handoff", () => {
 		expect(events.filter(event => event.type === "auto_compaction_end")).toHaveLength(0);
 	});
 
-	it("uses the preferred cache-friendly handoff for manual compaction instead of reserializing history", async () => {
+	it("uses a configured cache-friendly handoff for manual compaction instead of reserializing history", async () => {
+		cfgCompactionMethodOrder.set(session.settings, ["handoff", "soft"]);
 		const textModel = getBundledModel("aimlapi", "alibaba/qwen3-coder-480b-a35b-instruct");
 		if (!textModel) throw new Error("Expected text-only open model");
 		session.agent.setModel(textModel);
@@ -1181,6 +1182,7 @@ describe("AgentSession handoff", () => {
 		expect(cfgCompactionMethodOrder.get(session.settings)).toEqual([
 			"remote",
 			"snapcompact",
+			"incremental",
 			"handoff",
 			"shake",
 			"soft",

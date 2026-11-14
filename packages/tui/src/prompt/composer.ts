@@ -160,6 +160,12 @@ export interface ViewportClickSpan {
 	end: number;
 	/** Candidate subagent ids for a span-local row. */
 	candidates: (local: number) => string[];
+	/** Optional control at the row/column, separate from agent focus targets. */
+	activate?: (local: number, col: number) => boolean;
+}
+
+export interface ViewportClickActionTarget {
+	handleViewportClick(row: number, col: number): boolean;
 }
 
 /**
@@ -519,7 +525,12 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 				// A clipped head must offset the callback: without the skew the
 				// first visible row would hit-test as span-local row 0.
 				const skew = clamped - start;
-				spans.push({ start: clamped, end, candidates: (local: number) => span.candidates(local + skew) });
+				spans.push({
+					start: clamped,
+					end,
+					candidates: (local: number) => span.candidates(local + skew),
+					activate: span.activate && ((local, col) => span.activate!(local + skew, col)),
+				});
 			}
 		};
 		for (const span of activeSpans) shift(span, topPadding + before.length - drop);
@@ -637,7 +648,12 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 			const clamped = Math.max(0, start);
 			if (end <= clamped) return;
 			const skew = clamped - (span.start + base - drop);
-			spans.push({ start: clamped, end, candidates: (local: number) => span.candidates(local + skew) });
+			spans.push({
+				start: clamped,
+				end,
+				candidates: (local: number) => span.candidates(local + skew),
+				activate: span.activate && ((local, col) => span.activate!(local + skew, col)),
+			});
 		};
 		for (const span of transcript.getLastViewportSpans()) {
 			const ids = (span.component as Partial<{ getClickFocusAgentIds(): string[] }>).getClickFocusAgentIds?.();
@@ -856,7 +872,15 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		const plainContainer = root instanceof Container && root.render === Container.prototype.render;
 		const targets = root instanceof Container ? root.children : [root];
 		const resolves = targets.map(rowTargetCandidates);
-		const lastTarget = resolves.findLastIndex(resolve => resolve !== undefined);
+		const actions = targets.map(target => {
+			const action = target as Partial<ViewportClickActionTarget>;
+			return typeof action.handleViewportClick === "function"
+				? (row: number, col: number) => action.handleViewportClick!(row, col)
+				: undefined;
+		});
+		const lastTarget = resolves.findLastIndex(
+			(resolve, index) => resolve !== undefined || actions[index] !== undefined,
+		);
 		if (plainContainer) {
 			let offset = start;
 			for (let index = 0; index < targets.length; index++) {
@@ -864,8 +888,13 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 				after.push(...childLines);
 				if (index > lastTarget) continue;
 				const resolve = resolves[index];
-				if (resolve !== undefined && childLines.length > 0) {
-					spans.push({ start: offset, end: offset + childLines.length, candidates: resolve });
+				if ((resolve !== undefined || actions[index] !== undefined) && childLines.length > 0) {
+					spans.push({
+						start: offset,
+						end: offset + childLines.length,
+						candidates: resolve ?? (() => []),
+						activate: actions[index],
+					});
 				}
 				offset += childLines.length;
 			}
@@ -877,8 +906,13 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 		for (let index = 0; index <= lastTarget; index++) {
 			const childLines = targets[index] === root ? after.length - start : targets[index]!.render(width).length;
 			const resolve = resolves[index];
-			if (resolve !== undefined && childLines > 0) {
-				spans.push({ start: offset, end: offset + childLines, candidates: resolve });
+			if ((resolve !== undefined || actions[index] !== undefined) && childLines > 0) {
+				spans.push({
+					start: offset,
+					end: offset + childLines,
+					candidates: resolve ?? (() => []),
+					activate: actions[index],
+				});
 			}
 			offset += childLines;
 		}
@@ -917,6 +951,15 @@ export class Composer implements TerminalFrameProvider, NativeSurfaceProvider {
 	 */
 	viewportClickCandidates(index: number): string[] {
 		return routeViewportClick(this.#lastClickSpans, index);
+	}
+
+	/** Activate a painted control, using the same clipped viewport coordinates as focus. */
+	activateViewportClick(index: number, col: number): boolean {
+		if (!Number.isInteger(index) || !Number.isInteger(col) || index < 0 || col < 0) return false;
+		for (const span of this.#lastClickSpans) {
+			if (index >= span.start && index < span.end && span.activate?.(index - span.start, col)) return true;
+		}
+		return false;
 	}
 
 	/**

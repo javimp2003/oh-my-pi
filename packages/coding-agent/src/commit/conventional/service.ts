@@ -6,6 +6,7 @@ import { getCommitCacheDbPath } from "@oh-my-pi/pi-utils";
 import { ModelRegistry } from "../../config/model-registry";
 import { Settings } from "../../config/settings";
 import { cfgCommit } from "../settings";
+import { resolveCommitPolicy } from "../style";
 import { discoverAuthStorage, loadCliExtensionProviders } from "../../sdk";
 import { resolvePrimaryModel, resolveSmolModel } from "../model-selection";
 import type { ConventionalCommit } from "../types";
@@ -49,7 +50,8 @@ function renderNumstat(entries: VcsNumstatEntry[]): string {
 export async function generateGitCommit(options: GenerateGitCommitOptions): Promise<GeneratedGitCommit> {
 	const repo = vcs.requireGit(options.cwd);
 	const settings = await Settings.init({ cwd: options.cwd });
-	const config = conventionalGenerationConfig(cfgCommit.get(settings));
+	const policy = await resolveCommitPolicy(options.cwd, settings, options.signal);
+	const config = { ...conventionalGenerationConfig(cfgCommit.get(settings)), policy };
 	let stagedFiles = await repo.changedFiles({ cached: true }, options.signal);
 	let stagedAll = false;
 	if (stagedFiles.length === 0 && options.stageIfEmpty !== false) {

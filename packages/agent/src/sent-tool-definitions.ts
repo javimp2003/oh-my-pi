@@ -7,10 +7,16 @@ import type { Message, Tool } from "@oh-my-pi/pi-ai";
  */
 export class SentToolDefinitions {
 	#byName = new Map<string, Tool>();
+	#latest: Tool[] = [];
 
 	/** Remember the definitions a request is about to send. */
 	record(tools: readonly Tool[]): void {
+		this.#latest = [...tools];
 		for (const tool of tools) this.#byName.set(tool.name, tool);
+	}
+
+	latest(): Tool[] {
+		return [...this.#latest];
 	}
 
 	/** Recorded definitions in first-recorded order. */

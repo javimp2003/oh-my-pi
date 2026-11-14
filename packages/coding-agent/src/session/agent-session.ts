@@ -1,3 +1,4 @@
+import { SessionExecutionBudget } from "./execution-budget";
 /**
  * AgentSession - Core abstraction for agent lifecycle and session management.
  *
@@ -892,6 +893,8 @@ export class AgentSession implements SettingsScope {
 	#autoQaEnabled = false;
 	/** Teardowns registered via {@link addDisposer} (including settings listeners bound to this session); drained on dispose. */
 	#disposers: Array<() => void> = [];
+	readonly executionBudget: SessionExecutionBudget;
+	readonly subagentCompletion: "text" | "yield";
 	/** Last (enable, providerId) tuple resolved by `#syncAppendOnlyContext` — used to skip no-op invalidations. */
 	#lastAppendOnlyResolution?: { enable: boolean; providerId: string | undefined };
 	#eventListeners: AgentSessionEventListener[] = [];
@@ -1723,6 +1726,7 @@ export class AgentSession implements SettingsScope {
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
+		this.subagentCompletion = config.subagentCompletion ?? "yield";
 		this.tokenRate = new TokenRateMeter(text => this.agent.tokenizer.countTokens(text));
 		this.#reseedTokenRate();
 		this.agent.setQueuedMessageGrouping(
@@ -1732,6 +1736,14 @@ export class AgentSession implements SettingsScope {
 		this.#codeModeState = config.codeModeState ?? {};
 		this.sessionManager = config.sessionManager;
 		this.settings = config.settings;
+		this.executionBudget = new SessionExecutionBudget(
+			this.settings,
+			config.executionBudget,
+			this.agent,
+			this.sessionManager,
+			text => this.emitNotice("warning", text, "execution-budget"),
+		);
+		this.#disposers.push(() => this.executionBudget.dispose());
 		this.#skillDescriptions = config.skillDescriptions ?? new SkillDescriptionCatalog();
 		this.memoryEnabled = config.memoryEnabled ?? true;
 		this.#modelRegistry = config.modelRegistry;
@@ -2323,7 +2335,20 @@ export class AgentSession implements SettingsScope {
 		// Pre-scheduling tool_call wiring: extension handlers run at arg-prep
 		// time so a block/revision lands before concurrency resolution,
 		// tool_execution_start, and the wrapper's approval gate.
-		this.agent.beforeToolCall = (ctx, signal) => this.#beforeToolCall(ctx, signal);
+		this.agent.beforeToolCall = async (ctx, signal) => {
+			const result = await this.#beforeToolCall(ctx, signal);
+			if (!result?.block && ctx.tool.name === "bash") {
+				const args = result?.args ?? ctx.args;
+				if (typeof args.command === "string")
+					await this.#verify.contracts.begin(
+						ctx.toolCall.id,
+						args.command,
+						signal,
+						typeof args.cwd === "string" ? args.cwd : undefined,
+					);
+			}
+			return result;
+		};
 		this.agent.providerSessionState = this.#providerSessionState;
 		this.#syncAgentSessionId();
 		this.#todo.syncFromBranch();
@@ -2496,18 +2521,19 @@ export class AgentSession implements SettingsScope {
 			},
 			convertToLlmForSideRequest: messages => this.#convertToLlmForSideRequest(messages),
 			buildLiveProviderContext: async (summarized, retained, signal) => {
-				// compact() rebuilds the previous summary message; send the live
-				// agent's own one. Conversion caches and the shared date/cwd reminder
+				// compact() rebuilds previous summary messages; send the live
+				// agent's own instances. Conversion caches and the shared date/cwd reminder
 				// key on message identity, so a copy would re-root the reminder state
 				// the live turns depend on and re-render the bytes they sent.
-				const liveSummary = this.agent.state.messages[0];
-				const first = summarized[0];
-				const history =
-					first?.role === "compactionSummary" &&
-					liveSummary?.role === "compactionSummary" &&
-					liveSummary.timestamp === first.timestamp
-						? [liveSummary, ...summarized.slice(1)]
-						: summarized;
+				const history = summarized.map((message, index) => {
+					const live = this.agent.state.messages[index];
+					return message.role === "compactionSummary" &&
+						live?.role === "compactionSummary" &&
+						live.timestamp === message.timestamp &&
+						live.summary === message.summary
+						? live
+						: message;
+				});
 				// Transform the whole history as the live turn does, then cut it:
 				// provider transforms (inline imaging, image budgets) decide per
 				// request, so a separately transformed prefix can differ.
@@ -8218,6 +8244,8 @@ export class AgentSession implements SettingsScope {
 		this.#promptSetupAbortController = setupAbort;
 		try {
 			options?.onPromptAdmitted?.();
+			if (message.role === "user" && !message.synthetic && message.attribution !== "agent")
+				this.executionBudget.resetRequest();
 			await this.#recovery.maybeRestoreRetryFallbackPrimary();
 			if (!(await this.#runUsageAwarePreflightForNextModelCall())) return false;
 			// Flush any pending bash messages before the new prompt
@@ -9665,6 +9693,10 @@ export class AgentSession implements SettingsScope {
 	/** Resolve a model selector within the session picker's scope. */
 	findMentionableModel(selector: string): Model | undefined {
 		return this.#modelMentions.findMentionable(selector);
+	}
+
+	get verificationContracts() {
+		return this.#verify.contracts;
 	}
 
 	getTodoPhases(): TodoPhase[] {

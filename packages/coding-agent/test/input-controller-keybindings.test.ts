@@ -316,6 +316,21 @@ function dispatchEnhancedImagePaste(listeners: InputListener[], png: Uint8Array)
 }
 
 describe("InputController keybinding setup", () => {
+	it("opens the workbench through its remapped key without clearing a pending prompt", async () => {
+		const { InputController, ctx, editor, customHandlers, setKeybinding } = await createContext();
+		const opened = Promise.withResolvers<void>();
+		ctx.sessionManager = { getCwd: () => process.cwd() } as InteractiveModeContext["sessionManager"];
+		ctx.showHookCustom = vi.fn(async () => "/settings") as InteractiveModeContext["showHookCustom"];
+		ctx.showSettingsSelector = () => opened.resolve();
+		setKeybinding("app.workbench.open", ["f6"]);
+		editor.setText("Keep this unsent prompt");
+		new InputController(ctx).setupKeyHandlers();
+		customHandlers.get("f6")?.();
+		await opened.promise;
+		expect(editor.getText()).toBe("Keep this unsent prompt");
+		expect(customHandlers.has("f2")).toBe(false);
+	});
+
 	it("registers model selector and display reset actions separately", async () => {
 		const { InputController, ctx, editor, spies } = await createContext();
 		const controller = new InputController(ctx);

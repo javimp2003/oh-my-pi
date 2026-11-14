@@ -24,6 +24,7 @@ import { renderConventionalPrompt } from "./prompts";
 import { extractScopeCandidates, ScopeAnalyzer } from "./scope";
 import { codePointLength, sliceCodePoints } from "./text";
 import { isPastTenseFirstWord, repairSummaryTense, validateCommitMessage, validateSummaryQuality } from "./validation";
+import { generateUnicajaCommit } from "./unicaja";
 
 /** Repository context supplied to analysis and final project-scope validation. */
 export interface ConventionalGenerationContext {
@@ -54,6 +55,7 @@ export interface ConventionalGenerationResult {
 export async function generateConventionalCommit(
 	input: ConventionalGenerationInput,
 ): Promise<ConventionalGenerationResult> {
+	if (input.config.policy?.style === "unicaja") return generateUnicajaCommit(input);
 	const whitespace = classifyDiffWhitespace(input.diff);
 	let commit: ConventionalCommit;
 	if (whitespace.allWhitespace) {

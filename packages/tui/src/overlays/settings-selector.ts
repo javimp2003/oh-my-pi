@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { ThinkingLevel } from "@oh-my-pi/pi-agent-core";
 import type { Effort } from "@oh-my-pi/pi-ai";
 import {
@@ -21,6 +22,7 @@ import {
 	TabBar,
 	truncateToWidth,
 	visibleWidth,
+	wrapTextWithAnsi,
 } from "../index";
 import type { ShapeTarget } from "@oh-my-pi/snapcompact";
 import type {
@@ -115,6 +117,8 @@ function settingsHintsNode(mode: SettingsHintMode): NativeNode {
 			hints = [
 				actionHint("tui.select.confirm", "change"),
 				{ keys: ["tab"], label: "jump tabs" },
+				{ keys: ["ctrl+r"], label: "reset" },
+				{ keys: ["ctrl+e"], label: "edit value" },
 				actionHint("tui.select.cancel", "exit search"),
 			];
 			break;
@@ -137,6 +141,8 @@ function settingsHintsNode(mode: SettingsHintMode): NativeNode {
 					? [{ keys: ["tab"], label: "jump sections" } satisfies NativeHint, switchTabs]
 					: [{ keys: ["tab"], label: "switch tabs" } satisfies NativeHint]),
 				{ keys: [], label: "type to search" },
+				{ keys: ["ctrl+r"], label: "reset" },
+				{ keys: ["ctrl+e"], label: "edit value" },
 				close,
 			];
 			break;
@@ -547,10 +553,9 @@ function getSettingsTabs(): Tab[] {
 	return [
 		...SETTING_TABS.map(id => {
 			const meta = TAB_METADATA[id];
-			const icon = theme.symbol(meta.icon);
-			return { id, label: `${icon} ${meta.label}`, short: icon };
+			return { id, label: meta.label };
 		}),
-		{ id: "plugins", label: `${theme.icon.package} Plugins`, short: theme.icon.package },
+		{ id: "plugins", label: "Plugins" },
 	];
 }
 
@@ -575,6 +580,8 @@ export interface SettingsRuntimeContext {
 	imageBudget?: ImageBudget;
 	/** Schedules a re-render after async preview work completes. */
 	requestRender?: () => void;
+	/** Live terminal height, including while the window is resized. */
+	getHeight?: () => number;
 	/** Live status renderer for composer-shape previews (the session's status line). */
 	composerPreviewStatus?: ComposerPreviewStatusSource;
 }
@@ -642,6 +649,7 @@ export class SettingsSelectorComponent implements Component {
 	// fullscreen overlay paints from screen row 0, so mouse rows map 1:1).
 	#tabRowStart = 0;
 	#tabRowCount = 0;
+	#compactTabs = false;
 	#contentRowStart = 0;
 	#contentRowCount = 0;
 	#sidebarWidth: number;
@@ -705,7 +713,7 @@ export class SettingsSelectorComponent implements Component {
 		const tab = formatKeyHint("tab");
 		const switchTabs = `${formatKeyHints(["left", "right"])} to switch tabs`;
 		if (this.#searchList) {
-			return `${confirm} to change · ${tab} to jump tabs · ${cancel} to exit search`;
+			return `${confirm} to change · ${cancel} to exit search · ${tab} to jump tabs · ${formatKeyHint("ctrl+e")} to edit · ${formatKeyHint("ctrl+r")} to reset`;
 		}
 		if (this.#currentTabId === "plugins") {
 			return `${tab} to switch tabs · ${cancel} to close`;
@@ -714,7 +722,7 @@ export class SettingsSelectorComponent implements Component {
 			return `${editorKeys("tui.select.up", "tui.select.down")} to jump sections · ${tab}/${confirm} to settings · ${switchTabs} · ${cancel} to close`;
 		}
 		const nav = this.#hasSectionJump ? `${tab} to jump sections · ${switchTabs}` : `${tab} to switch tabs`;
-		return `${confirm}/${formatKeyHint("space")} to change · ${nav} · Type to search · ${cancel} to close`;
+		return `${confirm}/${formatKeyHint("space")} to change · ${cancel} to close · ${nav} · Type to search · ${formatKeyHint("ctrl+e")} to edit · ${formatKeyHint("ctrl+r")} to reset`;
 	}
 
 	/** Single-line search banner: accent icon, editable query with live cursor, right-aligned match count. */
@@ -736,23 +744,35 @@ export class SettingsSelectorComponent implements Component {
 	 * then a footer hint pinned above the bottom border.
 	 */
 	render(width: number): readonly string[] {
-		const height = Math.max(14, process.stdout.rows || 40);
+		const height = Math.max(8, this.#context.getHeight?.() ?? (process.stdout.rows || 40));
 		const innerWidth = Math.max(1, width - 4);
 
-		const tabLines = this.#tabBar.render(innerWidth);
+		this.#compactTabs = width < 50 || height < 16;
+		const tabLines = this.#compactTabs
+			? [
+					theme.fg("accent", this.#tabBar.getActiveTab().label) +
+						theme.fg("dim", ` | ${formatKeyHints(["left", "right"])} tabs`),
+				]
+			: this.#tabBar.render(innerWidth);
 		const searching = this.#searchList !== null;
-		const showPreview = !searching && this.#currentTabId === "appearance";
+		const showPreview = !searching && this.#currentTabId === "appearance" && height >= 24 && width >= 50;
 		const previewLines = showPreview ? ["", theme.fg("muted", "Preview:"), this.#getStatusPreviewString()] : [];
+		const footer =
+			height < 16
+				? `${editorKey("tui.select.confirm")} change | ${editorKey("tui.select.cancel")} back`
+				: this.#footerHintText();
+		const maxFooterRows = Math.max(1, height - tabLines.length - Number(searching) - previewLines.length - 5);
+		const footerLines = wrapTextWithAnsi(footer, innerWidth).slice(0, height < 16 ? 1 : maxFooterRows);
 
 		// Fixed chrome: top border, tabs, divider, [search row], divider, hint, bottom border.
-		const fixedRows = 1 + tabLines.length + 1 + (searching ? 1 : 0) + 1 + 1 + 1;
-		const contentRows = Math.max(7, height - fixedRows - previewLines.length);
+		const fixedRows = 1 + tabLines.length + 1 + (searching ? 1 : 0) + 1 + footerLines.length + 1;
+		const contentRows = Math.max(1, height - fixedRows - previewLines.length);
 
 		const list = this.#searchList ?? this.#currentList;
 		let contentLines: readonly string[];
 		if (list) {
 			// SettingsList pads itself to viewport + blank + 3 description rows.
-			list.setMaxVisible(contentRows - 4);
+			list.setMaxVisible(Math.max(1, contentRows - 4));
 			contentLines = list.render(innerWidth);
 		} else if (this.#pluginComponent) {
 			contentLines = this.#pluginComponent.render(innerWidth);
@@ -780,9 +800,9 @@ export class SettingsSelectorComponent implements Component {
 			out.push(row(line, width));
 		}
 		out.push(divider(width));
-		out.push(row(theme.fg("dim", this.#footerHintText()), width));
+		for (const line of footerLines) out.push(row(theme.fg("dim", line), width));
 		out.push(bottomBorder(width));
-		return out;
+		return out.map(line => truncateToWidth(line, width));
 	}
 
 	/**
@@ -1060,10 +1080,7 @@ export class SettingsSelectorComponent implements Component {
 		if (!def) return;
 		if (value === null) {
 			if (list.openSubmenu) list.handleInput(ESCAPE);
-			this.#context.settings.unset(def.path);
-			this.#callbacks.onChange(def.path, this.#context.settings.get(def.path));
-			if (def.tab === "appearance") this.#triggerStatusLinePreview();
-			this.#refreshItems();
+			this.#resetSetting(def);
 			return;
 		}
 		switch (def.type) {
@@ -1080,7 +1097,16 @@ export class SettingsSelectorComponent implements Component {
 						: typeof value === "string"
 							? value
 							: undefined;
-				if (choice === undefined) return;
+				if (choice === undefined) {
+					if (def.schemaType === "number" && typeof value === "number") {
+						const field = this.#openValueEditor(list, def);
+						if (field instanceof TextFormField) {
+							field.setValue(String(value));
+							field.submit();
+						}
+					}
+					return;
+				}
 				const field = list.openSubmenuFor(id);
 				if (field instanceof SelectFormField) {
 					field.selectList.handleNativeEvent({ type: "activate", key: "", item: choice });
@@ -1244,7 +1270,7 @@ export class SettingsSelectorComponent implements Component {
 		}
 
 		const tabLine = event.row - this.#tabRowStart;
-		const overTabs = tabLine >= 0 && tabLine < this.#tabRowCount;
+		const overTabs = !this.#compactTabs && tabLine >= 0 && tabLine < this.#tabRowCount;
 		const overContent = contentLine >= 0 && contentLine < this.#contentRowCount;
 
 		if (event.wheel !== null) {
@@ -1370,6 +1396,11 @@ export class SettingsSelectorComponent implements Component {
 		}
 
 		this.#searchList.setItems(items);
+		// Incremental fuzzy searches retain a previous selection while it still
+		// matches. A complete config key must select that key, not a looser hit
+		// retained from the first few characters (e.g. plan.enabled for enabledModels).
+		const exact = items.find(item => !item.heading && item.id.toLowerCase() === query.trim().toLowerCase());
+		if (exact) this.#searchList.selectItem(exact.id);
 		this.#searchMatchCount = total;
 		this.#tabs = this.#buildSearchTabs(
 			counts,
@@ -1409,23 +1440,20 @@ export class SettingsSelectorComponent implements Component {
 		const matchedIds = new Set<SettingTab>(matchedTabOrder);
 		for (const id of matchedTabOrder) {
 			const meta = TAB_METADATA[id];
-			const icon = theme.symbol(meta.icon);
 			const count = counts.get(id) ?? 0;
 			if (count > 0) {
-				matched.push({ id, label: `${icon} ${meta.label} (${count})`, short: `${icon} ${count}` });
+				matched.push({ id, label: `${meta.label} (${count})` });
 			}
 		}
 		for (const id of SETTING_TABS) {
 			if (matchedIds.has(id)) continue;
 			const meta = TAB_METADATA[id];
-			const icon = theme.symbol(meta.icon);
-			empty.push({ id, label: `${icon} ${meta.label}`, short: icon, muted: true });
+			empty.push({ id, label: meta.label, muted: true });
 		}
 		// Plugins hosts its own UI; it is not part of the schema-backed search.
 		empty.push({
 			id: "plugins",
-			label: `${theme.icon.package} Plugins`,
-			short: theme.icon.package,
+			label: "Plugins",
 			muted: true,
 		});
 		return [...matched, ...empty];
@@ -1524,14 +1552,7 @@ export class SettingsSelectorComponent implements Component {
 	}
 
 	#isChanged(def: SettingDef, currentValue: unknown): boolean {
-		const defaultValue: unknown = def.defaultValue;
-		if (Array.isArray(currentValue) && Array.isArray(defaultValue)) {
-			return (
-				currentValue.length !== defaultValue.length ||
-				currentValue.some((entry, index) => entry !== defaultValue[index])
-			);
-		}
-		return !Object.is(currentValue, defaultValue);
+		return !isDeepStrictEqual(currentValue, def.defaultValue);
 	}
 
 	#getSubmenuCurrentValue(path: string, value: unknown): string {
@@ -1681,12 +1702,19 @@ export class SettingsSelectorComponent implements Component {
 			this.#formatTextInputEditValue(def.path, this.#context.settings.get(def.path)),
 			def.secret,
 			value => {
-				// An empty field removes the persisted value, so the default (or an
-				// environment fallback) applies again instead of a pinned "".
-				if (value === "") this.#context.settings.unset(def.path);
-				else this.#setSettingValue(def.path, value);
-				this.#callbacks.onChange(def.path, this.#context.settings.get(def.path));
-				wrappedDone(this.#formatTextInputValue(def, this.#context.settings.get(def.path)));
+				try {
+					// An empty field removes the persisted value, so the default (or an
+					// environment fallback) applies again instead of a pinned "".
+					if (value === "") this.#context.settings.unset(def.path);
+					else this.#setSettingValue(def.path, value);
+					this.#callbacks.onChange(def.path, this.#context.settings.get(def.path));
+					wrappedDone(this.#formatTextInputValue(def, this.#context.settings.get(def.path)));
+				} catch (error) {
+					// Parsers and validators may echo their input; a masked editor must
+					// not reveal credentials through its inline error message.
+					if (def.secret) throw new Error(`Could not save credential ${def.path}; check its format.`);
+					throw error;
+				}
 			},
 			() => wrappedDone(),
 			this.#context.requestRender,
@@ -1766,6 +1794,8 @@ export class SettingsSelectorComponent implements Component {
 			this.#context.settings.set(path, -1);
 		} else if (path === "compaction.thresholdTokens" && value === "default") {
 			this.#context.settings.set(path, -1);
+		} else if (this.#context.settings.parse) {
+			this.#context.settings.set(path, this.#context.settings.parse(path, value));
 		} else if (schemaType === "array") {
 			let parsed: unknown;
 			try {
@@ -1789,7 +1819,9 @@ export class SettingsSelectorComponent implements Component {
 				parsed = this.#context.settings.validateProviderLimits(parsed);
 			}
 			this.#context.settings.set(path, parsed);
-		} else if (typeof currentValue === "number") {
+		} else if (schemaType === "number" || typeof currentValue === "number") {
+			if (value.trim() === "" || !Number.isFinite(Number(value)))
+				throw new Error(`Expected a finite number for ${path}`);
 			this.#context.settings.set(path, Number(value));
 		} else if (typeof currentValue === "boolean") {
 			this.#context.settings.set(path, value === "true");
@@ -1907,6 +1939,20 @@ export class SettingsSelectorComponent implements Component {
 		});
 	}
 
+	#resetSetting(def: SettingDef): void {
+		this.#context.settings.unset(def.path);
+		this.#callbacks.onChange(def.path, this.#context.settings.get(def.path));
+		if (def.tab === "appearance") this.#triggerStatusLinePreview();
+		this.#refreshItems();
+	}
+
+	#openValueEditor(list: SettingsList, def: SettingDef): Component | undefined {
+		if (def.schemaType === "boolean" || def.schemaType === "enum") return undefined;
+		const entry = this.#context.settings.entries.find(candidate => candidate.path === def.path);
+		const textDef = { ...def, type: "text" as const, secret: entry?.credential === true };
+		return list.openSubmenuFor(def.path, (value, done) => this.#createTextInput(textDef, value, done));
+	}
+
 	handleInput(data: string): void {
 		// SGR mouse reports (the fullscreen overlay enables tracking).
 		if (data.startsWith("\x1b[<")) {
@@ -1926,6 +1972,18 @@ export class SettingsSelectorComponent implements Component {
 		// An open submenu owns input entirely — Tab/arrows/typing belong to it.
 		if (activeList?.hasOpenSubmenu()) {
 			activeList.handleInput(data);
+			return;
+		}
+		if (matchesKey(data, "ctrl+r") && !activeList?.sectionFocused) {
+			const selected = activeList?.getSelectedItem();
+			const def = selected ? getSettingDef(this.#context.settings.entries, selected.id) : undefined;
+			if (def) this.#resetSetting(def);
+			return;
+		}
+		if (matchesKey(data, "ctrl+e") && !activeList?.sectionFocused) {
+			const selected = activeList?.getSelectedItem();
+			const def = selected ? getSettingDef(this.#context.settings.entries, selected.id) : undefined;
+			if (def && activeList) this.#openValueEditor(activeList, def);
 			return;
 		}
 

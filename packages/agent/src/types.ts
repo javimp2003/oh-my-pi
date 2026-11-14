@@ -255,6 +255,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 
 	/** Wire definitions substituted by tool name after `transformProviderContext` (forked children). */
 	pinnedToolDefinitions?: ReadonlyMap<string, Tool>;
+	freezeToolDefinitions?: boolean;
 
 	/**
 	 * Resolves the API key or resolver for the current model before each LLM call.

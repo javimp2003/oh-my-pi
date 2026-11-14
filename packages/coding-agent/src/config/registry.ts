@@ -39,7 +39,7 @@ export interface UiEnum<T extends readonly string[]> extends UiBase {
 }
 
 export interface UiNumber extends UiBase {
-	/** Submenu options. Without options, a numeric setting has no UI representation (intentional hide). */
+	/** Suggested choices. Without options, the panel uses a numeric text editor. */
 	options?: ReadonlyArray<SubmenuOption>;
 }
 
@@ -56,7 +56,7 @@ export interface UiString extends UiBase {
 }
 
 export interface UiArray extends UiBase {
-	/** Membership choices. Without options or a JSON editor, the array stays config-file only. */
+	/** Membership choices. Without options, the panel uses a JSON editor. */
 	options?: ReadonlyArray<SubmenuOption>;
 	/** Opt in to free-form JSON editing instead of a membership picker. */
 	editor?: "json";
@@ -502,7 +502,7 @@ export class Setting<T, Id extends string = string> extends Derived<T> {
 		return this.definition.type === "enum" ? this.definition.values : undefined;
 	}
 
-	/** Settings-panel metadata; `undefined` for config-file-only settings. */
+	/** Curated settings-panel metadata; unannotated settings appear under Advanced. */
 	get ui(): AnyUiMetadata | undefined {
 		return this.definition.ui as AnyUiMetadata | undefined;
 	}

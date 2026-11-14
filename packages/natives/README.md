@@ -75,13 +75,33 @@ resolving symlinks or junctions.
 
 ## Building
 
-```bash
-# Build native addon from workspace root (requires Rust)
-bun run build
+Install Rust through `rustup` and keep its Cargo bin directory ahead of other
+Rust installations on `PATH` (for example, Homebrew's). Run these commands from
+the workspace root so `rustup` selects the nightly pinned in
+[`rust-toolchain.toml`](../../rust-toolchain.toml); an older system compiler
+cannot build the current workspace. Install CMake and Ninja as well. Windows
+hosts also need Visual Studio Build Tools with the C++ tools for their host
+architecture; the build discovers its bundled CMake/Ninja when needed.
 
-# Type check
+```bash
+# Install the pinned compiler and components
+rustup show
+
+# Rebuild and load-probe the host addon; Bazel is not required
+bun run build:native
+
+# Workspace lint, formatting and type checks, plus Rust checks when relevant
 bun run check
+
+# Exercise the rebuilt native APIs and CLI workers
+bun run ci:test:ts:native
+bun run ci:test:smoke
 ```
+
+Rebuild after updating Rust sources or changing to a checkout with a different
+native API. Restart any running CLI processes afterward: a process that has
+already loaded the previous addon keeps that binary in memory. The `.node`
+files are local build artifacts and should not be committed.
 
 ## Architecture
 

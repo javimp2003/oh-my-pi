@@ -1,3 +1,4 @@
+import { frozenProfileEditMode } from "../session/execution-profile";
 import { classifyModel } from "@oh-my-pi/pi-catalog/identity";
 import { $flag } from "@oh-my-pi/pi-utils";
 
@@ -18,6 +19,8 @@ export interface EditModeSessionLike {
 }
 
 export function resolveEditMode(session: EditModeSessionLike): EditMode {
+	const frozen = frozenProfileEditMode(session.settings);
+	if (frozen) return frozen;
 	const activeModel = session.getActiveModelString?.();
 	const modelVariant = editVariantForModel(session.settings, activeModel);
 	if (modelVariant) return modelVariant;

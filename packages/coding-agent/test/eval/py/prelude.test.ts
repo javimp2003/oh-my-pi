@@ -54,7 +54,7 @@ describe("python prelude", () => {
 			{},
 		);
 
-		expect(result.exitCode).toBe(0);
+		expect(result).toMatchObject({ exitCode: 0, stderr: "" });
 		const lines = result.stdout.trim().split("\n");
 		const value = JSON.parse(lines[0] ?? "{}");
 		expect(value.first).toEqual({

@@ -137,6 +137,8 @@ export interface AgentOptions {
 	 * so parent tools absent from this Agent resolve as inactive (Anthropic `tool_removal`).
 	 */
 	pinnedToolDefinitions?: readonly Tool[];
+	/** Preserve the complete ordered wire list, including unavailable tools, for flat-prefix forks. */
+	freezeToolDefinitions?: boolean;
 
 	/**
 	 * Steering mode: "all" = send all steering messages at once, "one-at-a-time" = one per turn
@@ -431,6 +433,7 @@ export class Agent {
 	#transformProviderContext?: (context: Context, model: Model) => Context | Promise<Context>;
 	#sentToolDefinitions = new SentToolDefinitions();
 	#pinnedToolDefinitions: ReadonlyMap<string, Tool> | undefined;
+	#freezeToolDefinitions = false;
 	#steeringQueue: AgentMessage[] = [];
 	#followUpQueue: AgentMessage[] = [];
 	#queuedMessageClaims: Partial<Record<QueuedMessageQueue, QueuedMessageClaim>> = {};
@@ -616,7 +619,8 @@ export class Agent {
 		this.#telemetry = opts.telemetry;
 		this.#appendOnlyContext = opts.appendOnlyContext;
 		this.#transformProviderContext = opts.transformProviderContext;
-		if (opts.pinnedToolDefinitions?.length) {
+		this.#freezeToolDefinitions = opts.freezeToolDefinitions === true;
+		if (opts.pinnedToolDefinitions) {
 			this.#sentToolDefinitions.record(opts.pinnedToolDefinitions);
 			this.#pinnedToolDefinitions = new Map(opts.pinnedToolDefinitions.map(tool => [tool.name, tool]));
 		}
@@ -647,6 +651,10 @@ export class Agent {
 	/** Wire tool definitions this Agent has sent (plus pinned ones), for seeding a forked child. */
 	getSentToolDefinitions(): Tool[] {
 		return this.#sentToolDefinitions.snapshot();
+	}
+
+	getLastWireToolDefinitions(): Tool[] {
+		return this.#sentToolDefinitions.latest();
 	}
 
 	/**
@@ -946,8 +954,13 @@ export class Agent {
 		let context: Context = { systemPrompt, messages, tools };
 		if (this.#transformProviderContext) context = await this.#transformProviderContext(context, model);
 		const pinned = this.#pinnedToolDefinitions;
-		if (pinned && context.tools) {
-			context = { ...context, tools: context.tools.map(tool => pinned.get(tool.name) ?? tool) };
+		if (pinned && context.tools && !ownedDialect) {
+			context = {
+				...context,
+				tools: this.#freezeToolDefinitions
+					? [...pinned.values()]
+					: context.tools.map(tool => pinned.get(tool.name) ?? tool),
+			};
 		}
 		// Side requests reuse the main loop's sent definitions without recording their own.
 		if (context.tools?.length) {
@@ -1896,6 +1909,7 @@ export class Agent {
 			transformProviderContext: this.#transformProviderContext,
 			sentToolDefinitions: this.#sentToolDefinitions,
 			pinnedToolDefinitions: this.#pinnedToolDefinitions,
+			freezeToolDefinitions: this.#freezeToolDefinitions,
 			transformContext: this.#transformContext,
 			onPayload: this.#onPayload,
 			onResponse: this.#onResponse,

@@ -1,7 +1,9 @@
 import type { CommitSettings } from "../settings";
+import type { CommitPolicy } from "../style";
 
 /** Runtime thresholds copied from llm-git's standard commit workflow. */
 export interface ConventionalGenerationConfig {
+	readonly policy?: CommitPolicy;
 	readonly summaryGuideline: number;
 	readonly summarySoftLimit: number;
 	readonly summaryHardLimit: number;

@@ -49,16 +49,17 @@ describe("credential masking reaches every surface", () => {
 		// The panel derives masking from the same classification the CLI uses, so
 		// a credential cannot render as plain text on one surface and dots on the
 		// other.
-		for (const path of ["hindsight.apiToken", "mnemopi.embeddingApiKey", "mnemopi.llmApiKey"] as const) {
+		for (const path of [
+			"hindsight.apiToken",
+			"mnemopi.embeddingApiKey",
+			"mnemopi.llmApiKey",
+			"auth.broker.token",
+			"searxng.token",
+			"dev.autoqaPush.token",
+		] as const) {
 			const def = getSettingDef(createSettingsHost().entries, path);
 			expect(def?.type).toBe("text");
 			expect(def && "secret" in def ? def.secret : undefined).toBe(true);
-		}
-	});
-
-	it("keeps credentials with no panel entry out of the panel entirely", () => {
-		for (const path of ["auth.broker.token", "searxng.token", "dev.autoqaPush.token"] as const) {
-			expect(getSettingDef(createSettingsHost().entries, path)).toBeUndefined();
 		}
 	});
 

@@ -1,3 +1,4 @@
+import type { ExecutionBudget } from "./execution-budget";
 import type {
 	Agent,
 	AgentMessage,
@@ -153,6 +154,8 @@ export interface InitialRetryFallbackState {
 
 /** Dependencies and initial state used to construct an AgentSession. */
 export interface AgentSessionConfig {
+	executionBudget?: ExecutionBudget;
+	subagentCompletion?: "text" | "yield";
 	agent: Agent;
 	/** Shared with the provider stream wrapper: current Codex Code Mode tool exposure snapshot for turn metadata. */
 	codeModeState?: { namespacesInfo?: unknown };

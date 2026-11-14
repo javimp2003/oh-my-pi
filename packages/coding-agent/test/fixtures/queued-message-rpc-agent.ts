@@ -21,14 +21,19 @@ const started: MockResponse = { content: ["Started"], delayMs: 1000 };
 // - "live-steer": the provider claims the first user steer into the streaming response,
 //   as a live-steering provider (Codex `response.steer`) does.
 // - "hold": streams until aborted, for tests whose queueing outlasts the default delay.
+// Abort tests have a 30s deadline, so scripted turns must stay in flight beyond it.
+const held: MockResponse = { content: ["Started"], delayMs: 60_000 };
 const firstCall: Record<string, MockHandler> = {
-	hold: { content: ["Started"], delayMs: 60_000 },
+	hold: async () => {
+		await Bun.write(path.join(process.cwd(), "held-turn-started"), "ready");
+		return held;
+	},
 	"internal-steer": () => {
 		void session.sendCustomMessage(
 			{ customType: "test-internal-steer", content: "internal steer", display: true, attribution: "agent" },
 			{ deliverAs: "steer" },
 		);
-		return started;
+		return held;
 	},
 	"live-steer": async (_context, options) => {
 		const live = options?.liveSteering;
@@ -37,7 +42,7 @@ const firstCall: Record<string, MockHandler> = {
 			await live.wait(signal);
 			(await live.claim(signal))?.accept();
 		}
-		return started;
+		return held;
 	},
 };
 const mock = createMockModel({

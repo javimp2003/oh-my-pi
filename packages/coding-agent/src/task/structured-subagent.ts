@@ -1,3 +1,4 @@
+import type { ExecutionBudget } from "../session/execution-budget";
 /**
  * Shared policy resolution and execution for task and eval subagents.
  *
@@ -107,6 +108,8 @@ export interface StructuredSubagentIdentity {
 
 /** One normalized child invocation. */
 export interface StructuredSubagentRequest {
+	budgetPurpose?: "work" | "verification";
+	executionBudget?: ExecutionBudget;
 	session: ToolSession;
 	invocationKind: "task" | "eval";
 	assignment: string;
@@ -609,6 +612,7 @@ function buildExecutorOptions(
 		preloadedCustomToolPaths: restrictToolNames ? [] : session.customToolPaths,
 		localProtocolOptions,
 		parentArtifactManager: session.getArtifactManager?.() ?? undefined,
+		executionBudget: request.executionBudget,
 		parentHindsightSessionState: session.getHindsightSessionState?.(),
 		parentMnemopiSessionState: session.getMnemopiSessionState?.(),
 		parentTelemetry: session.getTelemetry?.(),
@@ -757,6 +761,8 @@ function describeSalvagedWork(result: SingleResult): string {
  * lease or child dispatch; callers keep responsibility for their result text.
  */
 export async function runStructuredSubagent(request: StructuredSubagentRequest): Promise<StructuredSubagentResult> {
+	request = { ...request, executionBudget: request.session.getExecutionBudget?.() };
+	request.executionBudget?.assertSpawn(request.budgetPurpose);
 	const policy = await applySpawnHook(request, await resolveEffectiveSubagentPolicy(request));
 	const lease = await leaseArtifacts(request.session, request.invocationKind);
 	let changesApplied: boolean | null = null;

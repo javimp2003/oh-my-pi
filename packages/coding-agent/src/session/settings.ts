@@ -1531,3 +1531,49 @@ export const cfgThinkingBudgets = combine({
 	xhigh: cfgThinkingBudgetsXhigh,
 	max: cfgThinkingBudgetsMax,
 });
+
+/** Opt-in shared execution budget. Weights express approximate GPU work, not billing. */
+export const cfgExecutionBudgetTokens = register({
+	id: "execution.budgetTokens",
+	type: "number",
+	default: 0,
+	ui: {
+		tab: "interaction",
+		group: "Execution Budget",
+		label: "Shared Token Budget",
+		description: "Weighted budget per user request across the parent and children; 0 disables it",
+	},
+});
+export const cfgExecutionPrefillWeight = register({
+	id: "execution.prefillWeight",
+	type: "number",
+	default: 0.2,
+	ui: {
+		tab: "interaction",
+		group: "Execution Budget",
+		label: "Prefill Weight",
+		description: "Weight of uncached input and cache writes relative to generated tokens",
+	},
+});
+export const cfgExecutionReservePercent = register({
+	id: "execution.reservePercent",
+	type: "number",
+	default: 20,
+	ui: {
+		tab: "interaction",
+		group: "Execution Budget",
+		label: "Verification Reserve (%)",
+		description: "Reserve the last portion for integration, checks and review",
+	},
+});
+export const cfgExecutionMaxSeconds = register({
+	id: "execution.maxSeconds",
+	type: "number",
+	default: 0,
+	ui: {
+		tab: "interaction",
+		group: "Execution Budget",
+		label: "Request Time Budget (seconds)",
+		description: "Shared wall-clock limit checked before model calls; 0 disables it",
+	},
+});

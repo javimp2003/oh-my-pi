@@ -58,16 +58,17 @@ export function createSettingsHost(): SettingsHost {
 	for (const tab of SETTING_TABS) {
 		for (const setting of orderedSettings()) {
 			const ui = setting.ui;
-			if (ui?.tab !== tab) continue;
+			if ((ui?.tab ?? "advanced") !== tab) continue;
 			const note = envNote(setting);
 			entries.push({
 				path: setting.id,
 				type: setting.type,
 				defaultValue: setting.default,
-				ui: note ? { ...ui, description: `${ui.description}${note}` } : ui,
+				description: `${ui?.description ?? setting.id}${note}`,
+				ui: ui && note ? { ...ui, description: `${ui.description}${note}` } : ui,
 				enumValues: setting.enumValues,
 				credential: setting.isCredential,
-				condition: ui.condition ? CONDITIONS[ui.condition] : undefined,
+				condition: ui?.condition ? CONDITIONS[ui.condition] : undefined,
 			});
 		}
 	}
@@ -81,6 +82,7 @@ export function createSettingsHost(): SettingsHost {
 		get: path => lookup(path)?.layered(settings),
 		set: (path, value) => resolve(path).set(settings, value),
 		unset: path => resolve(path).unset(settings),
+		parse: (path, value) => resolve(path).parse(value),
 		normalizeProviderLimits: normalizeProviderMaxInFlightRequests,
 		validateProviderLimits: validateProviderMaxInFlightRequests,
 	};

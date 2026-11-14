@@ -21,6 +21,12 @@ export const COMPACTION_METHOD_CHOICES = [
 		description: "Archive history onto dense bitmap images the active vision model reads back; no LLM call",
 	},
 	{
+		value: "incremental",
+		label: "Incremental summaries",
+		description:
+			"Keep sealed summary blocks and summarize only new history; consolidate when their budget is reached",
+	},
+	{
 		value: "handoff",
 		label: "Handoff",
 		description: "Generate a handoff document and continue from it as the compaction summary",
@@ -40,10 +46,11 @@ export const COMPACTION_METHOD_CHOICES = [
 /** One selectable automatic context-maintenance method. */
 export type CompactionMethod = (typeof COMPACTION_METHOD_CHOICES)[number]["value"];
 
-/** Default fallback order: server-native first, portable summary last. */
+/** Default fallback order: native/archive first, then portable incremental summaries. */
 export const DEFAULT_COMPACTION_METHOD_ORDER: CompactionMethod[] = [
 	"remote",
 	"snapcompact",
+	"incremental",
 	"handoff",
 	"shake",
 	"soft",
@@ -52,6 +59,7 @@ export const DEFAULT_COMPACTION_METHOD_ORDER: CompactionMethod[] = [
 const COMPACTION_METHODS: Record<CompactionMethod, true> = {
 	remote: true,
 	snapcompact: true,
+	incremental: true,
 	handoff: true,
 	soft: true,
 	shake: true,
@@ -79,6 +87,7 @@ export function resolveCompactionMethodOrder(value: unknown): CompactionMethod[]
 const STRATEGY_BY_COMPACTION_METHOD: Record<CompactionMethod, "context-full" | "handoff" | "shake" | "snapcompact"> = {
 	remote: "context-full",
 	snapcompact: "snapcompact",
+	incremental: "context-full",
 	handoff: "handoff",
 	soft: "context-full",
 	shake: "shake",
@@ -97,6 +106,7 @@ export function resolveMethodSettings(
 		...settings,
 		strategy: STRATEGY_BY_COMPACTION_METHOD[method],
 		remoteEnabled: method === "remote",
+		summaryChainEnabled: method === "incremental",
 	};
 }
 
@@ -119,7 +129,7 @@ export function resolveSpeculationMethod(
 	model: Model | null | undefined,
 	settings: CompactionSettings,
 	{ skipRemote = false }: { skipRemote?: boolean } = {},
-): "remote" | "handoff" | "soft" | undefined {
+): "remote" | "handoff" | "soft" | "incremental" | undefined {
 	for (const candidate of resolveCompactionMethodOrder(settings.methodOrder)) {
 		if (skipRemote && candidate === "remote") continue;
 		const available =
@@ -129,7 +139,9 @@ export function resolveSpeculationMethod(
 					? model?.input?.includes("image") === true
 					: true;
 		if (!available) continue;
-		return candidate === "remote" || candidate === "handoff" || candidate === "soft" ? candidate : undefined;
+		return candidate === "remote" || candidate === "handoff" || candidate === "soft" || candidate === "incremental"
+			? candidate
+			: undefined;
 	}
 	return undefined;
 }

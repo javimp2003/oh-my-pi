@@ -13,6 +13,7 @@ import { CommandController } from "@oh-my-pi/pi-coding-agent/modes/controllers/c
 import { InputController } from "@oh-my-pi/pi-coding-agent/modes/controllers/input-controller";
 import type { InteractiveModeContext } from "@oh-my-pi/pi-coding-agent/modes/types";
 import manualContinuePrompt from "../src/prompts/system/manual-continue.md" with { type: "text" };
+import * as clipboard from "../src/utils/clipboard";
 
 function createFocusedContext() {
 	let editorText = "";
@@ -76,6 +77,22 @@ async function submit(text: string) {
 }
 
 describe("focused subagent view slash commands", () => {
+	it("copies the focused agent's answer without sending a model prompt or using the main transcript", async () => {
+		const copy = vi.spyOn(clipboard, "copyToClipboard").mockResolvedValue(undefined);
+		const focused = createFocusedContext();
+		Object.assign(focused.raw.viewSession, {
+			messages: [{ role: "assistant", content: [{ type: "text", text: "Worker answer" }] }],
+		});
+		Object.assign(focused.raw.session, {
+			messages: [{ role: "assistant", content: [{ type: "text", text: "Main answer" }] }],
+		});
+		const controller = new InputController(focused.ctx);
+		controller.setupEditorSubmitHandler();
+		focused.editor.setText("/copy answer");
+		await focused.ctx.editor.onSubmit?.("/copy answer");
+		expect(copy).toHaveBeenCalledWith("Worker answer");
+		expect(focused.prompt).not.toHaveBeenCalled();
+	});
 	afterEach(() => {
 		vi.restoreAllMocks();
 	});

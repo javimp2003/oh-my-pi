@@ -30,6 +30,7 @@ import type { ChangedFile, GitViewState } from "./state";
 
 /** Generated conventional commit fields shown in the commit form. */
 export interface GitCommitMessage {
+	issueKey?: string;
 	type: string;
 	scope?: string | null;
 	summary: string;
@@ -745,8 +746,11 @@ export class Sidebar {
 	/** Replace the form with one generated conventional commit. */
 	setGeneratedCommit(commit: GitCommitMessage): void {
 		const scope = commit.scope ? `(${commit.scope})` : "";
-		this.summary.setValue(`${commit.type}${scope}: ${commit.summary}`);
-		this.description.setText(commit.body.map(detail => `- ${detail}`).join("\n"));
+		const prefix = commit.issueKey ? `[${commit.issueKey}] ` : "";
+		this.summary.setValue(`${prefix}${commit.type}${scope}: ${commit.summary}`);
+		this.description.setText(
+			commit.issueKey ? commit.body.join("\n\n") : commit.body.map(detail => `- ${detail}`).join("\n"),
+		);
 		this.#requestRender();
 	}
 	/** Reflect whether an inference request currently owns the commit form. */

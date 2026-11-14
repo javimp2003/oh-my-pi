@@ -1,5 +1,6 @@
 import type { VcsHunkSelection } from "@oh-my-pi/pi-natives";
 import type { CommitType, ConventionalAnalysis, ConventionalDetail, NumstatEntry } from "../../commit/types";
+import type { CommitPolicy } from "../style";
 
 export interface GitOverviewSnapshot {
 	files: string[];
@@ -44,6 +45,7 @@ export interface ChangelogProposal {
 }
 
 export interface CommitAgentState {
+	policy?: CommitPolicy;
 	overview?: GitOverviewSnapshot;
 	proposal?: CommitProposal;
 	splitProposal?: SplitCommitPlan;

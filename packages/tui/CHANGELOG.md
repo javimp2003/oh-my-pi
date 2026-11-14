@@ -4,6 +4,9 @@
 
 ### Added
 
+- Copy complete assistant responses as Markdown from native message actions or the terminal dock ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Added categorized workbench navigation with search, session details and layouts that adapt to terminal size ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Settings now include an Advanced tab, free-form value editing with `Ctrl+E`, and reset with `Ctrl+R` ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Added the `pinnedInput` composer preference: the chrome below the transcript owns the bottom rows and the header plus transcript render through `TranscriptContainer.renderScrollWindow()` into a scrollable window above it, driven by `Composer.scrollTranscript()`, `scrollTranscriptPage()`, and `followTranscript()`; nothing retires to native scrollback until the shutdown flush ([#1155](https://github.com/can1357/oh-my-pi/issues/1155))
 - Added pinned-layout mouse selection: `Composer.beginSelection()`, `extendSelection()`, and `finishSelection()` select over the transcript window (in content rows, scrolling at its edges and pinning it under the selection via `renderScrollWindow(..., pin)`) or the chrome below it and paint the range in reverse video; a released selection stays held until `takeSelection()` returns its text or `clearSelection()` drops it (`hasSelection`). Helpers live in `prompt/text-selection`
 - Added the `stickyPrompt` composer preference: the pinned transcript window's top row is covered by the first text row of the user prompt (`UserMessageComponent.promptText`, or a `SkillMessageComponent` card, whose leading-token form supplies a chip-plus-draft row via `renderStickyLabel()`) the visible rows belong to, found via the new `stickyRow` hook of `TranscriptContainer.renderScrollWindow()` (`sticky` in its result)
@@ -16,6 +19,10 @@
 
 ### Fixed
 
+- Git commit forms preserve generated Jira prefixes, Spanish text and paragraph bodies ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Settings keep readable tab names, the selected row and exit hints visible in small terminals ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Credential editor errors no longer expose values echoed by a configuration parser or validator ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
+- Fixed complete configuration-key searches selecting a looser match and structured defaults incorrectly appearing modified ([#4](https://github.com/javimp2003/oh-my-pi/pull/4) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Improved responsiveness when placing assistant text after tool calls in long transcripts ([#12178](https://github.com/can1357/oh-my-pi/issues/12178), [#14344](https://github.com/can1357/oh-my-pi/pull/14344) by [@F0Rextasy](https://github.com/F0Rextasy), [#15353](https://github.com/can1357/oh-my-pi/pull/15353) by [@iliaal](https://github.com/iliaal)).
 
 ## [18.9.1] - 2026-10-11

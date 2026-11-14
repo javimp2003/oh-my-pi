@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import type { CommitType, ConventionalAnalysis, NumstatEntry } from "../../commit/types";
 import type { CommitProposal } from "./state";
+import type { CommitPolicy } from "../style";
 
 const TEST_PATTERNS = ["/test/", "/tests/", "/__tests__/", "_test.", ".test.", ".spec.", "_spec."];
 const DOC_EXTENSIONS = new Set([".md", ".txt", ".rst", ".adoc"]);
@@ -84,9 +85,11 @@ export function generateFallbackSummary(type: CommitType, numstat: NumstatEntry[
 	return `${verb} ${file} and ${numstat.length - 1} other${numstat.length === 2 ? "" : "s"}`;
 }
 
-export function generateFallbackProposal(numstat: NumstatEntry[]): CommitProposal {
+export function generateFallbackProposal(numstat: NumstatEntry[], policy?: CommitPolicy): CommitProposal {
 	const analysis = generateFallbackAnalysis(numstat);
-	const summary = generateFallbackSummary(analysis.type, numstat);
+	const summary =
+		policy?.style === "unicaja" ? "Cambia archivos del proyecto" : generateFallbackSummary(analysis.type, numstat);
+	if (policy?.style === "unicaja") analysis.details = [];
 
 	return {
 		analysis,

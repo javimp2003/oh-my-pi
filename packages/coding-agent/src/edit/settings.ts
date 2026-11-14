@@ -14,19 +14,8 @@ function parseEditFuzzyEnv(raw: string): boolean | undefined {
 	return undefined;
 }
 
-/** Every edit tool variant, as accepted by `edit.mode` and `PI_EDIT_VARIANT`. */
-export const EDIT_MODES = [
-	"apply_patch",
-	"hashline",
-	"patch",
-	"replace",
-	"sloppy",
-] as const satisfies readonly EditMode[];
-
-/** Narrows free text (config values, per-model variants) to an edit mode; `undefined` when unknown. */
-export function normalizeEditMode(mode?: string | null): EditMode | undefined {
-	return EDIT_MODES.find(candidate => candidate === mode);
-}
+export * from "./modes";
+import { EDIT_MODES, normalizeEditMode } from "./modes";
 
 // ────────────────────────────────────────────────────────────────────────
 // Editing

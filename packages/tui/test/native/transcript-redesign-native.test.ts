@@ -61,6 +61,42 @@ function texts(node: TspNode | undefined): string {
 }
 
 describe("native transcript redesign", () => {
+	it("copies all original answer text including Markdown, without thinking or tool payloads", async () => {
+		const actions: TranscriptAction[] = [];
+		setTranscriptActionHandler(action => actions.push(action));
+		const first = "# Resultado\n\n";
+		const code = "```ts\n\tconst café = '✓';\n```\n";
+		const message: AssistantMessage = {
+			...failed(""),
+			stopReason: "stop",
+			errorMessage: undefined,
+			content: [
+				{ type: "thinking", thinking: "private reasoning" },
+				{ type: "text", text: first },
+				{ type: "toolCall", id: "internal", name: "bash", arguments: { command: "internal command" } },
+				{ type: "text", text: code },
+			],
+		};
+		const component = new AssistantMessageComponent();
+		harness = await TspHarness.start();
+		harness.tui.addChild(component);
+		component.updateContent(message, { transient: true });
+		await harness.render();
+		expect(harness.find(node => node.p?.role === "omp.assistant.copy")).toBeUndefined();
+		component.handleNativeEvent({ type: "action", key: "copy-response", act: "copy-response", mods: [] });
+		expect(actions).toEqual([]);
+		component.updateContent(message);
+		component.markTranscriptBlockFinalized();
+		await harness.render();
+		const button = harness.find(node => node.p?.role === "omp.assistant.copy");
+		expect(button).toBeDefined();
+		harness.event({ ev: "action", sf: harness.terminal.surface!, id: button!.id, act: "copy-response" });
+		expect(actions).toEqual([{ act: "copy", text: first + code }]);
+		expect(harness.errors).toEqual([]);
+		component.updateContent({ ...message, content: [{ type: "thinking", thinking: "no answer" }] });
+		await harness.render();
+		expect(harness.find(node => node.p?.role === "omp.assistant.copy")).toBeUndefined();
+	});
 	it("draws a failed request as one frame: status chip, the message once, actions that run omp's commands", async () => {
 		const actions: TranscriptAction[] = [];
 		setTranscriptActionHandler(action => actions.push(action));

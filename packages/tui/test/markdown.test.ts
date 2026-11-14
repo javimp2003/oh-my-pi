@@ -2749,18 +2749,27 @@ describe("large documents", () => {
 	for (const [name, doc] of displayMathScans) {
 		it(`lexes ${name} in time proportional to the document`, () => {
 			const elapsed = (text: string): number => {
-				const start = Bun.nanoseconds();
-				extractMarkdownLinks(text);
-				return Bun.nanoseconds() - start;
+				// Measure lexer work, excluding scheduling delays from other suites.
+				const start = process.threadCpuUsage();
+				let iterations = 0;
+				let cpu = 0;
+				do {
+					extractMarkdownLinks(text);
+					iterations++;
+					const used = process.threadCpuUsage(start);
+					cpu = used.user + used.system;
+					// Batch across coarse CPU-accounting ticks, including on Windows.
+				} while (cpu < 100_000);
+				return cpu / iterations;
 			};
 			const small = doc(32 * 1024);
 			const large = doc(512 * 1024);
-			const smallNs = Math.min(elapsed(small), elapsed(small), elapsed(small));
+			const smallCpu = Math.min(elapsed(small), elapsed(small), elapsed(small));
 			// 16 times the text: linear work takes about 16 times as long. The
-			// best of up to three runs absorbs a load spike.
-			let largeNs = Number.POSITIVE_INFINITY;
-			for (let run = 0; run < 3 && largeNs >= 48 * smallNs; run++) largeNs = Math.min(largeNs, elapsed(large));
-			expect(largeNs).toBeLessThan(48 * smallNs);
+			// best of up to three runs allows JIT/GC variation.
+			let largeCpu = Number.POSITIVE_INFINITY;
+			for (let run = 0; run < 3 && largeCpu >= 48 * smallCpu; run++) largeCpu = Math.min(largeCpu, elapsed(large));
+			expect(largeCpu).toBeLessThan(48 * smallCpu);
 		});
 	}
 

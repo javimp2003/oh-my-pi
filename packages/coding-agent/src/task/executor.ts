@@ -1,3 +1,4 @@
+import type { ExecutionBudget } from "../session/execution-budget";
 /**
  * In-process execution for subagents.
  *
@@ -108,6 +109,7 @@ import { resolveAgentPrewalkDefault } from "./prewalk";
 import { isReadOnlyAgent } from "./read-only-policy";
 import { formatTaskResultSummary } from "./result-summary";
 import { subprocessToolRegistry } from "./subprocess-tool-registry";
+import textForkTemplate from "../prompts/system/subagent-text-fork.md" with { type: "text" };
 import type { WorkPoolYieldItem } from "./workpool-yield";
 import {
 	type AgentDefinition,
@@ -446,6 +448,7 @@ export interface ExecutorOptions {
 	 * system prompt, model, thinking level, tool definitions and prompt-cache key verbatim.
 	 */
 	forkSource?: TaskForkSource;
+	executionBudget?: ExecutionBudget;
 	/** Schema used to validate the final structured completion. */
 	outputSchema?: unknown;
 	/** Enforcement policy for {@link outputSchema}; defaults to legacy permissive behavior. */
@@ -1231,6 +1234,7 @@ interface SubagentRunMonitor {
 	readonly accumulatedUsage: Usage;
 	hasUsage(): boolean;
 	yieldCalled(): boolean;
+	acceptTerminalText(text: string): void;
 	/**
 	 * Latch or clear the reminder ladder's forced final `yield`. While set, the
 	 * next accepted `yield` is terminal even when it carries incremental
@@ -2240,6 +2244,13 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 		accumulatedUsage,
 		hasUsage: () => hasUsage,
 		yieldCalled: () => yieldCalled,
+		acceptTerminalText: text => {
+			progress.extractedToolData ??= {};
+			progress.extractedToolData.yield = [{ data: text, status: "success" }];
+			yieldCalled = true;
+			yieldAcceptedAt = Date.now();
+			yieldInvalidatedByAsync = false;
+		},
 		markFinalYieldForced: (forced: boolean) => {
 			finalYieldForced = forced;
 		},
@@ -2362,6 +2373,7 @@ async function driveSessionToYield(
 	options: {
 		/** Open-endedness description forwarded to the session's `auto` thinking classifier. */
 		solutionSpace?: string;
+		textCompletion?: boolean;
 		/**
 		 * Invoked when the initial prompt loses a prompt race (AgentBusyError) before
 		 * retrying. Lets the caller restore a safe contract and detach its monitor
@@ -2371,6 +2383,8 @@ async function driveSessionToYield(
 	} = {},
 ): Promise<DriveOutcome> {
 	const { solutionSpace, onPromptBusy } = options;
+	const previousAssistant = options.textCompletion ? session.getLastAssistantMessage() : undefined;
+	const previousRequests = monitor.progress.requests;
 	using _keepalive = new EventLoopKeepalive();
 	const abortSignal = monitor.abortSignal;
 	let exitCode = 0;
@@ -2472,6 +2486,28 @@ async function driveSessionToYield(
 			if (!recoverableStop || abortSignal.aborted || err instanceof PromptDispatchError) throw err;
 		}
 
+		if (options.textCompletion) {
+			// Keep the parent's tool bytes unchanged. Complete through an ordinary final
+			// assistant message only after background results have reached the child.
+			while (session.hasPendingAsyncWork()) {
+				await awaitAbortable(session.settleAsyncWork());
+				await awaitAbortable(session.waitForIdle());
+			}
+			checkAbort();
+			const last = session.getLastAssistantMessage();
+			if (monitor.progress.requests <= previousRequests || last === previousAssistant)
+				throw new Error("Fork produced no new completion for this assignment");
+			if (last?.stopReason !== "stop")
+				throw new Error(last?.errorMessage || "Fork did not produce a terminal completion");
+			const text = last.content
+				.filter(block => block.type === "text")
+				.map(block => block.text)
+				.join("\n")
+				.trim();
+			if (!text) throw new Error("Fork returned an empty completion");
+			monitor.acceptTerminalText(text);
+			return { exitCode: 0, aborted: false };
+		}
 		const reminderToolChoice = buildNamedToolChoice("yield", session.model);
 
 		const runYieldLadder = async (): Promise<void> => {
@@ -3651,6 +3687,7 @@ export async function runSubagentFollowUpTurn(options: FollowUpTurnOptions): Pro
 	try {
 		try {
 			outcome = await driveSessionToYield(session, monitor, message, {
+				textCompletion: session.subagentCompletion === "text",
 				onPromptBusy: async () => {
 					attemptUnsubscribe();
 					logger.debug("Subagent follow-up lost the prompt race to an IRC wake; backing off", { id });
@@ -4305,6 +4342,14 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 
 			// A fork keeps the parent's model and thinking level verbatim: any change misses its prompt cache.
 			const forkSource = options.forkSource;
+			const textFork =
+				forkSource !== undefined &&
+				!forkSource.toolDefinitions.some(tool => tool.name === "yield") &&
+				!(
+					forkSource.model.compat &&
+					"supportsMidConversationToolChanges" in forkSource.model.compat &&
+					forkSource.model.compat.supportsMidConversationToolChanges === true
+				);
 			if (forkSource && (options.effort !== undefined || modelOverride !== undefined || agent.model?.length)) {
 				logger.debug("Fork subagent ignores effort and model overrides", {
 					agent: agent.name,
@@ -4531,6 +4576,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			const sessionSpec: SubagentSessionSpec = {
 				options: {
 					cwd: worktree ?? cwd,
+					executionBudget: options.executionBudget,
 					additionalDirectories: worktree !== undefined ? undefined : options.additionalDirectories,
 					authStorage,
 					modelRegistry,
@@ -4551,6 +4597,13 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 					// Fork: declare the parent's wire tool bytes and route on its cache key so the
 					// child's first request reads the parent's provider prompt cache.
 					pinnedToolDefinitions: forkSource?.toolDefinitions,
+					freezeToolDefinitions:
+						forkSource !== undefined &&
+						!(
+							forkSource.model.compat &&
+							"supportsMidConversationToolChanges" in forkSource.model.compat &&
+							forkSource.model.compat.supportsMidConversationToolChanges === true
+						),
 					providerPromptCacheKey: forkSource?.promptCacheKey,
 					providerPromptCacheKeySource: forkSource ? "fork" : undefined,
 					// Subagents are short-lived; never schedule background warm requests.
@@ -4559,7 +4612,8 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 					outputSchema,
 					outputSchemaMode: options.outputSchemaMode,
 					restrictToolNames: options.restrictToolNames,
-					requireYieldTool: true,
+					requireYieldTool: !textFork,
+					subagentCompletion: textFork ? "text" : "yield",
 					contextFiles: options.contextFiles,
 					skills: options.skills,
 					promptTemplates: options.promptTemplates,
@@ -4614,6 +4668,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			};
 
 			const sessionManager = await awaitAbortable(sessionManagerPromise);
+			if (textFork) sessionManager.appendCustomEntry("task-text-completion", { enabled: true });
 			if (options.parentArtifactManager) {
 				sessionManager.adoptArtifactManager(options.parentArtifactManager);
 			}
@@ -4823,18 +4878,26 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			// A fork's system prompt is the parent's; its role block and assignment ride the first
 			// user message. `session_init.task` above keeps the raw task.
 			const initialPrompt = forkSource
-				? prompt.render(subagentForkAssignmentTemplate, {
-						subagent: renderSubagentPrompt(sessionSpec.prompt, {
-							workPoolYieldItems: options.workPoolYieldItems ?? [],
-						}),
-						task,
-					})
+				? textFork
+					? prompt.render(textForkTemplate, {
+							agent: agent.systemPrompt,
+							context: options.context,
+							task,
+							outputSchema: normalizedOutputSchema ? JSON.stringify(normalizedOutputSchema) : undefined,
+						})
+					: prompt.render(subagentForkAssignmentTemplate, {
+							subagent: renderSubagentPrompt(sessionSpec.prompt, {
+								workPoolYieldItems: options.workPoolYieldItems ?? [],
+							}),
+							task,
+						})
 				: task;
 			// The run's monitor would take a wake turn's answer (a `yield`) as the
 			// run's result. Only a kept-alive agent has wake turns left to answer
 			// held messages in.
 			if (options.keepAlive !== false) releaseIrcWakes = session.holdIrcWakes();
 			const outcome = await driveSessionToYield(session, monitor, initialPrompt, {
+				textCompletion: textFork,
 				solutionSpace: options.solutionSpace,
 			});
 			// Acceptance boundary (#11079): the run's final result is settled, so

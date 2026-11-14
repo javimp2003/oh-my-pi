@@ -1,7 +1,11 @@
 /** Provider-facing message, image, secret, and stream normalization for a session. */
 
 import type { Agent, AgentMessage } from "@oh-my-pi/pi-agent-core";
-import type { CompactionPreparation } from "@oh-my-pi/pi-agent-core/compaction";
+import {
+	type CompactionPreparation,
+	getCompactionSummaryChain,
+	joinCompactionSummaryBlocks,
+} from "@oh-my-pi/pi-agent-core/compaction";
 import type { AssistantMessage, ImageContent, Message, Model, SimpleStreamOptions, TextContent } from "@oh-my-pi/pi-ai";
 import { isRecord, logger } from "@oh-my-pi/pi-utils";
 import * as snapcompact from "@oh-my-pi/snapcompact";
@@ -160,8 +164,17 @@ export class SessionProviderBoundary {
 	/** Obfuscates summaries and snapcompact plaintext carried into compaction. */
 	obfuscateCompactionPreparation(preparation: CompactionPreparation): CompactionPreparation {
 		if (!this.#host.obfuscator()?.obfuscates()) return preparation;
-		const previousSummary = this.obfuscateText(preparation.previousSummary);
-		const previousPreserveData = this.#obfuscatePreservedArchiveText(preparation.previousPreserveData);
+		let previousSummary = this.obfuscateText(preparation.previousSummary);
+		let previousPreserveData = this.#obfuscatePreservedArchiveText(preparation.previousPreserveData);
+		const chain =
+			preparation.previousSummary === undefined
+				? undefined
+				: getCompactionSummaryChain(preparation.previousPreserveData, preparation.previousSummary);
+		if (chain) {
+			const blocks = chain.blocks.map(block => ({ ...block, summary: this.obfuscateText(block.summary)! }));
+			previousSummary = joinCompactionSummaryBlocks(blocks);
+			previousPreserveData = { ...previousPreserveData, summaryChain: { version: 1, blocks } };
+		}
 		if (
 			previousSummary === preparation.previousSummary &&
 			previousPreserveData === preparation.previousPreserveData

@@ -93,16 +93,40 @@ For a text-only open model served through a private gateway, a configuration tha
 provider:
   appendOnlyContext: on
 compaction:
-  methodOrder: [handoff, soft]
+  methodOrder: [incremental, handoff, soft]
 ```
 
-`appendOnlyContext: auto` already enables stable prefixes for recognized local providers and local/private IP endpoints. A gateway with a corporate DNS name may need `on`. The sample order deliberately selects handoff before soft; retain `remote` or `snapcompact` earlier when those methods are wanted. Explicit `/handoff` keeps its base-system-prompt semantics, so a transient extension override can prevent cache reuse for that command.
+`appendOnlyContext: auto` already enables stable prefixes for recognized local providers and local/private IP endpoints. A gateway with a corporate DNS name may need `on`. The sample order selects incremental summaries before handoff and soft; retain `remote` or `snapcompact` earlier when those methods are wanted. Explicit `/handoff` keeps its base-system-prompt semantics, so a transient extension override can prevent cache reuse for that command.
 
 The server must also have prefix caching enabled and route requests to a replica that still holds the prefix. A shared `promptCacheKey` is a routing hint where supported, not a guarantee that a gateway honors it or that cached blocks have survived eviction. For vLLM, avoid `--exclude-tools-when-tool-choice-none` when relying on handoff prefix reuse: handoff disables tool calls but keeps tool definitions to match the live prompt.
 
 Validate on the actual backend with a long, warmed conversation: compare handoff generation and the first turn after compaction separately. Existing OTEL spans tagged `omp.gen_ai.oneshot.kind = handoff` expose `gen_ai.usage.input_tokens` and `gen_ai.usage.cache_read.input_tokens` when the provider reports them. Compare cached input, request latency and backend prefill metrics against the same workload before the change; missing usage counters do not prove a cache miss. CPU timings in the harness alone cannot establish GPU cache hits.
 
 Server references: [vLLM automatic prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/), [vLLM tool-choice behavior](https://docs.vllm.ai/en/latest/features/tool_calling/).
+
+#### Incremental summary blocks and bounded tool output
+
+The `incremental` method keeps each completed summary as a separate, sealed message:
+
+```text
+fixed system / tools / repository map → summary 1 → summary 2 → recent conversation
+```
+
+On the next compaction it summarizes only the newly removed history and appends another block. The earlier blocks retain their text and timestamps across continuation and session resume. Their aggregate text remains available to transcripts and legacy readers. Existing sessions without chain metadata are migrated from their previous readable summary. Invalid or stale hook metadata falls back to the entry's summary; provider-native replay and snapcompact keep their own formats.
+
+When the host supplies the live provider-context builder, the summarization request also uses the actual conversation prefix, tools and cache-routing key, with its instructions appended at the end. Earlier blocks are read-only reference material, and newer facts take precedence. If that prefix overflows a smaller compaction model, the existing windowed summarizer is the fallback. Manual, automatic and speculative compaction share this implementation and the existing hooks, secret boundary and cancellation handling.
+
+Defaults: at most **4 blocks** (`compaction.summaryChainMaxBlocks`), with a soft **8192-token** chain budget (`compaction.summaryChainMaxTokens`), additionally limited to one eighth of the summarization model's window. At 75% of the token budget, or once the block-count limit is reached, the next pass consolidates the previous blocks and new history into one summary. A new block that takes the chain over budget triggers one consolidation immediately. Generation is budgeted separately; the existing bounded verbatim-user-message and identifier safeguards may exceed the soft target. They are not repeatedly re-summarized to force the target. Consolidation intentionally replaces the summary prefix, so reuse starts again from that new boundary.
+
+New tool results use `tools.contextOutputMaxBytes` (default **8 KB**) as the preview-body budget. It caps the existing artifact spill threshold and head/tail windows; notices, elision markers and structural synopsis add overhead. Streaming bash/Python/JS capture applies the budget before returning the result. Large generic tool/MCP results are archived before entering the journal/model context, with a preview and `artifact://` recovery reference. Images and structured tool details remain available. Bounded artifact pages retain their own pagination contract, avoiding recursive artifacts. File pages with continuation selectors also keep their existing pagination when no artifact store is available. Without artifact storage, or if saving fails, output remains bounded and no recovery link is invented. Streaming artifacts still obey `tools.artifactMaxBytes`; a capped artifact is explicitly a sample. Existing cached messages are not retroactively rewritten by this mechanism.
+
+To use the previous spill threshold without the additional context budget, set `tools.contextOutputMaxBytes: 0`. Explicitly configured method orders are respected: add `incremental` before `handoff`/`soft` to enable it in an existing configuration.
+
+**Why:** vLLM identifies cached blocks using their tokens and the preceding block's hash. Keeping an identical leading sequence allows those resident KV blocks to be reused; changing an early summary invalidates reuse beyond that point. Sealed summary chains are our harness design derived from that mechanism, not an algorithm prescribed by vLLM. Actual hits still depend on the chat template, model, server support, routing and eviction. See the original [vLLM prefix-caching design](https://docs.vllm.ai/en/latest/design/prefix_caching/).
+
+Keeping large outputs outside the prompt and retrieving details on demand follows Anthropic's guidance on lightweight references and just-in-time context retrieval. The preview uses deterministic head/tail excerpts and, when recognized, a structural synopsis; it does not claim to identify every important log line. See [Effective context engineering for AI agents](https://www.anthropic.com/research/effective-context-engineering-for-ai-agents).
+
+Validate cached input/prefill and first-token latency separately during summary generation, after appending a block, and after consolidation. These changes preserve reusable prefixes; they do not guarantee that removed raw history remains cached or establish a measured speedup on a GLM/vLLM deployment.
 
 #### LiteLLM session affinity
 
@@ -550,8 +574,8 @@ Defined in `packages/coding-agent/src/session/context-settings.ts`:
 
 - `compaction.enabled` = `true`
 - `compaction.experimentalContextManagement` = `false`. Opt-in persistent notes, branch-bound raw-history retrieval, and local context-window rollover; toggling it adds or removes `context_notes`/`new_context` in the running session.
-- `compaction.methodOrder` = `["remote", "snapcompact", "handoff", "shake", "soft"]`. `remote` uses provider-native server compaction (OpenAI Responses compact, Anthropic compaction beta) when available; unavailable or failed methods advance to the next preference.
-- `compaction.asyncEnabled` = `true`. Async (speculative) compaction: when context enters the pre-threshold band `[threshold − lead, threshold)` (lead = `clamp(threshold × 0.125, 8192, 32000)`), maintenance starts a background summarization for the first configured LLM-backed method (`remote`, `handoff`, or `soft`) off a branch snapshot, isolated from the live turn by a side session id. The armed result is committed instantly when the threshold is actually crossed, hiding summarization latency; post-snapshot turns are appended after the summary unchanged. Armed results are discarded when the branch prefix changes (new compaction, reset boundary, `/tree` navigation), when a provider-native replay payload is no longer readable by the active model, or when context grows past `keepRecentTokens` since compute (a fresh speculation replaces it). Speculation is skipped while an extension registers `session_before_compact`. The status line pulses the auto-compact icon while a speculation runs and holds it in accent when a result is armed.
+- `compaction.methodOrder` = `["remote", "snapcompact", "incremental", "handoff", "shake", "soft"]`. `remote` uses provider-native server compaction (OpenAI Responses compact, Anthropic compaction beta) when available; unavailable or failed methods advance to the next preference.
+- `compaction.asyncEnabled` = `true`. Async (speculative) compaction: when context enters the pre-threshold band `[threshold − lead, threshold)` (lead = `clamp(threshold × 0.125, 8192, 32000)`), maintenance starts a background summarization for the first configured LLM-backed method (`remote`, `incremental`, `handoff`, or `soft`) off a branch snapshot, isolated from the live turn by a side session id. The armed result is committed instantly when the threshold is actually crossed, hiding summarization latency; post-snapshot turns are appended after the summary unchanged. Armed results are discarded when the branch prefix changes (new compaction, reset boundary, `/tree` navigation), when a provider-native replay payload is no longer readable by the active model, or when context grows past `keepRecentTokens` since compute (a fresh speculation replaces it). Speculation is skipped while an extension registers `session_before_compact`. The status line pulses the auto-compact icon while a speculation runs and holds it in accent when a result is armed.
 - `compaction.reserveTokens` is unset by default. The effective reserve is `max(floor(contextWindow × 0.15), configuredReserve ?? 16384)`. Budget checks use the proportional reserve when the unset default is impractical on a small window, or when the effective reserve reaches/exceeds the whole window. Explicit reserves otherwise retain the 15% floor.
 - `compaction.keepRecentTokens` = `20000`
 - `compaction.autoContinue` = `true`

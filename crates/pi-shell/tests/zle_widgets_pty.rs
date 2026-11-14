@@ -142,7 +142,10 @@ fn case_changes() {
 
 #[test]
 fn transposes() {
-	same("", &[
+	// Transposing the first line makes `cc` the command. Keep its output in
+	// the shell rather than invoking a host compiler whose diagnostics can
+	// interleave with terminal echo differently in the two PTYs.
+	same("cc() { print -r -- cc \"$@\"; }\n", &[
 		"echo aa bb cc\x1bt,\x02\x02\x02\x02\x02\x02\x1b2\x1bt,\r",
 		"echo aa bb\x01\x1b-\x1bt,\r",
 		"echo abc\x14\x02\x02\x14,\x1b3\x14\r",

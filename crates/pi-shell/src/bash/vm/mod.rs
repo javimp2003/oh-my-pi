@@ -1339,7 +1339,7 @@ pub fn zsh_startup_values(
 	}
 	out.push((&b"LOGNAME"[..], Var::scalar(user.name, Attrs::EXPORT), false));
 	let (_, release, machine) = cx.host.uname().unwrap_or_default();
-	let macos = cfg!(target_os = "macos");
+	let macos = platform == crate::bash::ids::Platform::MacOs;
 	// The configure-time `MACHTYPE`, `VENDOR` and `OSTYPE` of the system's
 	// zsh (Apple's build reports `x86_64` on every Mac).
 	let machtype = if macos {

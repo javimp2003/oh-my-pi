@@ -18,7 +18,7 @@ describe("RPC queued-message editing", () => {
 	let directory: string;
 
 	/** `script` selects a scripted first model call; see the fixture's QUEUED_RPC_SCRIPT. */
-	function createClient(script?: "internal-steer" | "live-steer"): RpcClient {
+	function createClient(script?: "hold" | "internal-steer" | "live-steer"): RpcClient {
 		return new RpcClient({
 			command: [process.execPath, path.join(import.meta.dir, "fixtures", "queued-message-rpc-agent.ts")],
 			cwd: directory,
@@ -232,8 +232,8 @@ describe("RPC queued-message editing", () => {
 
 	describe("abort_and_restore_queue", () => {
 		/** Starts the fixture under `script` with a first turn that is still streaming. */
-		async function startStreamingTurn(script?: "internal-steer" | "live-steer"): Promise<void> {
-			if (script) client = createClient(script);
+		async function startStreamingTurn(script: "hold" | "internal-steer" | "live-steer" = "hold"): Promise<void> {
+			client = createClient(script);
 			await client.start();
 			const agentStarted = Promise.withResolvers<void>();
 			const unsubscribe = client.onEvent(event => {
@@ -242,6 +242,16 @@ describe("RPC queued-message editing", () => {
 			try {
 				await client.prompt("start a long turn");
 				await withTimeout(agentStarted.promise, 10_000, "First turn never started streaming");
+				if (script === "hold") {
+					// agent_start precedes the model call. Abort only after the fixture has
+					// consumed its held response, so the next request receives the next one.
+					const ready = Bun.file(path.join(directory, "held-turn-started"));
+					const deadline = Date.now() + 10_000;
+					while (!(await ready.exists())) {
+						if (Date.now() >= deadline) throw new Error("Held model call never started");
+						await Bun.sleep(5);
+					}
+				}
 			} finally {
 				unsubscribe();
 			}

@@ -290,6 +290,26 @@ describe("git tui sidebar staging", () => {
 			});
 		});
 	});
+	test("submits a generated Unicaja prefix and Spanish paragraphs intact to Git", async () => {
+		await withDirtyRepo(async ({ sidebar, actions }) => {
+			sidebar.handleInput("G");
+			sidebar.setGeneratedCommit({
+				issueKey: "NEW_PROJECT2-321",
+				type: "fix",
+				scope: "api",
+				summary: "Corrige la sesión",
+				body: ["Conserva la autorización.", "Rechaza tokens vacíos."],
+			});
+			sidebar.handleInput("\r");
+			expect(actions.at(-1)).toEqual({
+				type: "commit",
+				message:
+					"[NEW_PROJECT2-321] fix(api): Corrige la sesión\n\nConserva la autorización.\n\nRechaza tokens vacíos.",
+				amend: false,
+				stageAll: true,
+			});
+		});
+	});
 	test("wand pill opens the AI textbox; enter raises stage-ai with the typed prompt", async () => {
 		await withDirtyRepo(async ({ sidebar, actions }) => {
 			sidebar.setFocused(true);

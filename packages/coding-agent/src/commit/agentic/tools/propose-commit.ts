@@ -14,6 +14,7 @@ import type { CommitType, ConventionalAnalysis, ConventionalDetail } from "../..
 import { normalizeDetails } from "../../../commit/utils";
 import type { CustomTool } from "../../../extensibility/custom-tools/types";
 import { commitTypeSchema, detailSchema } from "./schemas.js";
+import { validateUnicajaCommit } from "../../style";
 
 const proposeCommitSchema = type({
 	type: commitTypeSchema,
@@ -55,7 +56,18 @@ export function createProposeCommitTool(cwd: string, state: CommitAgentState): C
 				issueRefs: params.issue_refs ?? [],
 			};
 
-			const summaryValidation = validateSummaryRules(summary);
+			const summaryValidation = validateSummaryRules(summary, state.policy?.style);
+			if (state.policy?.style === "unicaja")
+				summaryValidation.errors.push(
+					...validateUnicajaCommit({
+						type: params.type,
+						scope,
+						summary,
+						body: cappedDetails.map(detail => detail.text),
+						footers: [],
+						issueKey: state.policy.issueKey,
+					}),
+				);
 			const analysisValidation = validateAnalysis(analysis);
 			const stagedFiles = state.overview?.files ?? (await repo.changedFiles({ cached: true }));
 			const diffText = state.diffText ?? (await repo.diffText({ cached: true }));

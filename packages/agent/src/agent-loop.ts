@@ -1949,6 +1949,10 @@ async function prepareProviderCall(
 		llmContext = await config.transformProviderContext(llmContext, model);
 	}
 
+	// Flat-prefix forks preserve the full ordered definitions before either native
+	// serialization or in-band prompt rendering. Execution permissions stay local.
+	const pinned = config.pinnedToolDefinitions;
+	if (config.freezeToolDefinitions && pinned) llmContext = { ...llmContext, tools: [...pinned.values()] };
 	let promptToolWireTools: Context["tools"];
 	if (ownedDialect && llmContext.tools && llmContext.tools.length > 0) {
 		promptToolWireTools = llmContext.tools;
@@ -1959,14 +1963,13 @@ async function prepareProviderCall(
 			tools: undefined,
 		};
 	}
-	// Pinned definitions are post-transform parent bytes: substitute after the transform, never re-transform.
-	const pinned = config.pinnedToolDefinitions;
-	if (pinned && pinned.size > 0 && llmContext.tools) {
+	// Pinned definitions are post-transform parent bytes: never re-transform them.
+	if (!config.freezeToolDefinitions && pinned && llmContext.tools) {
 		llmContext = { ...llmContext, tools: llmContext.tools.map(tool => pinned.get(tool.name) ?? tool) };
 	}
-	// After `transformProviderContext`, so the recorded definitions are exactly what the provider receives.
+	const sent = llmContext.tools ?? promptToolWireTools;
+	if (config.sentToolDefinitions && sent) config.sentToolDefinitions.record(sent);
 	if (config.sentToolDefinitions && llmContext.tools) {
-		config.sentToolDefinitions.record(llmContext.tools);
 		const inactiveTools = config.sentToolDefinitions.inactiveFor(llmContext.messages, llmContext.tools);
 		if (inactiveTools) llmContext = { ...llmContext, inactiveTools };
 	}

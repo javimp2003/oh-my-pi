@@ -7,7 +7,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { EditTool } from "@oh-my-pi/pi-coding-agent/edit";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { ReadTool, SNAPSHOT_MAX_BYTES } from "@oh-my-pi/pi-coding-agent/tools/read";
-import { wrapToolWithMetaNotice } from "@oh-my-pi/pi-coding-agent/tools/output-meta";
+import { formatOutputNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { cfgToolsOutputMaxColumns } from "@oh-my-pi/pi-coding-agent/tools/settings";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 
@@ -47,7 +47,9 @@ function createSession(cwd: string, maxColumns = 768): ToolSession {
 }
 
 async function read(session: ToolSession, target: string): Promise<string> {
-	return textOutput(await wrapToolWithMetaNotice(new ReadTool(session)).execute("read", { path: target }));
+	// Test read's pagination and recovery notices before the outer context-preview policy.
+	const result = await new ReadTool(session).execute("read", { path: target });
+	return textOutput(result) + formatOutputNotice(result.details?.meta);
 }
 
 function rows(text: string): Map<number, string> {
