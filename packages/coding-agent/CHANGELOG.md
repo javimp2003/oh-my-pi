@@ -54,6 +54,7 @@
 
 ### Changed
 
+- "Mejorar prompt" follows stricter rewrite rules with worked examples: a vague reference is replaced only when the context holds exactly one match (several or none go to the ambiguities), verbs, reasons, hedges, language and register are kept, and `<ambiguities>` is always present in the model's output
 - Skill curation requests sent to Unicaja's LiteLLM gateway (`driver-ia.*.unicajasc.corp`) now carry `"no-log": true`, so LiteLLM keeps them out of its logging callbacks and spend logs
 - Manual `/compact` now honors a preferred `handoff` method, reusing the live prompt prefix for its summary before falling back to soft compaction ([#3](https://github.com/javimp2003/oh-my-pi/pull/3) by [@alvarogarciapiz](https://github.com/alvarogarciapiz))
 - Messages from other agents (IRC mail) now reach the model as user turns attributed to the sending agent instead of developer-authority messages

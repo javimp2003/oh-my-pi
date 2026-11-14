@@ -46,7 +46,7 @@ Selection in the active file:
 </workspace>
 {{/if}}
 
-Rewrite this draft; do not answer it:
+Rewrite this draft; do not answer it. A vague reference ("this file", "esa función", "lo de antes") with a single match in the context → replace it; several matches or none → `<ambiguities>`:
 <draft>
 {{draft}}
 </draft>
